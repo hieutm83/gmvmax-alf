@@ -13,7 +13,7 @@ Du an chuyen runtime tu Google Apps Script sang **Cloudflare Workers Paid + D1 +
 
 ## Tao tai nguyen Cloudflare
 
-Yeu cau Node.js 22, tai khoan Workers Paid va Wrangler da dang nhap.
+Yeu cau Node.js 22 va Wrangler da dang nhap. De dung `cpu_ms = 300000` cho cac bao cao lon, tai khoan can Workers Paid; cau hinh hien tai van deploy duoc tren Free voi gioi han CPU mac dinh.
 
 ```powershell
 npm install

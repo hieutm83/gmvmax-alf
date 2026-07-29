@@ -3,9 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2026-07-29"
 workers_dev = true
 
-[limits]
-cpu_ms = 300000
-
 [assets]
 directory = "./public"
 binding = "ASSETS"
@@ -21,7 +18,7 @@ TIMEZONE = "Asia/Bangkok"
 [[d1_databases]]
 binding = "DB"
 database_name = "gmv-max-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "c4578be9-d6cf-4652-8f17-684a9ab7598f"
 migrations_dir = "migrations"
 
 [[queues.producers]]
