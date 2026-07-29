@@ -137,11 +137,21 @@ export async function loadVideoStats(env:Env,input:any):Promise<any>{
   const endDate=input.endDate;const start=new Date(`${endDate}T00:00:00Z`);start.setUTCDate(start.getUTCDate()-29);const startDate=start.toISOString().slice(0,10);
   const key=stableKey('video30',{advertiserId:input.advertiserId,storeId:input.storeId,itemId:input.itemId,endDate});if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
   const session=await createSession(env);let contexts:ProductContext[]=input.metadataContexts||[];
-  const campaigns=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['campaign_id'],metrics:['cost'],start_date:startDate,end_date:endDate});
-  const campaignIds=unique(campaigns.filter(row=>numberValue(row.metrics?.cost)>0).map(row=>rowId(row,'campaign_id')).filter(Boolean));
-  if(campaignIds.length){const groups=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_group_id'],metrics:['cost'],start_date:startDate,end_date:endDate,filtering:{campaign_ids:campaignIds}});
-    const groupIds=unique(groups.filter(row=>numberValue(row.metrics?.cost)>0).map(row=>rowId(row,'item_group_id')).filter(Boolean));
-    if(groupIds.length){const count=Math.max(campaignIds.length,groupIds.length);contexts=Array.from({length:count},(_,i)=>({campaignId:campaignIds[i%campaignIds.length],itemGroupId:groupIds[i%groupIds.length]}));}}
+  const campaignRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
+    dimensions:['campaign_id'],metrics:['cost'],start_date:startDate,end_date:endDate});
+  const campaignIds=unique(campaignRows.filter(row=>numberValue(row.metrics?.cost)>0)
+    .map(row=>rowId(row,'campaign_id')).filter(Boolean));
+  const discovered:ProductContext[]=[];
+  for(const campaignId of campaignIds){
+    const groupRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
+      dimensions:['item_group_id'],metrics:['cost'],start_date:startDate,end_date:endDate,
+      filtering:{campaign_ids:[campaignId]}});
+    for(const row of groupRows){
+      const itemGroupId=rowId(row,'item_group_id');
+      if(itemGroupId&&numberValue(row.metrics?.cost)>0)discovered.push({campaignId,itemGroupId});
+    }
+  }
+  if(discovered.length)contexts=discovered;
   const rows=await contextsRows(env,session,input.advertiserId,input.storeId,contexts,startDate,endDate,['item_id','stat_time_day'],['cost','orders','gross_revenue']);
   const dates=Array.from({length:30},(_,i)=>{const d=new Date(`${startDate}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+i);return d.toISOString().slice(0,10)});
   const daily=dates.map(date=>({date,cost:0,orders:0,grossRevenue:0}));for(const row of rows){if(rowId(row,'item_id')!==String(input.itemId))continue;const date=String(row.dimensions?.stat_time_day||row.metrics?.stat_time_day||'').slice(0,10);const point=daily.find(p=>p.date===date);if(point){point.cost+=numberValue(row.metrics?.cost);point.orders+=numberValue(row.metrics?.orders);point.grossRevenue+=numberValue(row.metrics?.gross_revenue);}}

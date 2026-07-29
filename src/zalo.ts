@@ -1,6 +1,6 @@
 import type { Env } from './types';
 import { loadCreativeSummaries, loadMainReport, loadVideoStats } from './reports';
-import { dateInTimezone } from './utils';
+import { cachePut, dateInTimezone } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 
@@ -12,19 +12,6 @@ async function zaloApi(env: Env, method: string, payload: unknown): Promise<any>
   const data = await response.json<any>().catch(() => ({}));
   if (!response.ok || data.ok !== true) throw new Error(`Zalo Bot API ${data.error_code || response.status}: ${data.description || 'Invalid response'}`);
   return data.result || {};
-}
-
-async function createChartUrl(chart: unknown): Promise<string> {
-  const response = await fetch('https://quickchart.io/chart/create', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ chart, width: 1000, height: 520, format: 'png', backgroundColor: 'white' })
-  });
-  const data = await response.json<any>().catch(() => ({}));
-  if (!response.ok || data.success !== true || !data.url) {
-    throw new Error(`Không thể tạo ảnh biểu đồ: ${data.error || response.status}`);
-  }
-  return String(data.url);
 }
 
 export async function sendMessage(env: Env, text: string, chatId?: string): Promise<string> {
@@ -92,9 +79,58 @@ export function normalizeZaloEvent(payload: any): { id?: string; chatId: string;
   };
 }
 
+export async function pollZaloUpdates(env: Env): Promise<number> {
+  const pending=await env.DB.prepare("SELECT id FROM webhook_events WHERE provider='zalo' AND status='PENDING' ORDER BY id DESC LIMIT 1")
+    .first<{id:number}>();
+  if(pending){
+    try{await processZaloVideo(env,pending.id);}
+    catch(error){
+      const details=error instanceof Error?error.message:String(error);
+      await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
+        .bind(JSON.stringify({error:details}),pending.id).run();
+      throw error;
+    }
+    return 1;
+  }
+  let latest: any=null;
+  for(let index=0;index<10;index++){
+    let update:any;
+    try{update=await zaloApi(env,'getUpdates',{timeout:1});}
+    catch(error){
+      const details=error instanceof Error?error.message:String(error);
+      if(/408|request timeout/i.test(details))break;
+      throw error;
+    }
+    const event=normalizeZaloEvent(update);
+    if(!event.id)break;
+    if(!event.senderIsBot&&(!env.ZALO_GROUP_CHAT_ID||event.chatId===env.ZALO_GROUP_CHAT_ID))latest=update;
+  }
+  if(!latest)return 0;
+  const event=normalizeZaloEvent(latest);
+  const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
+    .bind(event.id||null,Date.now(),JSON.stringify(latest)).run();
+  if(!result.meta.changes)return 0;
+  const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id=? ORDER BY id DESC LIMIT 1')
+    .bind('zalo',event.id).first<{id:number}>();
+  if(row){
+    try{await processZaloVideo(env,row.id);}
+    catch(error){
+      const details=error instanceof Error?error.message:String(error);
+      await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
+        .bind(JSON.stringify({error:details}),row.id).run();
+      throw error;
+    }
+  }
+  return row?1:0;
+}
+
 export async function processZaloVideo(env: Env, eventId: number): Promise<void> {
-  const row = await env.DB.prepare('SELECT payload FROM webhook_events WHERE id=?').bind(eventId).first<{payload:string}>();
-  if (!row) return; const event=normalizeZaloEvent(JSON.parse(row.payload));
+  const row = await env.DB.prepare('SELECT payload,status FROM webhook_events WHERE id=?').bind(eventId).first<{payload:string,status:string}>();
+  if (!row||!['PENDING','RETRYING'].includes(row.status)) return;
+  const claim=await env.DB.prepare("UPDATE webhook_events SET status='PROCESSING' WHERE id=? AND status IN ('PENDING','RETRYING')")
+    .bind(eventId).run();
+  if(!claim.meta.changes)return;
+  const event=normalizeZaloEvent(JSON.parse(row.payload));
   if (event.senderIsBot || (env.ZALO_GROUP_CHAT_ID && event.chatId !== env.ZALO_GROUP_CHAT_ID)) {
     await env.DB.prepare("UPDATE webhook_events SET status='SKIPPED',result_json=?,processed_at=? WHERE id=?")
       .bind(JSON.stringify({reason:event.senderIsBot?'BOT_MESSAGE':'OTHER_CHAT'}),Date.now(),eventId).run();
@@ -111,20 +147,23 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
       .bind(JSON.stringify({reason:'INVALID_LINK'}),Date.now(),eventId).run();
     return;
   }
-  const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId:match[1],endDate,metadataContexts:[]};
+  const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId:match[1],endDate,metadataContexts:[],forceRefresh:true};
   const report=await loadMainReport(env,{advertiserId:input.advertiserId,storeId:input.storeId,startDate:endDate,endDate});input.metadataContexts=report.creativeContexts;
   const stats=await loadVideoStats(env,input);const totals=stats.daily.reduce((a:any,p:any)=>({cost:a.cost+p.cost,orders:a.orders+p.orders}),{cost:0,orders:0});
   const chart={type:'line',data:{labels:stats.daily.map((p:any)=>p.date.slice(5)),datasets:[
     {label:'Cost',data:stats.daily.map((p:any)=>p.cost),borderColor:'#079d9b',pointRadius:2,yAxisID:'y'},
     {label:'SKU orders',data:stats.daily.map((p:any)=>p.orders),borderColor:'#ffad28',pointRadius:2,yAxisID:'y1'}]},options:{plugins:{legend:{position:'top'}},scales:{y:{position:'left'},y1:{position:'right',grid:{drawOnChartArea:false}}}}};
-  const chartUrl=await createChartUrl(chart);
+  await cachePut(env,`zalo-chart:${eventId}`,chart,3600);
+  const chartUrl=`${env.PUBLIC_BASE_URL.replace(/\/$/,'')}/charts/${eventId}.png`;
   const caption=`30D\nCost: ${integer(totals.cost)}\nGross revenue: ${integer(stats.video?.grossRevenue || 0)}\nCost per order: ${integer(totals.orders?totals.cost/totals.orders:0)}`;
+  let delivery='PHOTO';
   try {
     await zaloApi(env,'sendPhoto',{chat_id:event.chatId||env.ZALO_GROUP_CHAT_ID,photo:chartUrl,caption});
   } catch (error) {
+    delivery='TEXT_FALLBACK';
     const details=error instanceof Error?error.message:String(error);
     await sendMessage(env,`${caption}\n\nKhông gửi được ảnh biểu đồ: ${details}`,event.chatId);
   }
   await env.DB.prepare("UPDATE webhook_events SET status='DONE',result_json=?,processed_at=? WHERE id=?")
-    .bind(JSON.stringify({itemId:match[1]}),Date.now(),eventId).run();
+    .bind(JSON.stringify({itemId:match[1],delivery,cost:totals.cost,orders:totals.orders,grossRevenue:stats.video?.grossRevenue||0}),Date.now(),eventId).run();
 }

@@ -3,8 +3,8 @@ import { OAuthCoordinator, createAuthorizationUrl, disconnect, handleOAuthCallba
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
-import { normalizeZaloEvent, processZaloVideo, sendScheduledReport } from './zalo';
-import { dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
+import { normalizeZaloEvent, pollZaloUpdates, processZaloVideo, sendScheduledReport } from './zalo';
+import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
 function validateScope(input: any): any {
@@ -42,7 +42,11 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   throw new HttpError(404,'API route not found.');
 }
 
-async function webhook(request: Request, env: Env, url: URL): Promise<Response> {
+function zaloRuntime(env:Env):Env{return {...env,
+  DEFAULT_ADVERTISER_ID:env.ZALO_ADVERTISER_ID||env.DEFAULT_ADVERTISER_ID,
+  DEFAULT_STORE_CODE:env.ZALO_STORE_ID||env.ZALO_STORE_CODE||env.DEFAULT_STORE_CODE} as Env;}
+
+async function webhook(request: Request, env: Env, url: URL, ctx:ExecutionContext): Promise<Response> {
   const storedSecret=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_WEBHOOK_SECRET'").first<{value:string}>();
   const expectedSecret=storedSecret?.value||env.ZALO_WEBHOOK_SECRET;
   if(expectedSecret){const supplied=request.headers.get('x-webhook-secret')||url.searchParams.get('secret');
@@ -52,7 +56,11 @@ async function webhook(request: Request, env: Env, url: URL): Promise<Response> 
   const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
     .bind(event.id||null,Date.now(),JSON.stringify(payload)).run();
   if(result.meta.changes){const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id IS ? ORDER BY id DESC LIMIT 1').bind('zalo',event.id||null).first<{id:number}>();
-    if(row)await env.TASK_QUEUE.send({type:'zalo-video',eventId:row.id});}
+    if(row)ctx.waitUntil(processZaloVideo(zaloRuntime(env),row.id).catch(async error=>{
+      const details=error instanceof Error?error.message:String(error);
+      await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
+        .bind(JSON.stringify({error:details}),row.id).run();
+    }));}
   return json({ok:true});
 }
 
@@ -62,9 +70,7 @@ async function resolveDefaultStore(env:Env):Promise<string>{
 }
 
 async function consume(message: TaskMessage, env: Env): Promise<void> {
-  const runtime={...env,
-    DEFAULT_ADVERTISER_ID:env.ZALO_ADVERTISER_ID||env.DEFAULT_ADVERTISER_ID,
-    DEFAULT_STORE_CODE:env.ZALO_STORE_CODE||env.DEFAULT_STORE_CODE} as Env;
+  const runtime=zaloRuntime(env);
   if(message.type==='zalo-video')return processZaloVideo(runtime,message.eventId);
   if(message.type==='sheet-backup'){
     const storeId=await resolveDefaultStore(runtime);const report=await loadMainReport(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
@@ -88,20 +94,36 @@ async function assetResponse(request:Request,env:Env):Promise<Response>{
   return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
 }
 
+async function chartImage(env:Env,id:string):Promise<Response>{
+  if(!/^\d+$/.test(id))throw new HttpError(400,'Invalid chart ID.');
+  const chart=await cacheGet<any>(env,`zalo-chart:${id}`);
+  if(!chart)throw new HttpError(404,'Chart expired.');
+  const response=await fetch('https://quickchart.io/chart',{
+    method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},
+    body:JSON.stringify({chart,width:1000,height:520,format:'png',backgroundColor:'white',version:'4'})
+  });
+  if(!response.ok)throw new HttpError(502,'Chart service failed.');
+  return new Response(response.body,{headers:{'Content-Type':'image/png','Cache-Control':'public, max-age=3600','Content-Disposition':`inline; filename="video-${id}.png"`}});
+}
+
 export { OAuthCoordinator };
 
 export default {
-  async fetch(request:Request,env:Env):Promise<Response>{
+  async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url);
     try{
       if(url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
-      if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return webhook(request,env,url);
+      if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return webhook(request,env,url,ctx);
+      const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
+      if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);
       if(url.pathname.startsWith('/api/'))return routeApi(request,env,url);
       return assetResponse(request,env);
     }catch(error){const status=error instanceof HttpError?error.status:500;return json({ok:false,error:error instanceof Error?error.message:String(error)},status);}
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
+    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(pollZaloUpdates(zaloRuntime(env)).catch(error=>console.error('Zalo polling failed',error)));
+    if(now.getUTCMinutes()!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
     const connected=await readTokens(env);

@@ -8,6 +8,7 @@ export interface Env {
   DEFAULT_ADVERTISER_ID: string;
   DEFAULT_STORE_CODE: string;
   TIMEZONE: string;
+  PUBLIC_BASE_URL: string;
   ADMIN_PASSWORD: string;
   TOKEN_ENCRYPTION_KEY: string;
   ZALO_BOT_TOKEN?: string;
@@ -15,6 +16,7 @@ export interface Env {
   ZALO_WEBHOOK_SECRET?: string;
   ZALO_ADVERTISER_ID?: string;
   ZALO_STORE_CODE?: string;
+  ZALO_STORE_ID?: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
   GOOGLE_BACKUP_SPREADSHEET_ID?: string;

@@ -14,8 +14,10 @@ MCP_SCOPE = "mcp:tt4b"
 DEFAULT_ADVERTISER_ID = "7535665207776231441"
 DEFAULT_STORE_CODE = "VNLC33LWAS"
 TIMEZONE = "Asia/Bangkok"
+PUBLIC_BASE_URL = "https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev"
 ZALO_ADVERTISER_ID = "7535665207776231441"
 ZALO_STORE_CODE = "VNLC33LWAS"
+ZALO_STORE_ID = "7496309672412416866"
 
 [[d1_databases]]
 binding = "DB"
@@ -44,4 +46,4 @@ tag = "v1"
 new_sqlite_classes = ["OAuthCoordinator"]
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["* * * * *"]
