@@ -1,6 +1,6 @@
 import type { Env } from './types';
-import { loadCreativeSummaries, loadMainReport, loadVideoStats } from './reports';
-import { cachePut, dateInTimezone } from './utils';
+import { discoverVideoContexts, loadCreativeSummaries, loadMainReport, loadVideoDayStats } from './reports';
+import { cachePut, dateInTimezone, shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 
@@ -136,32 +136,39 @@ export function zaloUpdateTimestamp(payload:any):number{
   return Number(message.date||message.timestamp||event.date||event.timestamp||event.created_at)||0;
 }
 
-function directVideoId(text:string):string|null{
+export function extractDirectVideoId(text:string):string|null{
   return text.match(/(?:tiktok\.com\/[^\s]*\/video\/|\b)(\d{19,30})(?:\b|[?/_])/i)?.[1]||null;
 }
 
 async function extractVideoId(text:string):Promise<string|null>{
-  const direct=directVideoId(text);if(direct)return direct;
+  const direct=extractDirectVideoId(text);if(direct)return direct;
   const short=text.match(/https?:\/\/(?:www\.)?(?:vt|vm)\.tiktok\.com\/[^\s]+/i)?.[0]?.replace(/[),.;]+$/,'');
   if(!short)return null;
   let current=short;
   for(let hop=0;hop<5;hop+=1){
     const response=await fetch(current,{redirect:'manual',headers:{'User-Agent':'Mozilla/5.0'}});
     const location=response.headers.get('location');
-    if(!location)return directVideoId(response.url);
-    current=new URL(location,current).toString();const id=directVideoId(current);if(id)return id;
+    if(!location)return extractDirectVideoId(response.url);
+    current=new URL(location,current).toString();const id=extractDirectVideoId(current);if(id)return id;
   }
   return null;
 }
 
-export async function ensureZaloPollingMode(env:Env):Promise<void>{
+export async function ensureZaloWebhook(env:Env):Promise<void>{
   const cached=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_INBOX_MODE'").first<{value:string}>();
-  if(cached?.value){try{const state=JSON.parse(cached.value);if(state.mode==='POLLING'&&Date.now()-Number(state.checkedAt)<300000)return;}catch{/* Refresh invalid state. */}}
+  if(cached?.value){try{const state=JSON.parse(cached.value);if(state.mode==='WEBHOOK'&&Date.now()-Number(state.checkedAt)<300000)return;}catch{/* Refresh invalid state. */}}
   try{
+    let secret=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_WEBHOOK_SECRET'").first<{value:string}>();
+    if(!secret?.value){
+      const value=`cfwh_${crypto.randomUUID().replace(/-/g,'')}`;
+      await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ZALO_WEBHOOK_SECRET',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(value).run();
+      secret={value};
+    }
+    const url=`${env.PUBLIC_BASE_URL.replace(/\/$/,'')}/webhooks/zalo`;
     const info=await zaloApi(env,'getWebhookInfo',{}).catch(()=>({}));
-    if(String(info?.url||''))await zaloApi(env,'deleteWebhook',{});
+    if(String(info?.url||'')!==url)await zaloApi(env,'setWebhook',{url,secret_token:secret.value});
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ZALO_INBOX_MODE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
-      .bind(JSON.stringify({mode:'POLLING',checkedAt:Date.now()})).run();
+      .bind(JSON.stringify({mode:'WEBHOOK',url,checkedAt:Date.now()})).run();
   }catch(error){
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ZALO_INBOX_MODE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
       .bind(JSON.stringify({mode:'ERROR',checkedAt:Date.now(),error:error instanceof Error?error.message:String(error)})).run();
@@ -169,46 +176,8 @@ export async function ensureZaloPollingMode(env:Env):Promise<void>{
   }
 }
 
-export async function pollZaloUpdates(env: Env): Promise<number> {
-  await ensureZaloPollingMode(env);
-  const pending=await env.DB.prepare("SELECT id FROM webhook_events WHERE provider='zalo' AND status='PENDING' ORDER BY id DESC LIMIT 1")
-    .first<{id:number}>();
-  if(pending){
-    await env.TASK_QUEUE.send({type:'zalo-video',eventId:pending.id});
-    await env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(pending.id).run();
-    return 1;
-  }
-  let response:any;
-  try{response=await zaloApi(env,'getUpdates',{timeout:'30'});}
-  catch(error){
-    const details=error instanceof Error?error.message:String(error);
-    if(/408|request timeout/i.test(details))return 0;
-    throw error;
-  }
-  let latest:any=null,latestTimestamp=-1;
-  for(const [index,update] of extractZaloUpdates(response).entries()){
-    const event=normalizeZaloEvent(update);
-    const timestamp=zaloUpdateTimestamp(update)||index;
-    if(event.id&&!event.senderIsBot&&(!env.ZALO_GROUP_CHAT_ID||event.chatId===env.ZALO_GROUP_CHAT_ID)&&timestamp>latestTimestamp){
-      latest=update;latestTimestamp=timestamp;
-    }
-  }
-  if(!latest)return 0;
-  const event=normalizeZaloEvent(latest);
-  const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
-    .bind(event.id||null,Date.now(),JSON.stringify(latest)).run();
-  if(!result.meta.changes)return 0;
-  const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id=? ORDER BY id DESC LIMIT 1')
-    .bind('zalo',event.id).first<{id:number}>();
-  if(row){
-    await env.TASK_QUEUE.send({type:'zalo-video',eventId:row.id});
-    await env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(row.id).run();
-  }
-  return row?1:0;
-}
-
 export async function processZaloVideo(env: Env, eventId: number): Promise<void> {
-  const row = await env.DB.prepare('SELECT payload,status FROM webhook_events WHERE id=?').bind(eventId).first<{payload:string,status:string}>();
+  const row = await env.DB.prepare('SELECT payload,status,result_json FROM webhook_events WHERE id=?').bind(eventId).first<{payload:string;status:string;result_json:string|null}>();
   if (!row||!['PENDING','QUEUED','RETRYING'].includes(row.status)) return;
   const claim=await env.DB.prepare("UPDATE webhook_events SET status='PROCESSING' WHERE id=? AND status IN ('PENDING','QUEUED','RETRYING')")
     .bind(eventId).run();
@@ -230,23 +199,74 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
       .bind(JSON.stringify({reason:'INVALID_LINK'}),Date.now(),eventId).run();
     return;
   }
-  const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId,endDate,metadataContexts:[],forceRefresh:false};
-  const stats=await loadVideoStats(env,input);const totals=stats.daily.reduce((a:any,p:any)=>({cost:a.cost+p.cost,orders:a.orders+p.orders}),{cost:0,orders:0});
-  const maxDailyOrders=Math.max(0,...stats.daily.map((point:any)=>Math.ceil(Number(point.orders)||0)))+5;
-  const chart={type:'line',data:{labels:stats.daily.map((p:any)=>p.date.slice(5)),datasets:[
-    {label:'Cost',data:stats.daily.map((p:any)=>p.cost),borderColor:'#079d9b',pointRadius:2,yAxisID:'y'},
-    {label:'SKU orders',data:stats.daily.map((p:any)=>p.orders),borderColor:'#ffad28',pointRadius:2,yAxisID:'y1'}]},options:{plugins:{legend:{position:'top'}},scales:{y:{position:'left'},y1:{position:'right',beginAtZero:true,max:maxDailyOrders,ticks:{stepSize:1},grid:{drawOnChartArea:false}}}}};
+  let acknowledged=false;
+  try{acknowledged=Boolean(row.result_json&&JSON.parse(row.result_json)?.acknowledged);}catch{/* Invalid prior result. */}
+  if(!acknowledged)await sendMessage(env,`Đang xử lý dữ liệu 30 ngày cho video ${itemId}...`,event.chatId);
+  const endDate=dateInTimezone(new Date(),env.TIMEZONE),startDate=shiftDate(endDate,-29);
+  const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId,metadataContexts:[]};
+  const contexts=await discoverVideoContexts(env,input,startDate,endDate);
+  if(!contexts.length)throw new Error('Không tìm thấy campaign có dữ liệu cho video.');
+  await env.DB.prepare(`INSERT INTO video_jobs(event_id,item_id,advertiser_id,store_id,start_date,end_date,contexts_json,status)
+    VALUES(?,?,?,?,?,?,?,'RUNNING') ON CONFLICT(event_id) DO UPDATE SET contexts_json=excluded.contexts_json,status='RUNNING',updated_at=CURRENT_TIMESTAMP`)
+    .bind(eventId,itemId,input.advertiserId,input.storeId,startDate,endDate,JSON.stringify(contexts)).run();
+  const dates=Array.from({length:30},(_,index)=>shiftDate(startDate,index));
+  await env.TASK_QUEUE.sendBatch(dates.map(reportDate=>({body:{type:'zalo-video-day' as const,eventId,reportDate}})));
+}
+
+export async function processZaloVideoDay(env:Env,eventId:number,reportDate:string):Promise<void>{
+  const job=await env.DB.prepare("SELECT item_id,advertiser_id,store_id,contexts_json,status FROM video_jobs WHERE event_id=?")
+    .bind(eventId).first<{item_id:string;advertiser_id:string;store_id:string;contexts_json:string;status:string}>();
+  if(!job||job.status==='DONE')return;
+  const point=await loadVideoDayStats(env,{advertiserId:job.advertiser_id,storeId:job.store_id,itemId:job.item_id},JSON.parse(job.contexts_json),reportDate);
+  await env.DB.prepare("INSERT OR IGNORE INTO video_job_days(event_id,report_date,metrics_json) VALUES(?,?,?)")
+    .bind(eventId,reportDate,JSON.stringify(point)).run();
+  await env.DB.prepare("UPDATE video_jobs SET updated_at=CURRENT_TIMESTAMP WHERE event_id=? AND status='RUNNING'").bind(eventId).run();
+  const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM video_job_days WHERE event_id=?").bind(eventId).first<{total:number}>();
+  if(Number(count?.total)<30)return;
+  const claim=await env.DB.prepare("UPDATE video_jobs SET status='FINALIZING',updated_at=CURRENT_TIMESTAMP WHERE event_id=? AND status='RUNNING'")
+    .bind(eventId).run();
+  if(claim.meta.changes)await env.TASK_QUEUE.send({type:'zalo-video-finalize',eventId});
+}
+
+export async function recoverZaloVideoJobs(env:Env):Promise<void>{
+  const jobs=await env.DB.prepare(`SELECT event_id,start_date,end_date,status FROM video_jobs
+    WHERE status IN ('RUNNING','FINALIZING') AND updated_at < datetime('now','-2 minutes') ORDER BY updated_at LIMIT 5`)
+    .all<{event_id:number;start_date:string;end_date:string;status:string}>();
+  for(const job of jobs.results){
+    const existing=await env.DB.prepare('SELECT report_date FROM video_job_days WHERE event_id=?').bind(job.event_id).all<{report_date:string}>();
+    const completed=new Set(existing.results.map(row=>row.report_date));
+    const dates:string[]=[];
+    for(let date=job.start_date;date<=job.end_date;date=shiftDate(date,1))if(!completed.has(date))dates.push(date);
+    if(dates.length){
+      await env.DB.prepare("UPDATE video_jobs SET status='RUNNING',updated_at=CURRENT_TIMESTAMP WHERE event_id=?").bind(job.event_id).run();
+      await env.TASK_QUEUE.sendBatch(dates.map(reportDate=>({body:{type:'zalo-video-day' as const,eventId:job.event_id,reportDate}})));
+    }else{
+      await env.DB.prepare("UPDATE video_jobs SET status='FINALIZING',updated_at=CURRENT_TIMESTAMP WHERE event_id=?").bind(job.event_id).run();
+      await env.TASK_QUEUE.send({type:'zalo-video-finalize',eventId:job.event_id});
+    }
+  }
+}
+
+export async function finalizeZaloVideo(env:Env,eventId:number):Promise<void>{
+  const job=await env.DB.prepare("SELECT item_id,status FROM video_jobs WHERE event_id=?").bind(eventId).first<{item_id:string;status:string}>();
+  if(!job||job.status==='DONE')return;
+  const row=await env.DB.prepare("SELECT payload FROM webhook_events WHERE id=?").bind(eventId).first<{payload:string}>();
+  if(!row)throw new Error('Không tìm thấy sự kiện Zalo của video.');
+  const days=await env.DB.prepare("SELECT metrics_json FROM video_job_days WHERE event_id=? ORDER BY report_date").bind(eventId).all<{metrics_json:string}>();
+  if(days.results.length<30)throw new Error(`Video mới hoàn thành ${days.results.length}/30 ngày.`);
+  const event=normalizeZaloEvent(JSON.parse(row.payload)),daily=days.results.map(day=>JSON.parse(day.metrics_json));
+  const totals=daily.reduce((sum:any,point:any)=>({cost:sum.cost+Number(point.cost||0),orders:sum.orders+Number(point.orders||0),grossRevenue:sum.grossRevenue+Number(point.grossRevenue||0)}),{cost:0,orders:0,grossRevenue:0});
+  const maxDailyOrders=Math.max(0,...daily.map((point:any)=>Math.ceil(Number(point.orders)||0)))+5;
+  const chart={type:'line',data:{labels:daily.map((p:any)=>p.date.slice(5)),datasets:[
+    {label:'Cost',data:daily.map((p:any)=>p.cost),borderColor:'#079d9b',pointRadius:2,yAxisID:'y'},
+    {label:'SKU orders',data:daily.map((p:any)=>p.orders),borderColor:'#ffad28',pointRadius:2,yAxisID:'y1'}]},options:{plugins:{legend:{position:'top'}},scales:{y:{position:'left'},y1:{position:'right',beginAtZero:true,max:maxDailyOrders,ticks:{stepSize:1},grid:{drawOnChartArea:false}}}}};
   await cachePut(env,`zalo-chart:${eventId}`,chart,3600);
   const chartUrl=`${env.PUBLIC_BASE_URL.replace(/\/$/,'')}/charts/${eventId}.png`;
-  const caption=`30D\nCost: ${integer(totals.cost)}\nGross revenue: ${integer(stats.video?.grossRevenue || 0)}\nCost per order: ${integer(totals.orders?totals.cost/totals.orders:0)}`;
+  const caption=`30D\nCost: ${integer(totals.cost)}\nGross revenue: ${integer(totals.grossRevenue)}\nCost per order: ${integer(totals.orders?totals.cost/totals.orders:0)}`;
   let delivery='PHOTO';
-  try {
-    await zaloApi(env,'sendPhoto',{chat_id:event.chatId||env.ZALO_GROUP_CHAT_ID,photo:chartUrl,caption});
-  } catch (error) {
-    delivery='TEXT_FALLBACK';
-    const details=error instanceof Error?error.message:String(error);
-    await sendMessage(env,`${caption}\n\nKhông gửi được ảnh biểu đồ: ${details}`,event.chatId);
-  }
+  try{await zaloApi(env,'sendPhoto',{chat_id:event.chatId||env.ZALO_GROUP_CHAT_ID,photo:chartUrl,caption});}
+  catch(error){delivery='TEXT_FALLBACK';const details=error instanceof Error?error.message:String(error);await sendMessage(env,`${caption}\n\nKhông gửi được ảnh biểu đồ: ${details}`,event.chatId);}
   await env.DB.prepare("UPDATE webhook_events SET status='DONE',result_json=?,processed_at=? WHERE id=?")
-    .bind(JSON.stringify({itemId,delivery,cost:totals.cost,orders:totals.orders,grossRevenue:stats.video?.grossRevenue||0}),Date.now(),eventId).run();
+    .bind(JSON.stringify({itemId:job.item_id,delivery,cost:totals.cost,orders:totals.orders,grossRevenue:totals.grossRevenue}),Date.now(),eventId).run();
+  await env.DB.prepare("UPDATE video_jobs SET status='DONE',updated_at=CURRENT_TIMESTAMP WHERE event_id=?").bind(eventId).run();
 }

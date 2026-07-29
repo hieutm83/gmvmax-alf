@@ -133,10 +133,8 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
   await cachePut(env,key,result,300);return result;
 }
 
-export async function loadVideoStats(env:Env,input:any):Promise<any>{
-  const endDate=input.endDate;const start=new Date(`${endDate}T00:00:00Z`);start.setUTCDate(start.getUTCDate()-29);const startDate=start.toISOString().slice(0,10);
-  const key=stableKey('video30-v2',{advertiserId:input.advertiserId,storeId:input.storeId,itemId:input.itemId,endDate});if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
-  const session=await createSession(env);let contexts:ProductContext[]=input.metadataContexts||[];
+export async function discoverVideoContexts(env:Env,input:any,startDate:string,endDate:string,existingSession?:McpSession):Promise<ProductContext[]>{
+  const session=existingSession||await createSession(env);let contexts:ProductContext[]=input.metadataContexts||[];
   const contextKey=stableKey('video-contexts-v2',{advertiserId:input.advertiserId,storeId:input.storeId,startDate,endDate});
   const cachedContexts=await cacheGet<ProductContext[]>(env,contextKey);
   if(cachedContexts?.length)contexts=cachedContexts;
@@ -162,6 +160,29 @@ export async function loadVideoStats(env:Env,input:any):Promise<any>{
     }
     if(contexts.length)await cachePut(env,contextKey,contexts,3600);
   }
+  return contexts;
+}
+
+export async function loadVideoDayStats(env:Env,input:any,contexts:ProductContext[],reportDate:string):Promise<any>{
+  const session=await createSession(env);const point={date:reportDate,cost:0,orders:0,grossRevenue:0};
+  const campaignIds=unique(contexts.map(context=>context.campaignId));
+  for(let offset=0;offset<campaignIds.length;offset+=20){
+    const campaignChunk=campaignIds.slice(offset,offset+20),chunkSet=new Set(campaignChunk);
+    const itemGroupIds=unique(contexts.filter(context=>chunkSet.has(context.campaignId)).map(context=>context.itemGroupId));
+    await forEachReportPage(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_id'],
+      metrics:['cost','orders','gross_revenue'],start_date:reportDate,end_date:reportDate,
+      filtering:{campaign_ids:campaignChunk,item_group_ids:itemGroupIds}},rows=>{for(const row of rows){
+      if(rowId(row,'item_id')!==String(input.itemId))continue;
+      point.cost+=numberValue(row.metrics?.cost);point.orders+=numberValue(row.metrics?.orders);point.grossRevenue+=numberValue(row.metrics?.gross_revenue);
+    }});
+  }
+  return point;
+}
+
+export async function loadVideoStats(env:Env,input:any):Promise<any>{
+  const endDate=input.endDate;const start=new Date(`${endDate}T00:00:00Z`);start.setUTCDate(start.getUTCDate()-29);const startDate=start.toISOString().slice(0,10);
+  const key=stableKey('video30-v2',{advertiserId:input.advertiserId,storeId:input.storeId,itemId:input.itemId,endDate});if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
+  const session=await createSession(env);const contexts=await discoverVideoContexts(env,input,startDate,endDate,session);
   const dates=Array.from({length:30},(_,i)=>{const d=new Date(`${startDate}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+i);return d.toISOString().slice(0,10)});
   const daily=dates.map(date=>({date,cost:0,orders:0,grossRevenue:0}));const dailyByDate=new Map(daily.map(point=>[point.date,point]));
   const contextCampaignIds=unique(contexts.map(context=>context.campaignId));

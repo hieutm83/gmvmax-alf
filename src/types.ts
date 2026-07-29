@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   TASK_QUEUE: Queue<TaskMessage>;
+  ZALO_INBOX_QUEUE: Queue<TaskMessage>;
   OAUTH_COORDINATOR: DurableObjectNamespace;
   ASSETS: Fetcher;
   MCP_URL: string;
@@ -26,7 +27,11 @@ export type TaskMessage =
   | { type: 'hourly-dispatch'; reportDate: string; reportHour: number; backupDate?: string }
   | { type: 'scheduled-report'; reportDate: string; reportHour: number }
   | { type: 'zalo-poll' }
+  | { type: 'zalo-webhook-ensure' }
   | { type: 'zalo-video'; eventId: number }
+  | { type: 'zalo-video-day'; eventId: number; reportDate: string }
+  | { type: 'zalo-video-finalize'; eventId: number }
+  | { type: 'zalo-video-recover' }
   | { type: 'sheet-backup'; reportDate: string };
 
 export interface OAuthTokenSet {

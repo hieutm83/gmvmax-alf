@@ -3,7 +3,7 @@ import { OAuthCoordinator, createAuthorizationUrl, disconnect, handleOAuthCallba
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
-import { extractZaloUpdates, normalizeZaloEvent, pollZaloUpdates, processZaloVideo, sendScheduledReport } from './zalo';
+import { ensureZaloWebhook, extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
@@ -56,8 +56,18 @@ async function webhook(request: Request, env: Env, url: URL, ctx:ExecutionContex
   const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
     .bind(event.id||null,Date.now(),JSON.stringify(payload)).run();
   if(result.meta.changes){const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id IS ? ORDER BY id DESC LIMIT 1').bind('zalo',event.id||null).first<{id:number}>();
-    if(row)ctx.waitUntil(env.TASK_QUEUE.send({type:'zalo-video',eventId:row.id}).then(()=>
-      env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(row.id).run()));}
+    if(row)ctx.waitUntil((async()=>{
+      const itemId=extractDirectVideoId(event.text);
+      if(itemId&&!event.senderIsBot&&(!env.ZALO_GROUP_CHAT_ID||event.chatId===env.ZALO_GROUP_CHAT_ID)){
+        try{
+          await sendMessage(env,`Đang xử lý dữ liệu 30 ngày cho video ${itemId}...`,event.chatId);
+          await env.DB.prepare("UPDATE webhook_events SET result_json=? WHERE id=? AND status='PENDING'")
+            .bind(JSON.stringify({acknowledged:true,itemId}),row.id).run();
+        }catch(error){console.error('Immediate Zalo acknowledgement failed',error instanceof Error?error.message:String(error));}
+      }
+      await env.ZALO_INBOX_QUEUE.send({type:'zalo-video',eventId:row.id},{delaySeconds:2});
+      await env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(row.id).run();
+    })());}
   return json({ok:true});
 }
 
@@ -68,8 +78,14 @@ async function resolveDefaultStore(env:Env):Promise<string>{
 
 async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
-  if(message.type==='zalo-poll'){await pollZaloUpdates(runtime);return;}
+  if(message.type==='zalo-poll'){
+    return ensureZaloWebhook(runtime);
+  }
+  if(message.type==='zalo-webhook-ensure')return ensureZaloWebhook(runtime);
   if(message.type==='zalo-video')return processZaloVideo(runtime,message.eventId);
+  if(message.type==='zalo-video-day')return processZaloVideoDay(runtime,message.eventId,message.reportDate);
+  if(message.type==='zalo-video-finalize')return finalizeZaloVideo(runtime,message.eventId);
+  if(message.type==='zalo-video-recover')return recoverZaloVideoJobs(runtime);
   if(message.type==='hourly-dispatch'){
     if(!await readTokens(runtime))return;
     const tasks:Promise<unknown>[]=[];
@@ -127,7 +143,10 @@ export default {
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
-    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(env.TASK_QUEUE.send({type:'zalo-poll'}));
+    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(Promise.all([
+      env.TASK_QUEUE.send({type:'zalo-webhook-ensure'}),
+      env.TASK_QUEUE.send({type:'zalo-video-recover'})
+    ]));
     if(now.getUTCMinutes()!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
