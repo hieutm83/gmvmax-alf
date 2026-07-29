@@ -1,5 +1,5 @@
 import type { Env, TaskMessage } from './types';
-import { OAuthCoordinator, createAuthorizationUrl, disconnect, handleOAuthCallback, readTokens } from './oauth';
+import { OAuthCoordinator, createAuthorizationUrl, disconnect, getAccessToken, handleOAuthCallback, readTokens } from './oauth';
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
@@ -79,12 +79,9 @@ async function resolveDefaultStore(env:Env):Promise<string>{
 async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
   if(message.type==='zalo-poll'||message.type==='zalo-webhook-ensure')return;
-  if(message.type==='zalo-video')return processZaloVideo(runtime,message.eventId);
-  if(message.type==='zalo-video-day')return processZaloVideoDay(runtime,message.eventId,message.reportDate);
-  if(message.type==='zalo-video-finalize')return finalizeZaloVideo(runtime,message.eventId);
-  if(message.type==='zalo-video-recover')return recoverZaloVideoJobs(runtime);
+  if(message.type==='zalo-video'||message.type==='zalo-video-day'||message.type==='zalo-video-finalize'||message.type==='zalo-video-recover')return;
   if(message.type==='hourly-dispatch'){
-    if(!await readTokens(runtime))return;
+    try{await getAccessToken(runtime);}catch(error){console.error('TikTok OAuth refresh failed',error instanceof Error?error.message:String(error));return;}
     const tasks:Promise<unknown>[]=[];
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
     if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour}));
@@ -131,7 +128,7 @@ export default {
     const url=new URL(request.url);
     try{
       if(url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
-      if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return webhook(request,env,url,ctx);
+      if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
       const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
       if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);
       if(url.pathname.startsWith('/api/'))return routeApi(request,env,url);
@@ -140,7 +137,6 @@ export default {
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
-    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(env.TASK_QUEUE.send({type:'zalo-video-recover'}));
     if(now.getUTCMinutes()!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;

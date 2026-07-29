@@ -5,6 +5,7 @@ interface Env {
   PUBLIC_BASE_URL: string;
   ZALO_GROUP_CHAT_ID: string;
   ZALO_BOT_TOKEN: string;
+  INTERACTIVE_ENABLED: string;
 }
 
 type IngressTask = { type: 'zalo-ingress'; eventId: number } | { type: 'webhook-ensure' };
@@ -76,6 +77,13 @@ async function webhookSecret(env: Env): Promise<string> {
 
 async function ensureWebhook(env: Env): Promise<void> {
   const url = `${env.PUBLIC_BASE_URL.replace(/\/$/, '')}/webhooks/zalo`;
+  if (env.INTERACTIVE_ENABLED !== 'true') {
+    const info = await zaloApi(env, 'getWebhookInfo', {}).catch(() => ({}));
+    if (String(info?.url || '')) await zaloApi(env, 'deleteWebhook', {});
+    await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ZALO_INBOX_MODE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
+      .bind(JSON.stringify({ mode: 'DISABLED', checkedAt: Date.now() })).run();
+    return;
+  }
   const state = await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_INBOX_MODE'").first<{ value: string }>();
   if (state?.value) {
     try {
@@ -91,6 +99,7 @@ async function ensureWebhook(env: Env): Promise<void> {
 }
 
 async function acceptWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  if (env.INTERACTIVE_ENABLED !== 'true') return response({ ok: true, interactive: false });
   const secret = await webhookSecret(env);
   if (request.headers.get('x-bot-api-secret-token') !== secret) return response({ ok: false }, 401);
   const payload = await request.json<any>();

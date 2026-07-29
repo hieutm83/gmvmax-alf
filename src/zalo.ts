@@ -35,9 +35,14 @@ export function buildAdsStyles(text:string):ZaloTextStyle[]{
   const green='c_15a85f',red='c_db342e';
   const add=(start:number,len:number,...st:string[])=>{if(start>=0&&len>0)styles.push({start,len,st});};
   const titleEnd=text.indexOf('\n');
-  add(0,titleEnd<0?text.length:titleEnd,'i');
+  add(0,titleEnd<0?text.length:titleEnd,'f_15','i');
   const bodyStart=titleEnd<0?text.length:titleEnd+1;
-  add(bodyStart,text.length-bodyStart,'f_13','b');
+  add(bodyStart,text.length-bodyStart,'f_13');
+
+  for(const label of ['Cost:','SKU orders:','Cost / order:','Gross revenue:','ROI:']){
+    const start=text.indexOf(label);
+    add(start,label.length,'u','b');
+  }
 
   const colorTrend=(label:string,increaseIsGood:boolean)=>{
     const start=text.indexOf(label);if(start<0)return;
@@ -49,7 +54,7 @@ export function buildAdsStyles(text:string):ZaloTextStyle[]{
   colorTrend('Cost:',false);colorTrend('Gross revenue:',true);colorTrend('Cost / order:',false);
 
   const boostStart=text.indexOf('- Boost:');const stopStart=text.indexOf('- Tắt:');
-  add(boostStart,'- Boost:'.length,green);add(stopStart,'- Tắt:'.length,red);
+  add(boostStart,'- Boost:'.length,green,'u','b');add(stopStart,'- Tắt:'.length,red,'u','b');
   const colorMatches=(source:string,offset:number,pattern:RegExp,color:string,group=0)=>{
     let match:RegExpExecArray|null;
     while((match=pattern.exec(source))!==null){

@@ -44,8 +44,9 @@ describe('buildAdsStyles',()=>{
     const text='Chỉ số ADS 29/07/2026 - 11:00\nCost: 65.266\n\n- Boost:\n123 | ROI 6,80 so với mốc 1,27\n- Tắt:\n456 | Đã chi 60.980 nhưng chưa có SKU order.';
     const styles=buildAdsStyles(text);
     const titleEnd=text.indexOf('\n');
-    expect(styles).toContainEqual({start:0,len:titleEnd,st:['i']});
-    expect(styles).toContainEqual({start:titleEnd+1,len:text.length-titleEnd-1,st:['f_13','b']});
+    expect(styles).toContainEqual({start:0,len:titleEnd,st:['f_15','i']});
+    expect(styles).toContainEqual({start:titleEnd+1,len:text.length-titleEnd-1,st:['f_13']});
+    expect(styles.some(style=>style.st.includes('u')&&style.st.includes('b'))).toBe(true);
     expect(styles.some(style=>style.st.includes('c_15a85f'))).toBe(true);
     expect(styles.some(style=>style.st.includes('c_db342e'))).toBe(true);
   });

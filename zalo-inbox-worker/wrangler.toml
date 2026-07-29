@@ -6,6 +6,7 @@ workers_dev = true
 [vars]
 PUBLIC_BASE_URL = "https://gmv-max-zalo-inbox-worker.tolahatdoxanh.workers.dev"
 ZALO_GROUP_CHAT_ID = "zgr-e4f6e7ef1a82f3dcaa93"
+INTERACTIVE_ENABLED = "false"
 
 [[d1_databases]]
 binding = "DB"
