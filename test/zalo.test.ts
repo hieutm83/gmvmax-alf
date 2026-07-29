@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAdsStyles, extractZaloUpdates, normalizeZaloEvent } from '../src/zalo';
+import { buildAdsStyles, extractZaloUpdates, normalizeZaloEvent, zaloUpdateTimestamp } from '../src/zalo';
 
 describe('normalizeZaloEvent', () => {
   it('reads the current Zalo webhook message shape', () => {
@@ -31,6 +31,11 @@ describe('normalizeZaloEvent', () => {
   it('extracts updates from the wrapped webhook shape',()=>{
     const update={update_id:'3',message:{message_id:'wrapped',chat:{id:'group-1'},text:'wrapped'}};
     expect(extractZaloUpdates({result:{updates:[update]}})).toEqual([update]);
+  });
+
+  it('uses the Zalo message date instead of array position',()=>{
+    expect(zaloUpdateTimestamp({message:{date:1785302549000}})).toBe(1785302549000);
+    expect(zaloUpdateTimestamp({message:{timestamp:1785302550000}})).toBe(1785302550000);
   });
 });
 

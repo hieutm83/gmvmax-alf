@@ -131,6 +131,29 @@ export function extractZaloUpdates(payload:any):any[]{
   return value&&typeof value==='object'?[value]:[];
 }
 
+export function zaloUpdateTimestamp(payload:any):number{
+  const event=payload?.result||payload||{};const message=event.message||event.edited_message||{};
+  return Number(message.date||message.timestamp||event.date||event.timestamp||event.created_at)||0;
+}
+
+function directVideoId(text:string):string|null{
+  return text.match(/(?:tiktok\.com\/[^\s]*\/video\/|\b)(\d{19,30})(?:\b|[?/_])/i)?.[1]||null;
+}
+
+async function extractVideoId(text:string):Promise<string|null>{
+  const direct=directVideoId(text);if(direct)return direct;
+  const short=text.match(/https?:\/\/(?:www\.)?(?:vt|vm)\.tiktok\.com\/[^\s]+/i)?.[0]?.replace(/[),.;]+$/,'');
+  if(!short)return null;
+  let current=short;
+  for(let hop=0;hop<5;hop+=1){
+    const response=await fetch(current,{redirect:'manual',headers:{'User-Agent':'Mozilla/5.0'}});
+    const location=response.headers.get('location');
+    if(!location)return directVideoId(response.url);
+    current=new URL(location,current).toString();const id=directVideoId(current);if(id)return id;
+  }
+  return null;
+}
+
 export async function ensureZaloPollingMode(env:Env):Promise<void>{
   const cached=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_INBOX_MODE'").first<{value:string}>();
   if(cached?.value){try{const state=JSON.parse(cached.value);if(state.mode==='POLLING'&&Date.now()-Number(state.checkedAt)<300000)return;}catch{/* Refresh invalid state. */}}
@@ -162,10 +185,13 @@ export async function pollZaloUpdates(env: Env): Promise<number> {
     if(/408|request timeout/i.test(details))return 0;
     throw error;
   }
-  let latest:any=null;
-  for(const update of extractZaloUpdates(response)){
+  let latest:any=null,latestTimestamp=-1;
+  for(const [index,update] of extractZaloUpdates(response).entries()){
     const event=normalizeZaloEvent(update);
-    if(event.id&&!event.senderIsBot&&(!env.ZALO_GROUP_CHAT_ID||event.chatId===env.ZALO_GROUP_CHAT_ID))latest=update;
+    const timestamp=zaloUpdateTimestamp(update)||index;
+    if(event.id&&!event.senderIsBot&&(!env.ZALO_GROUP_CHAT_ID||event.chatId===env.ZALO_GROUP_CHAT_ID)&&timestamp>latestTimestamp){
+      latest=update;latestTimestamp=timestamp;
+    }
   }
   if(!latest)return 0;
   const event=normalizeZaloEvent(latest);
@@ -197,16 +223,16 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
   if(newer.results.some(item=>normalizeZaloEvent(JSON.parse(item.payload)).chatId===event.chatId)){
     await env.DB.prepare("UPDATE webhook_events SET status='SKIPPED',processed_at=? WHERE id=?").bind(Date.now(),eventId).run();return;
   }
-  const match=event.text.match(/(?:tiktok\.com\/[^\s]*\/video\/|\b)(\d{19,30})(?:\b|[?/_])/i);
-  if(!match){
+  const itemId=await extractVideoId(event.text);
+  if(!itemId){
     await sendMessage(env,'Định dạng link sai, vui lòng gửi lại định dạng: @Bot ADS - ALF https://www.tiktok.com/@username/video/POST_ID',event.chatId);
     await env.DB.prepare("UPDATE webhook_events SET status='DONE',result_json=?,processed_at=? WHERE id=?")
       .bind(JSON.stringify({reason:'INVALID_LINK'}),Date.now(),eventId).run();
     return;
   }
-  const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId:match[1],endDate,metadataContexts:[],forceRefresh:false};
+  const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId,endDate,metadataContexts:[],forceRefresh:false};
   const stats=await loadVideoStats(env,input);const totals=stats.daily.reduce((a:any,p:any)=>({cost:a.cost+p.cost,orders:a.orders+p.orders}),{cost:0,orders:0});
-  const maxDailyOrders=Math.max(1,...stats.daily.map((point:any)=>Math.ceil(Number(point.orders)||0)));
+  const maxDailyOrders=Math.max(0,...stats.daily.map((point:any)=>Math.ceil(Number(point.orders)||0)))+5;
   const chart={type:'line',data:{labels:stats.daily.map((p:any)=>p.date.slice(5)),datasets:[
     {label:'Cost',data:stats.daily.map((p:any)=>p.cost),borderColor:'#079d9b',pointRadius:2,yAxisID:'y'},
     {label:'SKU orders',data:stats.daily.map((p:any)=>p.orders),borderColor:'#ffad28',pointRadius:2,yAxisID:'y1'}]},options:{plugins:{legend:{position:'top'}},scales:{y:{position:'left'},y1:{position:'right',beginAtZero:true,max:maxDailyOrders,ticks:{stepSize:1},grid:{drawOnChartArea:false}}}}};
@@ -222,5 +248,5 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
     await sendMessage(env,`${caption}\n\nKhông gửi được ảnh biểu đồ: ${details}`,event.chatId);
   }
   await env.DB.prepare("UPDATE webhook_events SET status='DONE',result_json=?,processed_at=? WHERE id=?")
-    .bind(JSON.stringify({itemId:match[1],delivery,cost:totals.cost,orders:totals.orders,grossRevenue:stats.video?.grossRevenue||0}),Date.now(),eventId).run();
+    .bind(JSON.stringify({itemId,delivery,cost:totals.cost,orders:totals.orders,grossRevenue:stats.video?.grossRevenue||0}),Date.now(),eventId).run();
 }
