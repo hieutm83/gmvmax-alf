@@ -46,7 +46,7 @@ queue = "gmv-max-zalo-inbox"
 max_batch_size = 1
 max_batch_timeout = 1
 max_retries = 5
-max_concurrency = 1
+max_concurrency = 4
 dead_letter_queue = "gmv-max-dead-letter"
 
 [[durable_objects.bindings]]
