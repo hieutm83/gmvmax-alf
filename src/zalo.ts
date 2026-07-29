@@ -69,9 +69,14 @@ function deepFind(input: any, keys: string[]): any {
 }
 
 export function normalizeZaloEvent(payload: any): { id?: string; chatId: string; text: string; senderIsBot: boolean } {
-  return { id: String(deepFind(payload,['update_id','message_id','event_id']) || ''),
-    chatId: String(deepFind(payload,['chat_id','group_id']) || ''), text: String(deepFind(payload,['text','message_text','content']) || ''),
-    senderIsBot: Boolean(deepFind(payload,['is_bot','sender_is_bot'])) };
+  const event=payload?.result||payload||{};
+  const message=event.message||event.edited_message||{};
+  return {
+    id:String(message.message_id||event.update_id||event.event_id||deepFind(event,['message_id'])||''),
+    chatId:String(message.chat?.id||message.chat_id||event.chat_id||event.group_id||''),
+    text:String(message.text||event.text||event.message_text||event.content||''),
+    senderIsBot:Boolean(message.from?.is_bot??event.is_bot??event.sender_is_bot)
+  };
 }
 
 export async function processZaloVideo(env: Env, eventId: number): Promise<void> {

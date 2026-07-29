@@ -13,6 +13,8 @@ export interface Env {
   ZALO_BOT_TOKEN?: string;
   ZALO_GROUP_CHAT_ID?: string;
   ZALO_WEBHOOK_SECRET?: string;
+  ZALO_ADVERTISER_ID?: string;
+  ZALO_STORE_CODE?: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
   GOOGLE_BACKUP_SPREADSHEET_ID?: string;
@@ -57,4 +59,3 @@ export interface McpRow {
   dimensions?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
 }
-

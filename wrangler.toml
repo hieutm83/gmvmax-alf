@@ -6,7 +6,7 @@ workers_dev = true
 [assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/oauth/*", "/webhooks/*"]
+run_worker_first = true
 
 [vars]
 MCP_URL = "https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat"
@@ -14,6 +14,8 @@ MCP_SCOPE = "mcp:tt4b"
 DEFAULT_ADVERTISER_ID = "7535665207776231441"
 DEFAULT_STORE_CODE = "VNLC33LWAS"
 TIMEZONE = "Asia/Bangkok"
+ZALO_ADVERTISER_ID = "7535665207776231441"
+ZALO_STORE_CODE = "VNLC33LWAS"
 
 [[d1_databases]]
 binding = "DB"

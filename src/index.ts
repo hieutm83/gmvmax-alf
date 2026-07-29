@@ -44,7 +44,8 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
 
 async function webhook(request: Request, env: Env, url: URL): Promise<Response> {
   if(env.ZALO_WEBHOOK_SECRET){const supplied=request.headers.get('x-webhook-secret')||url.searchParams.get('secret');
-    if(supplied!==env.ZALO_WEBHOOK_SECRET)throw new HttpError(401,'Invalid webhook secret.');}
+    const zaloSecret=request.headers.get('x-bot-api-secret-token');
+    if(supplied!==env.ZALO_WEBHOOK_SECRET&&zaloSecret!==env.ZALO_WEBHOOK_SECRET)throw new HttpError(401,'Invalid webhook secret.');}
   const payload=await request.json<any>();const event=normalizeZaloEvent(payload);
   const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
     .bind(event.id||null,Date.now(),JSON.stringify(payload)).run();
@@ -59,17 +60,30 @@ async function resolveDefaultStore(env:Env):Promise<string>{
 }
 
 async function consume(message: TaskMessage, env: Env): Promise<void> {
-  if(message.type==='zalo-video')return processZaloVideo(env,message.eventId);
+  const runtime={...env,
+    DEFAULT_ADVERTISER_ID:env.ZALO_ADVERTISER_ID||env.DEFAULT_ADVERTISER_ID,
+    DEFAULT_STORE_CODE:env.ZALO_STORE_CODE||env.DEFAULT_STORE_CODE} as Env;
+  if(message.type==='zalo-video')return processZaloVideo(runtime,message.eventId);
   if(message.type==='sheet-backup'){
-    const storeId=await resolveDefaultStore(env);const report=await loadMainReport(env,{advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
-    const summary=await loadCreativeSummaries(env,{advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate,products:report.products,allContexts:report.creativeContexts,availableProducts:report.availableProductCount,forceRefresh:true});
+    const storeId=await resolveDefaultStore(runtime);const report=await loadMainReport(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
+    const summary=await loadCreativeSummaries(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate,products:report.products,allContexts:report.creativeContexts,availableProducts:report.availableProductCount,forceRefresh:true});
     await env.DB.prepare(`INSERT INTO daily_metrics(advertiser_id,store_id,report_date,summary_json,products_json,creatives_json) VALUES(?,?,?,?,?,?)
-      ON CONFLICT(advertiser_id,store_id,report_date) DO NOTHING`).bind(env.DEFAULT_ADVERTISER_ID,storeId,message.reportDate,JSON.stringify(report.totals),JSON.stringify(report.products),JSON.stringify(summary)).run();
+      ON CONFLICT(advertiser_id,store_id,report_date) DO NOTHING`).bind(runtime.DEFAULT_ADVERTISER_ID,storeId,message.reportDate,JSON.stringify(report.totals),JSON.stringify(report.products),JSON.stringify(summary)).run();
     return backupDate(env,message.reportDate);
   }
-  const original=env.DEFAULT_STORE_CODE;const storeId=await resolveDefaultStore(env);
-  const runtime={...env,DEFAULT_STORE_CODE:storeId} as Env;await sendScheduledReport(runtime,message.reportDate,message.reportHour);
-  void original;
+  const storeId=await resolveDefaultStore(runtime);
+  await sendScheduledReport({...runtime,DEFAULT_STORE_CODE:storeId},message.reportDate,message.reportHour);
+}
+
+async function assetResponse(request:Request,env:Env):Promise<Response>{
+  const assetUrl=new URL(request.url);
+  const isHtml=assetUrl.pathname==='/'||assetUrl.pathname.endsWith('.html');
+  if(isHtml)assetUrl.searchParams.set('__asset_version','20260729-utf8');
+  const response=await env.ASSETS.fetch(new Request(assetUrl.toString(),request));
+  const headers=new Headers(response.headers);
+  if(isHtml){headers.set('Content-Type','text/html; charset=UTF-8');headers.set('Cache-Control','no-store');}
+  if(assetUrl.pathname.endsWith('.js'))headers.set('Content-Type','application/javascript; charset=UTF-8');
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
 }
 
 export { OAuthCoordinator };
@@ -81,7 +95,7 @@ export default {
       if(url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return webhook(request,env,url);
       if(url.pathname.startsWith('/api/'))return routeApi(request,env,url);
-      return env.ASSETS.fetch(request);
+      return assetResponse(request,env);
     }catch(error){const status=error instanceof HttpError?error.status:500;return json({ok:false,error:error instanceof Error?error.message:String(error)},status);}
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
