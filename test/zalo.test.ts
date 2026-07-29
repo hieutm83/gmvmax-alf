@@ -27,6 +27,11 @@ describe('normalizeZaloEvent', () => {
     expect(updates).toHaveLength(2);
     expect(normalizeZaloEvent(updates.at(-1))).toMatchObject({id:'latest',chatId:'group-1',text:'latest'});
   });
+
+  it('extracts updates from the wrapped webhook shape',()=>{
+    const update={update_id:'3',message:{message_id:'wrapped',chat:{id:'group-1'},text:'wrapped'}};
+    expect(extractZaloUpdates({result:{updates:[update]}})).toEqual([update]);
+  });
 });
 
 describe('buildAdsStyles',()=>{

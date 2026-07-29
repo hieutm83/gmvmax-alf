@@ -1,6 +1,6 @@
 import type { Env } from './types';
 import { loadCreativeSummaries, loadMainReport, loadVideoStats } from './reports';
-import { cachePut, dateInTimezone } from './utils';
+import { cachePut, dateInTimezone, randomBase64Url } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 
@@ -131,7 +131,36 @@ export function extractZaloUpdates(payload:any):any[]{
   return value&&typeof value==='object'?[value]:[];
 }
 
+async function webhookSecret(env:Env):Promise<string>{
+  const stored=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_WEBHOOK_SECRET'").first<{value:string}>();
+  if(stored?.value)return stored.value;
+  const value=env.ZALO_WEBHOOK_SECRET||randomBase64Url(32);
+  await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ZALO_WEBHOOK_SECRET',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
+    .bind(value).run();
+  return value;
+}
+
+export async function ensureZaloWebhook(env:Env):Promise<boolean>{
+  const cached=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_WEBHOOK_STATE'").first<{value:string}>();
+  if(cached?.value){try{const state=JSON.parse(cached.value);if(state.active&&Date.now()-Number(state.checkedAt)<300000)return true;}catch{/* Refresh invalid state. */}}
+  const secret=await webhookSecret(env);const base=env.PUBLIC_BASE_URL.replace(/\/$/,'');
+  const endpoint=`${base}/webhooks/zalo`;
+  try{
+    const info=await zaloApi(env,'getWebhookInfo',{}).catch(()=>({}));
+    const current=String(info?.url||'');
+    if(current!==endpoint){const installed=await zaloApi(env,'setWebhook',{url:endpoint,secret_token:secret});if(installed!==true&&installed?.result!==true)throw new Error('Zalo rejected the Cloudflare webhook.');}
+    await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ZALO_WEBHOOK_STATE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
+      .bind(JSON.stringify({active:true,checkedAt:Date.now(),endpoint:`${base}/webhooks/zalo`})).run();
+    return true;
+  }catch(error){
+    await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ZALO_WEBHOOK_STATE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
+      .bind(JSON.stringify({active:false,checkedAt:Date.now(),error:error instanceof Error?error.message:String(error)})).run();
+    return false;
+  }
+}
+
 export async function pollZaloUpdates(env: Env): Promise<number> {
+  if(await ensureZaloWebhook(env))return 0;
   const pending=await env.DB.prepare("SELECT id FROM webhook_events WHERE provider='zalo' AND status='PENDING' ORDER BY id DESC LIMIT 1")
     .first<{id:number}>();
   if(pending){

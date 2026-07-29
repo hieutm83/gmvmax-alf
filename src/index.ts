@@ -3,7 +3,7 @@ import { OAuthCoordinator, createAuthorizationUrl, disconnect, handleOAuthCallba
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
-import { normalizeZaloEvent, pollZaloUpdates, processZaloVideo, sendScheduledReport } from './zalo';
+import { extractZaloUpdates, normalizeZaloEvent, pollZaloUpdates, processZaloVideo, sendScheduledReport } from './zalo';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
@@ -52,7 +52,7 @@ async function webhook(request: Request, env: Env, url: URL, ctx:ExecutionContex
   if(expectedSecret){const supplied=request.headers.get('x-webhook-secret')||url.searchParams.get('secret');
     const zaloSecret=request.headers.get('x-bot-api-secret-token');
     if(supplied!==expectedSecret&&zaloSecret!==expectedSecret)throw new HttpError(401,'Invalid webhook secret.');}
-  const payload=await request.json<any>();const event=normalizeZaloEvent(payload);
+  const payload=await request.json<any>();const updates=extractZaloUpdates(payload);const event=normalizeZaloEvent(updates.at(-1)||payload);
   const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
     .bind(event.id||null,Date.now(),JSON.stringify(payload)).run();
   if(result.meta.changes){const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id IS ? ORDER BY id DESC LIMIT 1').bind('zalo',event.id||null).first<{id:number}>();
