@@ -206,9 +206,10 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
   }
   const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId:match[1],endDate,metadataContexts:[],forceRefresh:false};
   const stats=await loadVideoStats(env,input);const totals=stats.daily.reduce((a:any,p:any)=>({cost:a.cost+p.cost,orders:a.orders+p.orders}),{cost:0,orders:0});
+  const maxDailyOrders=Math.max(1,...stats.daily.map((point:any)=>Math.ceil(Number(point.orders)||0)));
   const chart={type:'line',data:{labels:stats.daily.map((p:any)=>p.date.slice(5)),datasets:[
     {label:'Cost',data:stats.daily.map((p:any)=>p.cost),borderColor:'#079d9b',pointRadius:2,yAxisID:'y'},
-    {label:'SKU orders',data:stats.daily.map((p:any)=>p.orders),borderColor:'#ffad28',pointRadius:2,yAxisID:'y1'}]},options:{plugins:{legend:{position:'top'}},scales:{y:{position:'left'},y1:{position:'right',grid:{drawOnChartArea:false}}}}};
+    {label:'SKU orders',data:stats.daily.map((p:any)=>p.orders),borderColor:'#ffad28',pointRadius:2,yAxisID:'y1'}]},options:{plugins:{legend:{position:'top'}},scales:{y:{position:'left'},y1:{position:'right',beginAtZero:true,max:maxDailyOrders,ticks:{stepSize:1},grid:{drawOnChartArea:false}}}}};
   await cachePut(env,`zalo-chart:${eventId}`,chart,3600);
   const chartUrl=`${env.PUBLIC_BASE_URL.replace(/\/$/,'')}/charts/${eventId}.png`;
   const caption=`30D\nCost: ${integer(totals.cost)}\nGross revenue: ${integer(stats.video?.grossRevenue || 0)}\nCost per order: ${integer(totals.orders?totals.cost/totals.orders:0)}`;
