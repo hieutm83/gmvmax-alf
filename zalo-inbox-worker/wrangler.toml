@@ -1,0 +1,32 @@
+name = "gmv-max-zalo-inbox-worker"
+main = "src/index.ts"
+compatibility_date = "2026-07-29"
+workers_dev = true
+
+[vars]
+PUBLIC_BASE_URL = "https://gmv-max-zalo-inbox-worker.tolahatdoxanh.workers.dev"
+ZALO_GROUP_CHAT_ID = "zgr-e4f6e7ef1a82f3dcaa93"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gmv-max-db"
+database_id = "c4578be9-d6cf-4652-8f17-684a9ab7598f"
+
+[[queues.producers]]
+binding = "INGRESS_QUEUE"
+queue = "gmv-max-zalo-ingress"
+
+[[queues.producers]]
+binding = "PROCESSING_QUEUE"
+queue = "gmv-max-zalo-inbox"
+
+[[queues.consumers]]
+queue = "gmv-max-zalo-ingress"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 5
+max_concurrency = 4
+dead_letter_queue = "gmv-max-dead-letter"
+
+[triggers]
+crons = ["* * * * *"]

@@ -3,7 +3,7 @@ import { OAuthCoordinator, createAuthorizationUrl, disconnect, handleOAuthCallba
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
-import { ensureZaloWebhook, extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
+import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
@@ -78,10 +78,7 @@ async function resolveDefaultStore(env:Env):Promise<string>{
 
 async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
-  if(message.type==='zalo-poll'){
-    return ensureZaloWebhook(runtime);
-  }
-  if(message.type==='zalo-webhook-ensure')return ensureZaloWebhook(runtime);
+  if(message.type==='zalo-poll'||message.type==='zalo-webhook-ensure')return;
   if(message.type==='zalo-video')return processZaloVideo(runtime,message.eventId);
   if(message.type==='zalo-video-day')return processZaloVideoDay(runtime,message.eventId,message.reportDate);
   if(message.type==='zalo-video-finalize')return finalizeZaloVideo(runtime,message.eventId);
@@ -143,10 +140,7 @@ export default {
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
-    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(Promise.all([
-      env.TASK_QUEUE.send({type:'zalo-webhook-ensure'}),
-      env.TASK_QUEUE.send({type:'zalo-video-recover'})
-    ]));
+    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(env.TASK_QUEUE.send({type:'zalo-video-recover'}));
     if(now.getUTCMinutes()!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
