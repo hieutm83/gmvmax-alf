@@ -124,6 +124,13 @@ export function normalizeZaloEvent(payload: any): { id?: string; chatId: string;
   };
 }
 
+export function extractZaloUpdates(payload:any):any[]{
+  const value=payload?.result??payload;
+  if(Array.isArray(value))return value;
+  if(Array.isArray(value?.updates))return value.updates;
+  return value&&typeof value==='object'?[value]:[];
+}
+
 export async function pollZaloUpdates(env: Env): Promise<number> {
   const pending=await env.DB.prepare("SELECT id FROM webhook_events WHERE provider='zalo' AND status='PENDING' ORDER BY id DESC LIMIT 1")
     .first<{id:number}>();
@@ -132,18 +139,17 @@ export async function pollZaloUpdates(env: Env): Promise<number> {
     await env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(pending.id).run();
     return 1;
   }
-  let latest: any=null;
-  for(let index=0;index<10;index++){
-    let update:any;
-    try{update=await zaloApi(env,'getUpdates',{timeout:1});}
-    catch(error){
-      const details=error instanceof Error?error.message:String(error);
-      if(/408|request timeout/i.test(details))break;
-      throw error;
-    }
+  let response:any;
+  try{response=await zaloApi(env,'getUpdates',{timeout:'30'});}
+  catch(error){
+    const details=error instanceof Error?error.message:String(error);
+    if(/408|request timeout/i.test(details))return 0;
+    throw error;
+  }
+  let latest:any=null;
+  for(const update of extractZaloUpdates(response)){
     const event=normalizeZaloEvent(update);
-    if(!event.id)break;
-    if(!event.senderIsBot&&(!env.ZALO_GROUP_CHAT_ID||event.chatId===env.ZALO_GROUP_CHAT_ID))latest=update;
+    if(event.id&&!event.senderIsBot&&(!env.ZALO_GROUP_CHAT_ID||event.chatId===env.ZALO_GROUP_CHAT_ID))latest=update;
   }
   if(!latest)return 0;
   const event=normalizeZaloEvent(latest);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAdsStyles, normalizeZaloEvent } from '../src/zalo';
+import { buildAdsStyles, extractZaloUpdates, normalizeZaloEvent } from '../src/zalo';
 
 describe('normalizeZaloEvent', () => {
   it('reads the current Zalo webhook message shape', () => {
@@ -17,6 +17,15 @@ describe('normalizeZaloEvent', () => {
       senderIsBot: false,
       text: '@Bot ADS - ALF https://www.tiktok.com/@user/video/7660775643268943111'
     });
+  });
+
+  it('extracts the latest message from a getUpdates array',()=>{
+    const updates=extractZaloUpdates([
+      {update_id:'1',message:{message_id:'old',chat:{id:'group-1'},text:'old'}},
+      {update_id:'2',message:{message_id:'latest',chat:{id:'group-1'},text:'latest'}}
+    ]);
+    expect(updates).toHaveLength(2);
+    expect(normalizeZaloEvent(updates.at(-1))).toMatchObject({id:'latest',chatId:'group-1',text:'latest'});
   });
 });
 
