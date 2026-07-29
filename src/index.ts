@@ -88,8 +88,13 @@ export default {
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
-    ctx.waitUntil(env.TASK_QUEUE.send({type:'scheduled-report',reportDate,reportHour}));
-    if(localHour===8)ctx.waitUntil(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:shiftDate(localDate,-1)}));
+    const connected=await readTokens(env);
+    if(localHour===8&&connected&&env.GOOGLE_BACKUP_SPREADSHEET_ID){
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:shiftDate(localDate,-1)}));
+    }
+    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID&&connected){
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'scheduled-report',reportDate,reportHour}));
+    }
   },
   async queue(batch:MessageBatch<TaskMessage>,env:Env):Promise<void>{
     for(const message of batch.messages){try{await consume(message.body,env);message.ack();}catch(error){console.error('Queue task failed',message.body,error);message.retry({delaySeconds:60});}}
