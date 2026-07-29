@@ -204,13 +204,23 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
   if(!acknowledged)await sendMessage(env,`Đang xử lý dữ liệu 30 ngày cho video ${itemId}...`,event.chatId);
   const endDate=dateInTimezone(new Date(),env.TIMEZONE),startDate=shiftDate(endDate,-29);
   const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId,metadataContexts:[]};
-  const contexts=await discoverVideoContexts(env,input,startDate,endDate);
+  const cachedJob=await env.DB.prepare(`SELECT contexts_json FROM video_jobs WHERE item_id=? AND advertiser_id=? AND store_id=?
+    AND status='DONE' AND updated_at >= datetime('now','-1 day') ORDER BY updated_at DESC LIMIT 1`)
+    .bind(itemId,input.advertiserId,input.storeId).first<{contexts_json:string}>();
+  const contexts=cachedJob?.contexts_json?JSON.parse(cachedJob.contexts_json):await discoverVideoContexts(env,input,startDate,endDate);
   if(!contexts.length)throw new Error('Không tìm thấy campaign có dữ liệu cho video.');
   await env.DB.prepare(`INSERT INTO video_jobs(event_id,item_id,advertiser_id,store_id,start_date,end_date,contexts_json,status)
     VALUES(?,?,?,?,?,?,?,'RUNNING') ON CONFLICT(event_id) DO UPDATE SET contexts_json=excluded.contexts_json,status='RUNNING',updated_at=CURRENT_TIMESTAMP`)
     .bind(eventId,itemId,input.advertiserId,input.storeId,startDate,endDate,JSON.stringify(contexts)).run();
-  const dates=Array.from({length:30},(_,index)=>shiftDate(startDate,index));
-  await env.TASK_QUEUE.sendBatch(dates.map(reportDate=>({body:{type:'zalo-video-day' as const,eventId,reportDate}})));
+  await env.DB.prepare(`INSERT OR IGNORE INTO video_job_days(event_id,report_date,metrics_json)
+    SELECT ?,d.report_date,d.metrics_json FROM video_job_days d JOIN video_jobs j ON j.event_id=d.event_id
+    WHERE j.item_id=? AND j.advertiser_id=? AND j.store_id=? AND d.report_date>=? AND d.report_date<? AND d.event_id<>?`)
+    .bind(eventId,itemId,input.advertiserId,input.storeId,startDate,endDate,eventId).run();
+  const cachedDays=await env.DB.prepare('SELECT report_date FROM video_job_days WHERE event_id=?').bind(eventId).all<{report_date:string}>();
+  const completed=new Set(cachedDays.results.map(day=>day.report_date));
+  const dates=Array.from({length:30},(_,index)=>shiftDate(startDate,index)).filter(date=>!completed.has(date));
+  if(dates.length)await env.TASK_QUEUE.sendBatch(dates.map(reportDate=>({body:{type:'zalo-video-day' as const,eventId,reportDate}})));
+  else await env.TASK_QUEUE.send({type:'zalo-video-finalize',eventId});
 }
 
 export async function processZaloVideoDay(env:Env,eventId:number,reportDate:string):Promise<void>{
