@@ -1,0 +1,1275 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <base target="_top">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        color-scheme: light; --primary: #2563eb; --primary-hover: #1d4ed8;
+        --primary-soft: #dbeafe; --success: #059669; --success-soft: #d1fae5;
+        --danger: #dc2626; --danger-soft: #fee2e2; --background: #f8fafc;
+        --surface: #fff; --surface-muted: #f1f5f9; --text: #0f172a;
+        --text-secondary: #475569; --text-muted: #64748b; --border: #e2e8f0;
+        --overlay: rgba(15, 23, 42, .62); --focus: rgba(37, 99, 235, .28);
+        --shadow-sm: 0 8px 24px rgba(15, 23, 42, .06);
+        --shadow-lg: 0 24px 64px rgba(15, 23, 42, .16);
+        --radius-sm: 8px; --radius-md: 12px; --touch: 44px;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body, button, input, select { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { min-width: 320px; margin: 0; color: var(--text); background: var(--background); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+      body > header { position: sticky; top: 0; z-index: 30; padding: 16px 24px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--border); backdrop-filter: blur(18px); }
+      h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0; }
+      main { width: min(1400px, 100%); margin: 0 auto; padding: 24px; }
+      .toolbar { display: grid; grid-template-columns: minmax(260px, 1.65fr) minmax(170px, .9fr) 132px 132px max-content minmax(190px, .8fr); align-items: end; gap: 14px; margin-bottom: 24px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+      .toolbar .account-field { min-width: 0; }
+      .toolbar .account-field select { width: 100%; }
+      .toolbar .shop-field, .toolbar .date-field { width: auto; min-width: 0; }
+      .toolbar .shop-field select, .toolbar .date-field input { width: 100%; min-width: 0; }
+      .toolbar button, .toolbar .live-toggle { white-space: nowrap; }
+      label { display: grid; gap: 6px; color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+      input, select, button, .button { min-height: var(--touch); padding: 0 14px; font: inherit; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+      input, select { color: var(--text-secondary); background: var(--surface); }
+      button, .button { display: inline-flex; align-items: center; justify-content: center; color: #fff; background: var(--primary); border-color: var(--primary); font-weight: 700; text-decoration: none; cursor: pointer; transition: background-color .15s, border-color .15s, box-shadow .15s, transform .15s; }
+      button:hover, .button:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+      button:active:not(:disabled) { transform: scale(.98); }
+      button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+      button:disabled { cursor: wait; opacity: .5; }
+      .button.secondary { color: var(--text-secondary); background: var(--surface); border-color: var(--border); }
+      .button.secondary:hover { color: var(--primary-hover); background: var(--primary-soft); }
+      .notice { margin-bottom: 20px; padding: 12px 14px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-left: 4px solid #f59e0b; border-radius: var(--radius-sm); }
+      .error { color: #991b1b; background: var(--danger-soft); border-color: #fecaca; border-left-color: var(--danger); }
+      .hidden { display: none; }
+      .summary { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; margin-bottom: 28px; }
+      .metric { --metric-color: var(--primary); min-height: 116px; padding: 20px; background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--metric-color); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+      .metric span { display: block; margin-bottom: 12px; color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+      .metric strong { display: block; color: var(--metric-color); font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
+      .metric .metric-change { display: flex; align-items: center; gap: 5px; margin: 10px 0 0; font-size: 11px; font-weight: 700; text-transform: none; }
+      .metric .metric-change.good { color: #047857; } .metric .metric-change.bad { color: #dc2626; }
+      .metric .metric-change.neutral { color: var(--text-muted); }
+      .metric-cost { --metric-color: #2563eb; } .metric-orders { --metric-color: #059669; }
+      .metric-costPerOrder { --metric-color: #d97706; } .metric-grossRevenue { --metric-color: #0f766e; }
+      .metric-roi { --metric-color: #7c3aed; } .metric-totalCreatives { --metric-color: #0891b2; }
+      .metric-impressions { --metric-color: #db2777; } .metric-traffic { --metric-color: #ea580c; }
+      .section-title { margin: 28px 0 12px; font-size: 15px; font-weight: 800; letter-spacing: 0; }
+      .hourly-wrap, .table-wrap { overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); scrollbar-color: #94a3b8 transparent; }
+      .hourly-wrap { max-height: 420px; }
+      table { width: 100%; color: var(--text-secondary); border-collapse: separate; border-spacing: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+      th, td { padding: 11px 14px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+      th { color: var(--text-muted); background: var(--surface-muted); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+      th:first-child, td:first-child { min-width: 230px; text-align: left; white-space: normal; }
+      tbody tr { transition: background-color .15s; }
+      tbody tr:hover { background: var(--primary-soft); }
+      tbody tr:last-child td { border-bottom: 0; }
+      .hourly-table thead th { position: sticky; top: 0; z-index: 1; }
+      .hourly-table, .product-table { table-layout: fixed; }
+      .hourly-table th, .hourly-table td { width: 14.285%; }
+      .hourly-table th:first-child, .hourly-table td:first-child { width: 14.285%; min-width: 90px; }
+      .hourly-value { color: var(--text-secondary); font-weight: 600; }
+      .hourly-change { display: block; min-height: 14px; margin-top: 3px; font-size: 10px; font-weight: 700; line-height: 1.2; }
+      .hourly-change.good { color: #047857; } .hourly-change.bad { color: #dc2626; }
+      .hourly-change.neutral { color: var(--text-muted); }
+      .product-table { min-width: 1260px; }
+      .product-table th, .product-table td { width: auto; padding-right: 10px; padding-left: 10px; }
+      .product-table th:nth-child(1), .product-table td:nth-child(1) { width: 32%; min-width: 320px; }
+      .product-table th:nth-child(2), .product-table td:nth-child(2) { width: 8%; }
+      .product-table th:nth-child(3), .product-table td:nth-child(3) { width: 10%; }
+      .product-table th:nth-child(4), .product-table td:nth-child(4) { width: 10%; }
+      .product-table th:nth-child(5), .product-table td:nth-child(5) { width: 8%; }
+      .product-table th:nth-child(6), .product-table td:nth-child(6) { width: 10%; }
+      .product-table th:nth-child(7), .product-table td:nth-child(7) { width: 10%; }
+      .product-table th:nth-child(8), .product-table td:nth-child(8) { width: 6%; }
+      .product-table th:nth-child(9), .product-table td:nth-child(9) { width: 6%; }
+      .campaign-button { min-height: 0; padding: 0; color: var(--primary); background: transparent; border: 0; font-weight: 700; text-align: left; }
+      .campaign-button:hover { color: var(--primary-hover); background: transparent; text-decoration: underline; }
+      .campaign-meta { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; }
+      .product-name, .creative-name { display: flex; align-items: center; gap: 10px; }
+      .product-image { width: 44px; height: 44px; flex: 0 0 auto; object-fit: cover; background: var(--surface-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+      .status-badge { display: inline-flex; align-items: center; padding: 4px 8px; color: var(--success); background: var(--success-soft); border-radius: 999px; font-size: 11px; font-weight: 700; }
+      .status-badge.inactive { color: #64748b; background: #e2e8f0; }
+      .recommendation-table { min-width: 1120px; table-layout: fixed; }
+      .recommendation-table th:first-child, .recommendation-table td:first-child { width: 17%; min-width: 190px; }
+      .recommendation-table th:nth-child(2), .recommendation-table td:nth-child(2) { width: 17%; text-align: left; white-space: normal; }
+      .recommendation-table th:nth-child(3), .recommendation-table td:nth-child(3),
+      .recommendation-table th:nth-child(4), .recommendation-table td:nth-child(4),
+      .recommendation-table th:nth-child(5), .recommendation-table td:nth-child(5),
+      .recommendation-table th:nth-child(6), .recommendation-table td:nth-child(6),
+      .recommendation-table th:nth-child(7), .recommendation-table td:nth-child(7),
+      .recommendation-table th:nth-child(8), .recommendation-table td:nth-child(8) { width: 8%; }
+      .recommendation-table th:last-child, .recommendation-table td:last-child { width: 18%; text-align: left; white-space: normal; }
+      .recommendation-video { min-height: 0; padding: 0; color: var(--primary); background: transparent; border: 0; font-weight: 700; }
+      .recommendation-video:hover { color: var(--primary-hover); background: transparent; text-decoration: underline; }
+      .recommendation-reason { color: var(--text-secondary); line-height: 1.4; }
+      .recommendation-table td.recommendation-reason { white-space: pre-line; }
+      .live-toggle { display: flex; align-items: center; min-height: var(--touch); padding: 0 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); text-transform: none; }
+      .live-toggle input { min-height: 0; margin: 0 8px 0 0; padding: 0; accent-color: var(--primary); }
+      .updated-at { display: flex; align-items: center; min-height: var(--touch); padding: 0 14px; color: var(--text-secondary); background: var(--surface-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; font-weight: 700; white-space: nowrap; }
+      .video-search { display: flex; align-items: center; gap: 10px; margin: -2px 0 12px; }
+      .video-search input { flex: 1; min-width: 240px; }
+      .video-search-status { color: var(--danger); font-size: 12px; }
+      .modal-backdrop { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 24px; background: var(--overlay); backdrop-filter: blur(10px); }
+      .modal-backdrop.hidden { display: none; }
+      .modal { display: flex; flex-direction: column; width: min(1480px, calc(100vw - 48px)); max-width: calc(100vw - 48px); height: 88dvh; overflow: hidden; color: var(--text); background: rgba(255,255,255,.96); border: 1px solid rgba(148,163,184,.26); border-radius: 16px; box-shadow: var(--shadow-lg); backdrop-filter: blur(18px); }
+      .modal-header { display: flex; flex: 0 0 68px; align-items: center; justify-content: space-between; gap: 16px; min-height: 68px; padding: 14px 20px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--border); }
+      .modal-title { min-width: 0; }
+      .modal-title h2 { margin: 0; overflow: hidden; color: var(--text); font-size: 16px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+      .modal-title span { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+      .modal-close { min-width: var(--touch); width: var(--touch); padding: 0; color: var(--text-muted); background: var(--surface-muted); border-color: var(--border); font-size: 24px; font-weight: 400; }
+      .modal-close:hover { color: var(--text); background: var(--primary-soft); border-color: var(--focus); }
+      .modal-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 20px; background: var(--surface); scrollbar-color: #94a3b8 var(--surface-muted); scrollbar-width: thin; }
+      .creative-table { width: max-content; min-width: 1900px; background: var(--surface); }
+      .creative-table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-muted); box-shadow: 0 1px 0 var(--border); }
+      .creative-table th:first-child, .creative-table td:first-child { min-width: 340px; max-width: 440px; }
+      .creative-link { color: var(--primary); font-weight: 700; text-decoration: none; }
+      .creative-link:hover { color: var(--primary-hover); text-decoration: underline; }
+      .creative-cover { width: 36px; height: 48px; flex: 0 0 auto; object-fit: cover; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 6px; }
+      .creative-copy { min-width: 0; }
+      .creative-copy strong, .creative-copy span { display: block; overflow: hidden; text-overflow: ellipsis; }
+      .creative-copy span { margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+      .detail-loading, .empty { padding: 36px; color: var(--text-muted); text-align: center; }
+      .video-stats-modal { width: min(1120px, calc(100vw - 48px)); height: auto; max-height: 88dvh; }
+      .video-stats-modal .modal-header { flex-basis: 80px; min-height: 80px; }
+      .video-stats-body { overflow: auto; padding: 20px; }
+      .video-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+      .video-result-title { min-width: 0; }
+      .video-result-title a, .video-result-title strong { display: block; color: var(--primary); font-size: 16px; font-weight: 750; text-decoration: none; }
+      .video-result-title a:hover { text-decoration: underline; }
+      .video-result-title span { display: block; margin-top: 5px; color: var(--text-muted); font-size: 12px; }
+      .video-chart-wrap { position: relative; width: 100%; height: 410px; padding: 12px 4px 0; }
+      .video-chart-legend { display: flex; align-items: center; gap: 18px; min-height: 20px; margin: 0 0 24px 8px; color: var(--text-secondary); font-size: 12px; }
+      .video-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .video-chart-dot { width: 8px; height: 8px; border-radius: 50%; }
+      .video-chart-canvas { position: relative; width: 100%; height: 350px; }
+      .video-chart-canvas canvas { width: 100% !important; height: 100% !important; }
+      .video-metrics { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+      .video-metric { min-height: 92px; padding: 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+      .video-metric span { display: block; color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+      .video-metric strong { display: block; margin-top: 8px; color: var(--text); font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+      .admin-modal, .admin-auth-modal { width: min(460px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
+      .admin-body { display: grid; gap: 14px; padding: 20px; }
+      .admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+      .admin-error { min-height: 18px; color: var(--danger); font-size: 12px; }
+      body.modal-open { overflow: hidden; }
+      @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
+      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } }
+      @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } }
+    </style>
+  </head>
+  <body>
+    <header><h1>TikTok GMV Max Report</h1></header>
+    <main>
+      <div id="connectPanel" class="notice hidden">
+        <span id="connectMessage">Kết nối tài khoản TikTok for Business để đọc báo cáo.</span>
+        <a id="connectButton" class="button" href="#" style="margin-left:12px">Kết nối TikTok</a>
+      </div>
+      <div id="error" class="notice error hidden"></div>
+      <form id="filters" class="toolbar">
+        <label class="account-field">TÀI KHOẢN<select id="advertiserId" required></select></label>
+        <label class="shop-field">TIKTOK SHOP<select id="storeId" required></select></label>
+        <label class="date-field">TỪ NGÀY<input id="startDate" type="date" required></label>
+        <label class="date-field">ĐẾN NGÀY<input id="endDate" type="date" required></label>
+        <button id="loadButton" type="submit">Tải báo cáo</button>
+        <span id="updatedAt" class="updated-at"></span>
+      </form>
+      <section id="report" class="hidden">
+        <div id="summary" class="summary"></div>
+        <h2 class="section-title">Dữ liệu theo giờ</h2>
+        <div class="hourly-wrap">
+          <table class="hourly-table">
+            <thead><tr><th>Khung giờ</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>AOV</th><th>ROI</th></tr></thead>
+            <tbody id="hourlyRows"></tbody>
+          </table>
+        </div>
+        <h2 class="section-title">Sản phẩm Available</h2>
+        <form id="videoLookupForm" class="video-search">
+          <input id="videoLookupInput" type="text" inputmode="url" autocomplete="off" placeholder="Dán link video TikTok hoặc Post ID" aria-label="Link video TikTok">
+          <button id="videoLookupButton" type="submit">Tra cứu video</button>
+          <span id="videoLookupError" class="video-search-status" role="alert"></span>
+        </form>
+        <div class="table-wrap">
+          <table class="product-table">
+            <thead><tr><th>Product</th><th>Status</th><th>Optimization mode</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th></tr></thead>
+            <tbody id="productRows"></tbody>
+          </table>
+          <div id="empty" class="empty hidden">Không có dữ liệu trong khoảng ngày này.</div>
+        </div>
+        <h2 class="section-title">Video nên boost thêm ngân sách</h2>
+        <div class="table-wrap">
+          <table class="recommendation-table">
+            <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
+            <tbody id="boostVideoRows"></tbody>
+          </table>
+          <div id="boostVideoEmpty" class="empty">Đang đánh giá video...</div>
+        </div>
+        <h2 class="section-title">Video nên tắt</h2>
+        <div class="table-wrap">
+          <table class="recommendation-table">
+            <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
+            <tbody id="stopVideoRows"></tbody>
+          </table>
+          <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
+        </div>
+      </section>
+    </main>
+    <div id="creativeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="creativeModalTitle">
+      <section class="modal">
+        <header class="modal-header">
+          <div class="modal-title">
+            <h2 id="creativeModalTitle">Campaign analytics</h2>
+            <span id="creativeModalMeta"></span>
+          </div>
+          <button id="creativeModalClose" class="modal-close" type="button" aria-label="Đóng">&times;</button>
+        </header>
+        <div id="creativeModalBody" class="modal-body"></div>
+      </section>
+    </div>
+    <div id="videoStatsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="videoStatsTitle">
+      <section class="modal video-stats-modal">
+        <header class="modal-header">
+          <div class="modal-title">
+            <h2 id="videoStatsTitle">Video analytics</h2>
+            <span id="videoStatsMeta"></span>
+            <span id="videoStatsItemId"></span>
+          </div>
+          <button id="videoStatsClose" class="modal-close" type="button" aria-label="Đóng">&times;</button>
+        </header>
+        <div id="videoStatsBody" class="video-stats-body"></div>
+      </section>
+    </div>
+    <div id="adminAuthModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="adminAuthTitle">
+      <section class="modal admin-auth-modal">
+        <header class="modal-header">
+          <div class="modal-title"><h2 id="adminAuthTitle">Xác thực quản trị</h2></div>
+          <button id="adminAuthClose" class="modal-close" type="button" aria-label="Đóng">&times;</button>
+        </header>
+        <form id="adminAuthForm" class="admin-body">
+          <label>Mật khẩu<input id="adminPassword" type="password" autocomplete="current-password" required></label>
+          <div id="adminAuthError" class="admin-error" role="alert"></div>
+          <button id="adminAuthSubmit" type="submit">Mở quản trị</button>
+        </form>
+      </section>
+    </div>
+    <div id="adminModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
+      <section class="modal admin-modal">
+        <header class="modal-header">
+          <div class="modal-title"><h2 id="adminTitle">Quản trị</h2></div>
+          <button id="adminClose" class="modal-close" type="button" aria-label="Đóng">&times;</button>
+        </header>
+        <div class="admin-body">
+          <div class="admin-actions">
+            <label class="live-toggle"><input id="autoRefresh" type="checkbox" checked>Tự cập nhật 5 phút</label>
+            <button id="disconnectButton" class="button secondary" type="button">Ngắt kết nối</button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <script src="/api-adapter.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script>
+      var form = document.getElementById('filters');
+      var button = document.getElementById('loadButton');
+      var creativeRequestId = 0;
+      var autoRefreshTimer = null;
+      var productVideoCache = {};
+      var prefetchGeneration = 0;
+      var currentReportProducts = [];
+      var currentAvailableProductCount = 0;
+      var currentSummaryContexts = [];
+      var currentReportTotals = null;
+      var currentReportHourly = [];
+      var currentComparison = null;
+      var currentCreativeSummary = null;
+      var videoContextByItemId = {};
+      var currentVideoItemId = '';
+      var currentVideoUrl = '';
+      var currentVideoEndDate = '';
+      var currentVideoMetadata = null;
+      var videoStatsRequestId = 0;
+      var comparisonRequestId = 0;
+      var videoStatsChart = null;
+      var videoHoverLinePlugin = {
+        id: 'videoHoverLine',
+        afterDraw: function (chart) {
+          var active = chart.tooltip && chart.tooltip.getActiveElements();
+          if (!active || !active.length) return;
+          var x = active[0].element.x;
+          var area = chart.chartArea;
+          var context = chart.ctx;
+          context.save();
+          context.beginPath();
+          context.moveTo(x, area.top);
+          context.lineTo(x, area.bottom);
+          context.lineWidth = 1;
+          context.strokeStyle = 'rgba(71, 85, 105, .7)';
+          context.stroke();
+          context.restore();
+        }
+      };
+      var defaultAdvertiserId = '7535665207776231441';
+      var defaultStoreCode = 'VNLC33LWAS';
+
+      google.script.run.withSuccessHandler(function (state) {
+        document.getElementById('startDate').value = state.startDate;
+        document.getElementById('endDate').value = state.endDate;
+        defaultAdvertiserId = state.defaultAdvertiserId || defaultAdvertiserId;
+        defaultStoreCode = state.defaultStoreCode || defaultStoreCode;
+        document.getElementById('connectPanel').classList.toggle('hidden', state.connected);
+        form.classList.toggle('hidden', !state.connected);
+        if (state.connectionError) document.getElementById('connectMessage').textContent = state.connectionError;
+        if (state.connected) {
+          setAutoRefresh(true);
+          setAdvertisers(state.advertisers);
+          if (state.advertisers.length) loadStores();
+          else showError({ message: 'Không tìm thấy tài khoản quảng cáo được cấp quyền.' });
+        } else {
+          prepareConnectLink();
+        }
+      }).getInitialState();
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        requestReport(true);
+      });
+
+      document.getElementById('disconnectButton').addEventListener('click', function () {
+        google.script.run.withSuccessHandler(function () { window.top.location.reload(); }).disconnectTikTok();
+      });
+
+      function openAdminAuthModal() {
+        document.getElementById('adminAuthError').textContent = '';
+        document.getElementById('adminPassword').value = '';
+        document.getElementById('adminAuthModal').classList.remove('hidden');
+        document.body.classList.add('modal-open');
+        setTimeout(function () { document.getElementById('adminPassword').focus(); }, 0);
+      }
+
+      function closeAdminModals() {
+        document.getElementById('adminAuthModal').classList.add('hidden');
+        document.getElementById('adminModal').classList.add('hidden');
+        syncModalOpenState();
+      }
+
+      document.getElementById('adminAuthForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var submit = document.getElementById('adminAuthSubmit');
+        submit.disabled = true;
+        google.script.run
+          .withSuccessHandler(function (valid) {
+            submit.disabled = false;
+            if (!valid) {
+              document.getElementById('adminAuthError').textContent = 'Mật khẩu không đúng.';
+              document.getElementById('adminPassword').select();
+              return;
+            }
+            document.getElementById('adminPassword').value = '';
+            document.getElementById('adminAuthModal').classList.add('hidden');
+            document.getElementById('adminModal').classList.remove('hidden');
+          })
+          .withFailureHandler(function (error) {
+            submit.disabled = false;
+            document.getElementById('adminAuthError').textContent = error.message || String(error);
+          })
+          .verifyAdminPassword(document.getElementById('adminPassword').value);
+      });
+      document.getElementById('adminAuthClose').addEventListener('click', closeAdminModals);
+      document.getElementById('adminClose').addEventListener('click', closeAdminModals);
+      document.getElementById('adminAuthModal').addEventListener('click', function (event) {
+        if (event.target === event.currentTarget) closeAdminModals();
+      });
+      document.getElementById('adminModal').addEventListener('click', function (event) {
+        if (event.target === event.currentTarget) closeAdminModals();
+      });
+
+      document.getElementById('advertiserId').addEventListener('change', loadStores);
+      document.getElementById('autoRefresh').addEventListener('change', function (event) {
+        setAutoRefresh(event.target.checked);
+      });
+
+      function setAutoRefresh(enabled) {
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        autoRefreshTimer = enabled ? setInterval(function () { requestReport(true); }, 300000) : null;
+      }
+
+      function loadStores() {
+        setLoading(true);
+        hideError();
+        google.script.run
+          .withSuccessHandler(function (stores) {
+            setLoading(false);
+            setStores(stores);
+            if (stores.length) requestReport(false);
+            else showError({ message: 'Không tìm thấy TikTok Shop hỗ trợ GMV Max cho tài khoản này.' });
+          })
+          .withFailureHandler(showError)
+          .getGmvMaxStores(document.getElementById('advertiserId').value);
+      }
+
+      function prepareConnectLink() {
+        var link = document.getElementById('connectButton');
+        link.style.pointerEvents = 'none';
+        link.style.opacity = '.55';
+        google.script.run
+          .withSuccessHandler(function (url) {
+            link.href = url;
+            link.style.pointerEvents = '';
+            link.style.opacity = '';
+          })
+          .withFailureHandler(showError)
+          .getTikTokConnectUrl();
+      }
+
+      function setAdvertisers(advertisers) {
+        var select = document.getElementById('advertiserId');
+        select.replaceChildren();
+        advertisers.forEach(function (advertiser) {
+          var option = document.createElement('option');
+          option.value = advertiser.advertiserId;
+          option.textContent = shortenAccountName(advertiser.advertiserName) + ' (' + advertiser.advertiserId + ')';
+          option.title = advertiser.advertiserName + ' (' + advertiser.advertiserId + ')';
+          option.selected = advertiser.advertiserId === defaultAdvertiserId;
+          select.appendChild(option);
+        });
+      }
+
+      function shortenAccountName(name) {
+        var normalized = String(name || '').trim();
+        if (normalized === 'AC TRADING AND SERVICES JOINT STOCK COMPANY') return 'AC TRADING';
+        return normalized.length > 24 ? normalized.slice(0, 23) + '…' : normalized;
+      }
+
+      function setStores(stores) {
+        var select = document.getElementById('storeId');
+        select.replaceChildren();
+        stores.forEach(function (store) {
+          var option = document.createElement('option');
+          option.value = store.storeId;
+          option.textContent = store.storeName + (store.storeCode ? ' (' + store.storeCode + ')' : '');
+          option.selected = store.storeCode === defaultStoreCode;
+          select.appendChild(option);
+        });
+      }
+
+      function requestReport(forceCreativeRefresh) {
+        if (button.disabled) return;
+        setLoading(true);
+        hideError();
+        google.script.run
+          .withSuccessHandler(function (data) {
+            renderReport(data, forceCreativeRefresh === true);
+          })
+          .withFailureHandler(showError)
+          .loadReport({
+            advertiserId: document.getElementById('advertiserId').value,
+            storeId: document.getElementById('storeId').value,
+            startDate: document.getElementById('startDate').value,
+            endDate: document.getElementById('endDate').value
+          });
+      }
+
+      function renderReport(data, forceCreativeRefresh) {
+        setLoading(false);
+        document.getElementById('updatedAt').textContent = 'Cập nhật: ' +
+          new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(data.generatedAt));
+        document.getElementById('report').classList.remove('hidden');
+        renderVideoRecommendations(null);
+        var totals = data.totals;
+        var items = [
+          ['Cost', moneyWhole(totals.cost), 'cost'],
+          ['SKU orders', integer(totals.orders), 'orders'],
+          ['Cost per order', moneyWhole(totals.costPerOrder), 'costPerOrder'],
+          ['Gross revenue', moneyWhole(totals.grossRevenue), 'grossRevenue'],
+          ['ROI', number(totals.roi), 'roi'],
+          ['Total creatives', 'Đang tải', 'totalCreatives'],
+          ['Impressions', 'Đang tải', 'impressions'],
+          ['Click', 'Đang tải', 'traffic']
+        ];
+        var summary = document.getElementById('summary');
+        summary.replaceChildren();
+        items.forEach(function (item) {
+          var box = document.createElement('div'); box.className = 'metric metric-' + item[2];
+          var label = document.createElement('span'); label.textContent = item[0];
+          var value = document.createElement('strong'); value.id = 'metric-' + item[2]; value.textContent = item[1];
+          box.append(label, value);
+          if (['cost', 'orders', 'costPerOrder', 'grossRevenue', 'roi',
+              'totalCreatives', 'impressions', 'traffic'].indexOf(item[2]) !== -1) {
+            var change = document.createElement('span');
+            change.id = 'metric-change-' + item[2];
+            change.className = 'metric-change neutral';
+            change.textContent = 'Đang so sánh...';
+            box.appendChild(change);
+          }
+          summary.appendChild(box);
+        });
+        currentReportHourly = data.hourly || [];
+        renderHourlyRows(currentReportHourly);
+
+        var rows = document.getElementById('productRows');
+        rows.replaceChildren();
+        data.products.forEach(function (product) {
+          var metric = product.metrics;
+          var row = document.createElement('tr');
+          var productCell = document.createElement('td');
+          var productWrap = document.createElement('div'); productWrap.className = 'product-name';
+          if (product.productImageUrl) {
+            var productImage = document.createElement('img');
+            productImage.className = 'product-image'; productImage.src = product.productImageUrl; productImage.alt = '';
+            productImage.addEventListener('error', function () { productImage.remove(); });
+            productWrap.appendChild(productImage);
+          }
+          var productCopy = document.createElement('div');
+          var productButton = document.createElement('button');
+          productButton.type = 'button';
+          productButton.className = 'campaign-button';
+          productButton.textContent = product.productName;
+          productButton.addEventListener('click', function () {
+            openProductVideos(product);
+          });
+          var productMeta = document.createElement('span');
+          productMeta.className = 'campaign-meta'; productMeta.textContent = 'ID: ' + product.itemGroupId;
+          var campaignMeta = document.createElement('span');
+          campaignMeta.className = 'campaign-meta';
+          campaignMeta.textContent = 'Campaign: ' + (product.campaignName || product.campaignId);
+          productCopy.append(productButton, productMeta, campaignMeta); productWrap.appendChild(productCopy);
+          productCell.appendChild(productWrap); row.appendChild(productCell);
+          var statusCell = document.createElement('td');
+          var statusBadge = document.createElement('span');
+          var displayStatus = String(product.displayStatus || product.status || 'AVAILABLE').toUpperCase();
+          statusBadge.className = 'status-badge' + (displayStatus === 'AVAILABLE' ? '' : ' inactive');
+          statusBadge.textContent = displayStatus === 'AVAILABLE' ? 'Available' :
+            (displayStatus === 'INACTIVE' ? 'Inactive' : displayStatus);
+          statusCell.appendChild(statusBadge); row.appendChild(statusCell);
+          [product.optimizationMode, moneyWhole(metric.cost), integer(metric.orders), moneyWhole(metric.costPerOrder),
+            moneyWhole(metric.grossRevenue)].forEach(function (value) {
+            var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+          });
+          var trafficCell = document.createElement('td');
+          trafficCell.id = productTrafficElementId(product);
+          trafficCell.textContent = 'Đang tải';
+          row.appendChild(trafficCell);
+          var roiCell = document.createElement('td'); roiCell.textContent = number(metric.roi); row.appendChild(roiCell);
+          rows.appendChild(row);
+        });
+        document.getElementById('empty').classList.toggle('hidden', data.products.length > 0);
+        currentReportProducts = data.products.slice();
+        currentAvailableProductCount = Number(data.availableProductCount) || 0;
+        currentSummaryContexts = (data.creativeContexts || data.products).slice();
+        currentReportTotals = totals;
+        currentComparison = null;
+        currentCreativeSummary = null;
+        videoContextByItemId = {};
+        var rememberedSummary = readCreativeSummaryMemory(currentSummaryContexts);
+        if (rememberedSummary) renderCreativeSummaries(rememberedSummary);
+        requestCreativeSummaries(currentSummaryContexts.slice(), forceCreativeRefresh);
+        requestYesterdayComparison(data);
+      }
+
+      function renderHourlyRows(hours) {
+        var rows = document.getElementById('hourlyRows');
+        rows.replaceChildren();
+        hours.forEach(function (hour) {
+          var row = document.createElement('tr');
+          var label = document.createElement('td'); label.textContent = hour.label; row.appendChild(label);
+          [
+            ['cost', moneyWhole(hour.metrics.cost)],
+            ['orders', integer(hour.metrics.orders)],
+            ['costPerOrder', moneyWhole(hour.metrics.costPerOrder)],
+            ['grossRevenue', moneyWhole(hour.metrics.grossRevenue)],
+            ['aov', hour.metrics.orders
+              ? moneyWhole(hour.metrics.grossRevenue / hour.metrics.orders)
+              : '-'],
+            ['roi', number(hour.metrics.roi)]
+          ].forEach(function (entry) {
+            var cell = document.createElement('td');
+            cell.textContent = entry[1];
+            row.appendChild(cell);
+          });
+          rows.appendChild(row);
+        });
+      }
+
+      function openProductVideos(product) {
+        var requestId = ++creativeRequestId;
+        var modal = document.getElementById('creativeModal');
+        var body = document.getElementById('creativeModalBody');
+        document.getElementById('creativeModalTitle').textContent = product.productName;
+        document.getElementById('creativeModalMeta').textContent =
+          'Product ID: ' + product.itemGroupId + ' · Campaign ID: ' + product.campaignId;
+        body.replaceChildren();
+        var loading = document.createElement('div');
+        loading.className = 'detail-loading';
+        loading.textContent = 'Đang tải danh sách video...';
+        body.appendChild(loading);
+        modal.classList.remove('hidden');
+        document.body.classList.add('modal-open');
+
+        var cacheKey = productVideoCacheKey(product);
+        if (productVideoCache[cacheKey]) {
+          renderCreativeDetail(body, productVideoCache[cacheKey]);
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function (data) {
+            productVideoCache[cacheKey] = data;
+            if (requestId === creativeRequestId) renderCreativeDetail(body, data);
+          })
+          .withFailureHandler(function (error) {
+            if (requestId !== creativeRequestId) return;
+            loading.textContent = error.message || String(error);
+            loading.style.color = '#b3261e';
+          })
+          .loadProductVideos(productVideoRequest(product, false));
+      }
+
+      function productVideoCacheKey(product) {
+        return [
+          document.getElementById('advertiserId').value,
+          document.getElementById('storeId').value,
+          product.campaignId,
+          product.itemGroupId,
+          document.getElementById('startDate').value,
+          document.getElementById('endDate').value
+        ].join('|');
+      }
+
+      function productVideoRequest(product, forceRefresh) {
+        return {
+          advertiserId: document.getElementById('advertiserId').value,
+          storeId: document.getElementById('storeId').value,
+          campaignId: product.campaignId,
+          itemGroupId: product.itemGroupId,
+          startDate: document.getElementById('startDate').value,
+          endDate: document.getElementById('endDate').value,
+          forceRefresh: forceRefresh
+        };
+      }
+
+      function requestCreativeSummaries(allContexts, forceRefresh) {
+        var generation = ++prefetchGeneration;
+        if (!allContexts.length) {
+          renderCreativeSummaries({
+            summaries: [], totalCreatives: 0, impressions: 0, traffic: 0
+          });
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(function (data) {
+            if (generation !== prefetchGeneration) return;
+            renderCreativeSummaries(data);
+          })
+          .withFailureHandler(function (error) {
+            if (generation !== prefetchGeneration) return;
+            document.getElementById('metric-totalCreatives').textContent = '-';
+            document.getElementById('metric-impressions').textContent = '-';
+            document.getElementById('metric-traffic').textContent = '-';
+            currentReportProducts.forEach(function (product) {
+              var cell = document.getElementById(productTrafficElementId(product));
+              if (cell) cell.textContent = '-';
+            });
+            renderVideoRecommendations({ boost: [], stop: [] }, 'Không tải được dữ liệu đánh giá.');
+            console.error(error && (error.message || error));
+          })
+          .loadCreativeSummaries({
+            advertiserId: document.getElementById('advertiserId').value,
+            storeId: document.getElementById('storeId').value,
+            products: productContexts(currentReportProducts),
+            allContexts: productContexts(allContexts),
+            availableProducts: currentAvailableProductCount,
+            startDate: document.getElementById('startDate').value,
+            endDate: document.getElementById('endDate').value,
+            forceRefresh: forceRefresh === true
+          });
+      }
+
+      function renderCreativeSummaries(data) {
+        var creativeElement = document.getElementById('metric-totalCreatives');
+        var impressionsElement = document.getElementById('metric-impressions');
+        var trafficElement = document.getElementById('metric-traffic');
+        if (!creativeElement || !impressionsElement || !trafficElement) return;
+        creativeElement.textContent = integer(data.totalCreatives);
+        impressionsElement.textContent = integer(data.impressions);
+        trafficElement.textContent = integer(data.traffic);
+        currentCreativeSummary = data;
+        renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
+        applyHourlyTraffic(data.hourlyTraffic || []);
+        videoContextByItemId = {};
+        (data.summaries || []).forEach(function (item) {
+          var cell = document.getElementById(productTrafficElementId(item));
+          if (cell) cell.textContent = integer(item.traffic);
+          (item.itemIds || []).forEach(function (itemId) {
+            videoContextByItemId[String(itemId)] = {
+              campaignId: item.campaignId,
+              itemGroupId: item.itemGroupId
+            };
+          });
+        });
+        writeCreativeSummaryMemory(data);
+        if (currentComparison) renderYesterdayComparison(currentComparison);
+      }
+
+      function renderVideoRecommendations(evaluation, errorMessage) {
+        renderVideoRecommendationTable(
+          'boostVideoRows', 'boostVideoEmpty', evaluation && evaluation.boost,
+          errorMessage || 'Không có video đủ tín hiệu để đề xuất boost.'
+        );
+        renderVideoRecommendationTable(
+          'stopVideoRows', 'stopVideoEmpty', evaluation && evaluation.stop,
+          errorMessage || 'Không có video đủ tín hiệu để đề xuất tắt.'
+        );
+      }
+
+      function renderVideoRecommendationTable(rowsId, emptyId, recommendations, emptyMessage) {
+        var rows = document.getElementById(rowsId);
+        var empty = document.getElementById(emptyId);
+        if (!rows || !empty) return;
+        rows.replaceChildren();
+        if (recommendations == null) {
+          empty.textContent = 'Đang đánh giá video...';
+          empty.classList.remove('hidden');
+          return;
+        }
+        empty.textContent = emptyMessage;
+        empty.classList.toggle('hidden', recommendations.length > 0);
+        recommendations.forEach(function (video) {
+          var row = document.createElement('tr');
+          var videoCell = document.createElement('td');
+          var videoButton = document.createElement('button');
+          videoButton.type = 'button';
+          videoButton.className = 'recommendation-video';
+          videoButton.textContent = video.itemId;
+          videoButton.addEventListener('click', function () {
+            openRecommendationVideo(video.itemId);
+          });
+          videoCell.appendChild(videoButton);
+          row.appendChild(videoCell);
+
+          var campaignCell = document.createElement('td');
+          campaignCell.textContent = recommendationCampaignNames(video.campaignIds || []);
+          row.appendChild(campaignCell);
+          [
+            moneyWhole(video.cost), integer(video.orders), moneyWhole(video.costPerOrder),
+            moneyWhole(video.grossRevenue), integer(video.traffic), number(video.roi)
+          ].forEach(function (value) {
+            var cell = document.createElement('td');
+            cell.textContent = value;
+            row.appendChild(cell);
+          });
+          var reasonCell = document.createElement('td');
+          reasonCell.className = 'recommendation-reason';
+          reasonCell.textContent = (video.reason || '-').replace(/;\s*/g, '\n');
+          row.appendChild(reasonCell);
+          rows.appendChild(row);
+        });
+      }
+
+      function recommendationCampaignNames(campaignIds) {
+        var names = [];
+        campaignIds.forEach(function (campaignId) {
+          var product = currentReportProducts.filter(function (item) {
+            return String(item.campaignId) === String(campaignId);
+          })[0];
+          var name = product && product.campaignName || campaignId;
+          if (name && names.indexOf(name) === -1) names.push(name);
+        });
+        return names.join(', ') || '-';
+      }
+
+      function openRecommendationVideo(itemId) {
+        currentVideoItemId = String(itemId);
+        currentVideoMetadata = null;
+        currentVideoUrl = 'https://www.tiktok.com/player/v1/' + currentVideoItemId;
+        currentVideoEndDate = document.getElementById('endDate').value;
+        document.getElementById('videoStatsItemId').textContent = 'Post ID: ' + currentVideoItemId;
+        document.getElementById('videoStatsModal').classList.remove('hidden');
+        document.body.classList.add('modal-open');
+        requestVideoStats();
+      }
+
+      function applyHourlyTraffic(hourlyTraffic) {
+        var currentByHour = {};
+        currentReportHourly.forEach(function (hour) { currentByHour[hour.hour] = hour; });
+        hourlyTraffic.forEach(function (item) {
+          if (!item.available) return;
+          var hour = currentByHour[item.hour];
+          if (hour) {
+            hour.metrics.traffic = Number(item.traffic) || 0;
+            hour.metrics.trafficAvailable = true;
+          }
+          var cell = document.getElementById('hour-traffic-' + item.hour);
+          if (cell) cell.textContent = integer(item.traffic);
+        });
+      }
+
+      function creativeSummaryMemoryKey(products) {
+        return 'gmv-summary|' + [
+          document.getElementById('advertiserId').value,
+          document.getElementById('storeId').value,
+          document.getElementById('startDate').value,
+          document.getElementById('endDate').value,
+          productContexts(products).map(function (item) {
+            return item.campaignId + ':' + item.itemGroupId + ':' +
+              (item.campaignActive === false ? 'off' : 'on');
+          }).sort().join(',')
+        ].join('|');
+      }
+
+      function readCreativeSummaryMemory(products) {
+        try {
+          var value = sessionStorage.getItem(creativeSummaryMemoryKey(products));
+          return value ? JSON.parse(value) : null;
+        } catch (ignored) {
+          return null;
+        }
+      }
+
+      function writeCreativeSummaryMemory(data) {
+        try {
+          sessionStorage.setItem(creativeSummaryMemoryKey(currentSummaryContexts), JSON.stringify(data));
+        } catch (ignored) {}
+      }
+
+      function productContexts(products) {
+        return products.map(function (product) {
+          return {
+            campaignId: product.campaignId,
+            itemGroupId: product.itemGroupId,
+            campaignActive: product.campaignActive !== false
+          };
+        });
+      }
+
+      function requestYesterdayComparison(data) {
+        if (data.startDate !== data.endDate) {
+          ['cost', 'orders', 'costPerOrder', 'grossRevenue', 'roi',
+            'totalCreatives', 'impressions', 'traffic'].forEach(function (key) {
+            var element = document.getElementById('metric-change-' + key);
+            if (element) element.textContent = 'So sánh áp dụng cho báo cáo 1 ngày';
+          });
+          return;
+        }
+        var requestId = ++comparisonRequestId;
+        google.script.run
+          .withSuccessHandler(function (comparison) {
+            if (requestId === comparisonRequestId) renderYesterdayComparison(comparison);
+          })
+          .withFailureHandler(function () {
+            if (requestId !== comparisonRequestId) return;
+            ['cost', 'orders', 'costPerOrder', 'grossRevenue', 'roi',
+              'totalCreatives', 'impressions', 'traffic'].forEach(function (key) {
+              var element = document.getElementById('metric-change-' + key);
+              if (element) element.textContent = 'Không có dữ liệu so sánh';
+            });
+          })
+          .loadYesterdayComparison({
+            advertiserId: document.getElementById('advertiserId').value,
+            storeId: document.getElementById('storeId').value,
+            endDate: data.endDate
+          });
+      }
+
+      function renderYesterdayComparison(data) {
+        if (!currentReportTotals) return;
+        currentComparison = data;
+        var summaryLabel = data.summaryComparisonPeriod === 'same_hour'
+          ? '% so v\u1edbi c\u00f9ng gi\u1edd h\u00f4m qua'
+          : '% so v\u1edbi h\u00f4m qua';
+        var impressionsLabel = data.impressionsComparisonPeriod === 'same_hour'
+          ? '% so v\u1edbi c\u00f9ng gi\u1edd h\u00f4m qua'
+          : '% so v\u1edbi h\u00f4m qua';
+        var configs = [
+          ['cost', currentReportTotals.cost, data.metrics.cost, true],
+          ['orders', currentReportTotals.orders, data.metrics.orders, false],
+          ['costPerOrder', currentReportTotals.costPerOrder, data.metrics.costPerOrder, true],
+          ['grossRevenue', currentReportTotals.grossRevenue, data.metrics.grossRevenue, false],
+          ['roi', currentReportTotals.roi, data.metrics.roi, false]
+        ];
+        if (currentCreativeSummary) {
+          configs.push(
+            ['totalCreatives', currentCreativeSummary.totalCreatives, data.totalCreatives, false, summaryLabel],
+            ['impressions', currentCreativeSummary.impressions, data.impressions, false, impressionsLabel],
+            ['traffic', currentCreativeSummary.traffic, data.traffic, false, summaryLabel]
+          );
+        }
+        configs.forEach(function (config) {
+          var element = document.getElementById('metric-change-' + config[0]);
+          if (!element) return;
+          var current = Number(config[1]);
+          var previous = Number(config[2]);
+          if (config[1] == null || config[2] == null ||
+              !isFinite(current) || !isFinite(previous)) {
+            element.className = 'metric-change neutral';
+            element.textContent = 'Không có mốc hôm qua';
+            return;
+          }
+          if (previous === 0) {
+            var zeroLabel = (config[4] || '% so với cùng giờ hôm qua').replace(/^% /, '');
+            if (current === 0) {
+              element.className = 'metric-change neutral';
+              element.textContent = 'Không đổi ' + zeroLabel;
+            } else {
+              element.className = 'metric-change ' + (config[3] ? 'bad' : 'good');
+              element.textContent = 'Phát sinh mới ' + zeroLabel;
+            }
+            return;
+          }
+          var delta = (current - previous) / Math.abs(previous) * 100;
+          var improved = config[3] ? delta < 0 : delta > 0;
+          element.className = 'metric-change ' + (Math.abs(delta) < .005 ? 'neutral' : (improved ? 'good' : 'bad'));
+          element.textContent = (delta >= 0 ? '↑ ' : '↓ ') +
+            new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(Math.abs(delta)) +
+            (config[4] || '% so với cùng giờ hôm qua');
+        });
+      }
+
+      function productTrafficElementId(product) {
+        return 'product-traffic-' + product.campaignId + '-' + product.itemGroupId;
+      }
+
+      function closeCreativeModal() {
+        creativeRequestId += 1;
+        document.getElementById('creativeModal').classList.add('hidden');
+        syncModalOpenState();
+      }
+
+      document.getElementById('creativeModalClose').addEventListener('click', closeCreativeModal);
+      document.getElementById('creativeModal').addEventListener('click', function (event) {
+        if (event.target === event.currentTarget) closeCreativeModal();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          closeCreativeModal();
+          closeVideoStatsModal();
+          closeAdminModals();
+          return;
+        }
+        var target = event.target;
+        var isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
+        if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'i') {
+          event.preventDefault();
+          openAdminAuthModal();
+        }
+      });
+
+      document.getElementById('videoLookupForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var raw = document.getElementById('videoLookupInput').value.trim();
+        var itemId = extractVideoItemId(raw);
+        var error = document.getElementById('videoLookupError');
+        if (!itemId) {
+          error.textContent = 'Link video hoặc Post ID không hợp lệ.';
+          return;
+        }
+        error.textContent = '';
+        currentVideoItemId = itemId;
+        currentVideoMetadata = null;
+        currentVideoUrl = /^https?:\/\//i.test(raw) ? raw : 'https://www.tiktok.com/player/v1/' + itemId;
+        currentVideoEndDate = document.getElementById('endDate').value;
+        document.getElementById('videoStatsItemId').textContent = 'Post ID: ' + itemId;
+        document.getElementById('videoStatsModal').classList.remove('hidden');
+        document.body.classList.add('modal-open');
+        requestVideoStats();
+      });
+
+      document.getElementById('videoStatsClose').addEventListener('click', closeVideoStatsModal);
+      document.getElementById('videoStatsModal').addEventListener('click', function (event) {
+        if (event.target === event.currentTarget) closeVideoStatsModal();
+      });
+
+      function extractVideoItemId(value) {
+        var pathMatch = value.match(/\/video\/(\d{19,30})/i);
+        if (pathMatch) return pathMatch[1];
+        var idMatch = value.match(/(?:^|[^\d])(\d{19,30})(?:[^\d]|$)/);
+        return idMatch ? idMatch[1] : '';
+      }
+
+      function videoMetadataContexts(itemId) {
+        var contexts = [];
+        var exact = videoContextByItemId[String(itemId)];
+        if (exact) contexts.push(exact);
+        productContexts(currentReportProducts).forEach(function (context) {
+          var exists = contexts.some(function (item) {
+            return item.campaignId === context.campaignId && item.itemGroupId === context.itemGroupId;
+          });
+          if (!exists) contexts.push(context);
+        });
+        return contexts;
+      }
+
+      function requestVideoStats() {
+        if (!currentVideoItemId) return;
+        var endDate = currentVideoEndDate || document.getElementById('endDate').value;
+        var body = document.getElementById('videoStatsBody');
+        if (!endDate) {
+          body.innerHTML = '<div class="detail-loading">Ngày kết thúc báo cáo không hợp lệ.</div>';
+          return;
+        }
+        var requestId = ++videoStatsRequestId;
+        body.innerHTML = '<div class="detail-loading">Đang tải số liệu video...</div>';
+        requestVideoMetadata(requestId, endDate);
+        google.script.run
+          .withSuccessHandler(function (data) {
+            if (requestId !== videoStatsRequestId) return;
+            renderVideoStats(body, data);
+          })
+          .withFailureHandler(function (error) {
+            if (requestId !== videoStatsRequestId) return;
+            body.innerHTML = '';
+            var message = document.createElement('div');
+            message.className = 'detail-loading';
+            message.style.color = 'var(--danger)';
+            message.textContent = error.message || String(error);
+            body.appendChild(message);
+          })
+          .loadVideoStats({
+            advertiserId: document.getElementById('advertiserId').value,
+            storeId: document.getElementById('storeId').value,
+            itemId: currentVideoItemId,
+            endDate: endDate,
+            metadataContexts: videoMetadataContexts(currentVideoItemId),
+            forceRefresh: false
+          });
+      }
+
+      function requestVideoMetadata(requestId, endDate) {
+        var contexts = videoMetadataContexts(currentVideoItemId);
+        if (!contexts.length) return;
+        google.script.run
+          .withSuccessHandler(function (data) {
+            if (requestId !== videoStatsRequestId || !data || !data.video) return;
+            currentVideoMetadata = data.video;
+            applyVideoMetadata(data.video);
+          })
+          .withFailureHandler(function () {})
+          .loadVideoMetadata({
+            advertiserId: document.getElementById('advertiserId').value,
+            storeId: document.getElementById('storeId').value,
+            itemId: currentVideoItemId,
+            endDate: endDate,
+            metadataContexts: contexts
+          });
+      }
+
+      function renderVideoStats(container, data) {
+        container.replaceChildren();
+        document.getElementById('videoStatsMeta').textContent = data.startDate + ' - ' + data.endDate;
+        if (!data.video) {
+          var empty = document.createElement('div');
+          empty.className = 'detail-loading';
+          empty.textContent = 'Không có số liệu cho video trong khoảng ngày này.';
+          container.appendChild(empty);
+          return;
+        }
+        var video = currentVideoMetadata || data.video;
+        var head = document.createElement('div'); head.className = 'video-result-head';
+        var title = document.createElement('div'); title.className = 'video-result-title';
+        var link = document.createElement('a');
+        link.id = 'videoResultLink';
+        link.href = currentVideoUrl || video.videoUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        link.textContent = video.name || ('Video ' + video.itemId);
+        var meta = document.createElement('span');
+        meta.id = 'videoResultMeta';
+        meta.textContent = videoMetadataLabel(video);
+        title.append(link, meta); head.appendChild(title); container.appendChild(head);
+
+        var chartWrap = document.createElement('div'); chartWrap.className = 'video-chart-wrap';
+        var legend = document.createElement('div'); legend.className = 'video-chart-legend';
+        legend.innerHTML =
+          '<span><i class="video-chart-dot" style="background:#009e9a"></i>Cost</span>' +
+          '<span><i class="video-chart-dot" style="background:#ffb224"></i>SKU orders (Current shop)</span>';
+        var canvasWrap = document.createElement('div'); canvasWrap.className = 'video-chart-canvas';
+        var canvas = document.createElement('canvas');
+        canvas.setAttribute('aria-label', 'Biểu đồ Cost và SKU orders trong 30 ngày');
+        canvasWrap.appendChild(canvas); chartWrap.append(legend, canvasWrap); container.appendChild(chartWrap);
+        renderVideoChart(canvas, data.daily || []);
+      }
+
+      function videoMetadataLabel(video) {
+        return [
+          video.accountName || 'Đang tải tài khoản',
+          video.status ? formatCreativeStatus(video.status) : '',
+          'GMV Max Creatives'
+        ].filter(Boolean).join(' · ');
+      }
+
+      function applyVideoMetadata(video) {
+        var link = document.getElementById('videoResultLink');
+        var meta = document.getElementById('videoResultMeta');
+        if (link) {
+          link.textContent = video.name || ('Video ' + currentVideoItemId);
+          link.href = currentVideoUrl || video.videoUrl;
+        }
+        if (meta) meta.textContent = videoMetadataLabel(video);
+      }
+
+      function renderVideoChart(canvas, daily) {
+        if (videoStatsChart) videoStatsChart.destroy();
+        if (typeof Chart === 'undefined') {
+          canvas.parentNode.textContent = 'Không tải được thư viện biểu đồ.';
+          return;
+        }
+        var labels = daily.map(function (point) {
+          return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit' })
+            .format(new Date(point.date + 'T00:00:00Z'));
+        });
+        videoStatsChart = new Chart(canvas, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Cost', data: daily.map(function (point) { return point.cost; }),
+                borderColor: '#009e9a', backgroundColor: '#009e9a', yAxisID: 'cost',
+                borderWidth: 2, pointRadius: 1.5, pointHoverRadius: 2.5, tension: .2
+              },
+              {
+                label: 'SKU orders (Current shop)', data: daily.map(function (point) { return point.orders; }),
+                borderColor: '#ffb224', backgroundColor: '#ffb224', yAxisID: 'orders',
+                borderWidth: 2, pointRadius: 1.5, pointHoverRadius: 2.5, tension: .2
+              }
+            ]
+          },
+          plugins: [videoHoverLinePlugin],
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  title: function (items) {
+                    var point = daily[items[0].dataIndex];
+                    return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium' })
+                      .format(new Date(point.date + 'T00:00:00Z'));
+                  },
+                  label: function (context) {
+                    return context.datasetIndex === 0
+                      ? ' Cost: ' + integer(context.raw) + ' VND'
+                      : ' SKU orders (Current shop): ' + integer(context.raw);
+                  }
+                }
+              }
+            },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#64748b' } },
+              cost: {
+                type: 'linear', position: 'left', beginAtZero: true,
+                title: { display: true, text: 'Cost' },
+                ticks: { color: '#64748b', callback: compactNumber }
+              },
+              orders: {
+                type: 'linear', position: 'right', beginAtZero: true,
+                title: { display: true, text: 'SKU orders' },
+                grid: { drawOnChartArea: false }, ticks: { color: '#64748b', precision: 0 }
+              }
+            }
+          }
+        });
+      }
+
+      function compactNumber(value) {
+        return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+      }
+
+      function closeVideoStatsModal() {
+        videoStatsRequestId += 1;
+        if (videoStatsChart) {
+          videoStatsChart.destroy();
+          videoStatsChart = null;
+        }
+        document.getElementById('videoStatsModal').classList.add('hidden');
+        syncModalOpenState();
+      }
+
+      function syncModalOpenState() {
+        var hasOpenModal = ['creativeModal', 'videoStatsModal', 'adminAuthModal', 'adminModal']
+          .some(function (id) { return !document.getElementById(id).classList.contains('hidden'); });
+        document.body.classList.toggle('modal-open', hasOpenModal);
+      }
+
+      function renderCreativeDetail(container, data) {
+        container.replaceChildren();
+        document.getElementById('creativeModalMeta').textContent =
+          'Product ID: ' + data.itemGroupId + ' · Campaign ID: ' + data.campaignId +
+          ' · ' + integer(data.videos.length) + ' creatives';
+        if (!data.videos.length) {
+          var empty = document.createElement('div');
+          empty.className = 'detail-loading';
+          empty.textContent = 'Không có dữ liệu video trong khoảng ngày này.';
+          container.appendChild(empty);
+          return;
+        }
+
+        var table = document.createElement('table');
+        table.className = 'creative-table';
+        var head = document.createElement('thead');
+        var headRow = document.createElement('tr');
+        ['Creative', 'TikTok account', 'Status', 'Cost', 'SKU orders', 'Cost / order',
+          'Gross revenue', 'ROI', 'Product ad impressions', 'Product ad clicks',
+          'Product ad click rate', 'Ad click rate', 'Ad conversion rate', '2s view rate',
+          '6s view rate', '25% view rate', '50% view rate', '75% view rate',
+          '100% view rate'].forEach(function (label) {
+          var cell = document.createElement('th'); cell.textContent = label; headRow.appendChild(cell);
+        });
+        head.appendChild(headRow); table.appendChild(head);
+        var body = document.createElement('tbody');
+        data.videos.forEach(function (video) {
+          var row = document.createElement('tr');
+          var creativeCell = document.createElement('td');
+          var creative = document.createElement('div'); creative.className = 'creative-name';
+          if (video.coverUrl) {
+            var image = document.createElement('img');
+            image.className = 'creative-cover'; image.src = video.coverUrl; image.alt = '';
+            image.addEventListener('error', function () { image.remove(); });
+            creative.appendChild(image);
+          }
+          var copy = document.createElement('div'); copy.className = 'creative-copy';
+          var name = document.createElement(video.videoUrl ? 'a' : 'strong');
+          name.textContent = video.name;
+          if (video.videoUrl) {
+            name.className = 'creative-link';
+            name.href = video.videoUrl;
+            name.target = '_blank';
+            name.rel = 'noopener noreferrer';
+          }
+          var meta = document.createElement('span');
+          meta.textContent = [video.itemId, video.authorizationType].filter(Boolean).join(' · ');
+          copy.append(name, meta); creative.appendChild(copy); creativeCell.appendChild(creative); row.appendChild(creativeCell);
+          [video.accountName || '-', formatCreativeStatus(video.status), money(video.cost),
+            integer(video.orders), money(video.costPerOrder), money(video.grossRevenue),
+            number(video.roi), integer(video.productImpressions), integer(video.productClicks),
+            rate(video.productClickRate), rate(video.adClickRate), rate(video.adConversionRate),
+            rate(video.viewRate2s), rate(video.viewRate6s), rate(video.viewRate25),
+            rate(video.viewRate50), rate(video.viewRate75), rate(video.viewRate100)].forEach(function (value) {
+            var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+          });
+          body.appendChild(row);
+        });
+        table.appendChild(body); container.appendChild(table);
+      }
+
+      function formatCreativeStatus(status) {
+        var labels = {
+          IN_QUEUE: 'In queue', LEARNING: 'Learning', DELIVERING: 'Delivering',
+          AUTHORIZATION_NEEDED: 'Authorization recommended',
+          AUTHORIZATION_RECOMMENDED: 'Authorization recommended', BOOSTING: 'Boosting',
+          BOOSTED: 'Boosted', NOT_DELIVERYING: 'Not delivering', EXCLUDED: 'Excluded',
+          REJECTED: 'Rejected', UNAVAILABLE: 'Unavailable', NOT_ACTIVE: 'Not active'
+        };
+        return labels[status] || status || '-';
+      }
+
+      function setLoading(loading) { button.disabled = loading; button.textContent = loading ? 'Đang tải...' : 'Tải báo cáo'; }
+      function showError(error) { setLoading(false); var box = document.getElementById('error'); box.textContent = error.message || String(error); box.classList.remove('hidden'); }
+      function hideError() { document.getElementById('error').classList.add('hidden'); }
+      function number(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value); }
+      function integer(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value); }
+      function money(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
+      function moneyWhole(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value); }
+      function percent(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
+      function rate(value) { return value == null ? '-' : number(value) + '%'; }
+    </script>
+  </body>
+</html>

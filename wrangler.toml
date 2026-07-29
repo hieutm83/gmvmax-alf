@@ -1,0 +1,48 @@
+name = "tiktok-gmv-max-report"
+main = "src/index.ts"
+compatibility_date = "2026-07-29"
+workers_dev = true
+
+[limits]
+cpu_ms = 300000
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/oauth/*", "/webhooks/*"]
+
+[vars]
+MCP_URL = "https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat"
+MCP_SCOPE = "mcp:tt4b"
+DEFAULT_ADVERTISER_ID = "7535665207776231441"
+DEFAULT_STORE_CODE = "VNLC33LWAS"
+TIMEZONE = "Asia/Bangkok"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gmv-max-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[queues.producers]]
+binding = "TASK_QUEUE"
+queue = "gmv-max-tasks"
+
+[[queues.consumers]]
+queue = "gmv-max-tasks"
+max_batch_size = 5
+max_batch_timeout = 5
+max_retries = 3
+max_concurrency = 1
+dead_letter_queue = "gmv-max-dead-letter"
+
+[[durable_objects.bindings]]
+name = "OAUTH_COORDINATOR"
+class_name = "OAuthCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["OAuthCoordinator"]
+
+[triggers]
+crons = ["0 * * * *"]

@@ -1,0 +1,97 @@
+import type { Env, TaskMessage } from './types';
+import { OAuthCoordinator, createAuthorizationUrl, disconnect, handleOAuthCallback, readTokens } from './oauth';
+import { createSession, listAdvertisers, listStores } from './mcp';
+import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
+import { backupDate } from './sheets';
+import { normalizeZaloEvent, processZaloVideo, sendScheduledReport } from './zalo';
+import { dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
+
+function ok(data: unknown): Response { return json({ ok: true, data }); }
+function validateScope(input: any): any {
+  return { ...input, advertiserId: validateId(input?.advertiserId, 'Advertiser ID'),
+    storeId: String(input?.storeId || '').trim(), startDate: validateDate(input?.startDate, 'startDate'),
+    endDate: validateDate(input?.endDate, 'endDate') };
+}
+
+async function routeApi(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method === 'GET' && url.pathname === '/api/state') {
+    const tokens=await readTokens(env);let advertisers:any[]=[];let connectionError:string|undefined;
+    if(tokens){try{advertisers=await listAdvertisers(env,await createSession(env));}catch(error){connectionError=error instanceof Error?error.message:String(error);}}
+    const today=dateInTimezone(new Date(),env.TIMEZONE);return ok({connected:Boolean(tokens),startDate:today,endDate:today,
+      defaultAdvertiserId:env.DEFAULT_ADVERTISER_ID,defaultStoreCode:env.DEFAULT_STORE_CODE,advertisers,connectionError});
+  }
+  if(request.method==='GET'&&url.pathname==='/api/oauth/connect')return ok(await createAuthorizationUrl(env,url.origin));
+  if(request.method==='POST'&&url.pathname==='/api/oauth/disconnect'){await disconnect(env);return ok(true);}
+  if(request.method==='POST'&&url.pathname==='/api/admin/verify'){const value=await readJson<any>(request);return ok(String(value||'')===env.ADMIN_PASSWORD);}
+  if(request.method==='POST'&&url.pathname==='/api/stores'){const advertiserId=validateId(await readJson<any>(request),'Advertiser ID');return ok(await listStores(env,await createSession(env),advertiserId));}
+  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
+  const input=await readJson<any>(request);
+  if(url.pathname==='/api/report'){
+    const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
+    const report=await loadMainReport(env,scope,input.forceRefresh===true);
+    const today=dateInTimezone(new Date(),env.TIMEZONE);if(scope.startDate===scope.endDate&&scope.endDate<today){
+      await env.DB.prepare(`INSERT INTO daily_metrics(advertiser_id,store_id,report_date,summary_json,products_json) VALUES(?,?,?,?,?)
+        ON CONFLICT(advertiser_id,store_id,report_date) DO NOTHING`).bind(scope.advertiserId,scope.storeId,scope.endDate,JSON.stringify(report.totals),JSON.stringify(report.products)).run();
+    }return ok(report);
+  }
+  if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
+  if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));
+  if(url.pathname==='/api/comparison')return ok(await loadComparison(env,{advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),endDate:validateDate(input.endDate,'endDate')}));
+  if(url.pathname==='/api/video-stats')return ok(await loadVideoStats(env,{...input,advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),itemId:validateId(input.itemId,'Post ID'),endDate:validateDate(input.endDate,'endDate')}));
+  if(url.pathname==='/api/video-metadata')return ok(await loadVideoMetadata(env,{...input,advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),itemId:validateId(input.itemId,'Post ID'),endDate:validateDate(input.endDate,'endDate')}));
+  throw new HttpError(404,'API route not found.');
+}
+
+async function webhook(request: Request, env: Env, url: URL): Promise<Response> {
+  if(env.ZALO_WEBHOOK_SECRET){const supplied=request.headers.get('x-webhook-secret')||url.searchParams.get('secret');
+    if(supplied!==env.ZALO_WEBHOOK_SECRET)throw new HttpError(401,'Invalid webhook secret.');}
+  const payload=await request.json<any>();const event=normalizeZaloEvent(payload);
+  const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
+    .bind(event.id||null,Date.now(),JSON.stringify(payload)).run();
+  if(result.meta.changes){const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id IS ? ORDER BY id DESC LIMIT 1').bind('zalo',event.id||null).first<{id:number}>();
+    if(row)await env.TASK_QUEUE.send({type:'zalo-video',eventId:row.id});}
+  return json({ok:true});
+}
+
+async function resolveDefaultStore(env:Env):Promise<string>{
+  const stores=await listStores(env,await createSession(env),env.DEFAULT_ADVERTISER_ID);
+  return stores.find((s:any)=>s.storeCode===env.DEFAULT_STORE_CODE||s.storeId===env.DEFAULT_STORE_CODE)?.storeId||env.DEFAULT_STORE_CODE;
+}
+
+async function consume(message: TaskMessage, env: Env): Promise<void> {
+  if(message.type==='zalo-video')return processZaloVideo(env,message.eventId);
+  if(message.type==='sheet-backup'){
+    const storeId=await resolveDefaultStore(env);const report=await loadMainReport(env,{advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
+    const summary=await loadCreativeSummaries(env,{advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate,products:report.products,allContexts:report.creativeContexts,availableProducts:report.availableProductCount,forceRefresh:true});
+    await env.DB.prepare(`INSERT INTO daily_metrics(advertiser_id,store_id,report_date,summary_json,products_json,creatives_json) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(advertiser_id,store_id,report_date) DO NOTHING`).bind(env.DEFAULT_ADVERTISER_ID,storeId,message.reportDate,JSON.stringify(report.totals),JSON.stringify(report.products),JSON.stringify(summary)).run();
+    return backupDate(env,message.reportDate);
+  }
+  const original=env.DEFAULT_STORE_CODE;const storeId=await resolveDefaultStore(env);
+  const runtime={...env,DEFAULT_STORE_CODE:storeId} as Env;await sendScheduledReport(runtime,message.reportDate,message.reportHour);
+  void original;
+}
+
+export { OAuthCoordinator };
+
+export default {
+  async fetch(request:Request,env:Env):Promise<Response>{
+    const url=new URL(request.url);
+    try{
+      if(url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
+      if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return webhook(request,env,url);
+      if(url.pathname.startsWith('/api/'))return routeApi(request,env,url);
+      return env.ASSETS.fetch(request);
+    }catch(error){const status=error instanceof HttpError?error.status:500;return json({ok:false,error:error instanceof Error?error.message:String(error)},status);}
+  },
+  async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
+    const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
+    const reportHour=localHour===0?24:localHour;
+    const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
+    ctx.waitUntil(env.TASK_QUEUE.send({type:'scheduled-report',reportDate,reportHour}));
+    if(localHour===8)ctx.waitUntil(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:shiftDate(localDate,-1)}));
+  },
+  async queue(batch:MessageBatch<TaskMessage>,env:Env):Promise<void>{
+    for(const message of batch.messages){try{await consume(message.body,env);message.ack();}catch(error){console.error('Queue task failed',message.body,error);message.retry({delaySeconds:60});}}
+  }
+} satisfies ExportedHandler<Env,TaskMessage>;
