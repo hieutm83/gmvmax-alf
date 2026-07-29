@@ -23,7 +23,9 @@ export interface Env {
 }
 
 export type TaskMessage =
+  | { type: 'hourly-dispatch'; reportDate: string; reportHour: number; backupDate?: string }
   | { type: 'scheduled-report'; reportDate: string; reportHour: number }
+  | { type: 'zalo-poll' }
   | { type: 'zalo-video'; eventId: number }
   | { type: 'sheet-backup'; reportDate: string };
 

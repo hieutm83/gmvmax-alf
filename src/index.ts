@@ -56,11 +56,8 @@ async function webhook(request: Request, env: Env, url: URL, ctx:ExecutionContex
   const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
     .bind(event.id||null,Date.now(),JSON.stringify(payload)).run();
   if(result.meta.changes){const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id IS ? ORDER BY id DESC LIMIT 1').bind('zalo',event.id||null).first<{id:number}>();
-    if(row)ctx.waitUntil(processZaloVideo(zaloRuntime(env),row.id).catch(async error=>{
-      const details=error instanceof Error?error.message:String(error);
-      await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
-        .bind(JSON.stringify({error:details}),row.id).run();
-    }));}
+    if(row)ctx.waitUntil(env.TASK_QUEUE.send({type:'zalo-video',eventId:row.id}).then(()=>
+      env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(row.id).run()));}
   return json({ok:true});
 }
 
@@ -71,7 +68,15 @@ async function resolveDefaultStore(env:Env):Promise<string>{
 
 async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
+  if(message.type==='zalo-poll'){await pollZaloUpdates(runtime);return;}
   if(message.type==='zalo-video')return processZaloVideo(runtime,message.eventId);
+  if(message.type==='hourly-dispatch'){
+    if(!await readTokens(runtime))return;
+    const tasks:Promise<unknown>[]=[];
+    if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
+    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour}));
+    await Promise.all(tasks);return;
+  }
   if(message.type==='sheet-backup'){
     const storeId=await resolveDefaultStore(runtime);const report=await loadMainReport(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
     const summary=await loadCreativeSummaries(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate,products:report.products,allContexts:report.creativeContexts,availableProducts:report.availableProductCount,forceRefresh:true});
@@ -122,17 +127,12 @@ export default {
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
-    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(pollZaloUpdates(zaloRuntime(env)).catch(error=>console.error('Zalo polling failed',error)));
+    if(env.ZALO_BOT_TOKEN)ctx.waitUntil(env.TASK_QUEUE.send({type:'zalo-poll'}));
     if(now.getUTCMinutes()!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
-    const connected=await readTokens(env);
-    if(localHour===8&&connected&&env.GOOGLE_BACKUP_SPREADSHEET_ID){
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:shiftDate(localDate,-1)}));
-    }
-    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID&&connected){
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'scheduled-report',reportDate,reportHour}));
-    }
+    ctx.waitUntil(env.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour,
+      backupDate:localHour===8?shiftDate(localDate,-1):undefined}));
   },
   async queue(batch:MessageBatch<TaskMessage>,env:Env):Promise<void>{
     for(const message of batch.messages){

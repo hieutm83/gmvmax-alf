@@ -128,13 +128,8 @@ export async function pollZaloUpdates(env: Env): Promise<number> {
   const pending=await env.DB.prepare("SELECT id FROM webhook_events WHERE provider='zalo' AND status='PENDING' ORDER BY id DESC LIMIT 1")
     .first<{id:number}>();
   if(pending){
-    try{await processZaloVideo(env,pending.id);}
-    catch(error){
-      const details=error instanceof Error?error.message:String(error);
-      await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
-        .bind(JSON.stringify({error:details}),pending.id).run();
-      throw error;
-    }
+    await env.TASK_QUEUE.send({type:'zalo-video',eventId:pending.id});
+    await env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(pending.id).run();
     return 1;
   }
   let latest: any=null;
@@ -158,21 +153,16 @@ export async function pollZaloUpdates(env: Env): Promise<number> {
   const row=await env.DB.prepare('SELECT id FROM webhook_events WHERE provider=? AND external_id=? ORDER BY id DESC LIMIT 1')
     .bind('zalo',event.id).first<{id:number}>();
   if(row){
-    try{await processZaloVideo(env,row.id);}
-    catch(error){
-      const details=error instanceof Error?error.message:String(error);
-      await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
-        .bind(JSON.stringify({error:details}),row.id).run();
-      throw error;
-    }
+    await env.TASK_QUEUE.send({type:'zalo-video',eventId:row.id});
+    await env.DB.prepare("UPDATE webhook_events SET status='QUEUED' WHERE id=? AND status='PENDING'").bind(row.id).run();
   }
   return row?1:0;
 }
 
 export async function processZaloVideo(env: Env, eventId: number): Promise<void> {
   const row = await env.DB.prepare('SELECT payload,status FROM webhook_events WHERE id=?').bind(eventId).first<{payload:string,status:string}>();
-  if (!row||!['PENDING','RETRYING'].includes(row.status)) return;
-  const claim=await env.DB.prepare("UPDATE webhook_events SET status='PROCESSING' WHERE id=? AND status IN ('PENDING','RETRYING')")
+  if (!row||!['PENDING','QUEUED','RETRYING'].includes(row.status)) return;
+  const claim=await env.DB.prepare("UPDATE webhook_events SET status='PROCESSING' WHERE id=? AND status IN ('PENDING','QUEUED','RETRYING')")
     .bind(eventId).run();
   if(!claim.meta.changes)return;
   const event=normalizeZaloEvent(JSON.parse(row.payload));
@@ -181,7 +171,7 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
       .bind(JSON.stringify({reason:event.senderIsBot?'BOT_MESSAGE':'OTHER_CHAT'}),Date.now(),eventId).run();
     return;
   }
-  const newer=await env.DB.prepare("SELECT id,payload FROM webhook_events WHERE provider='zalo' AND id>? AND status='PENDING' ORDER BY id DESC LIMIT 20").bind(eventId).all<{id:number,payload:string}>();
+  const newer=await env.DB.prepare("SELECT id,payload FROM webhook_events WHERE provider='zalo' AND id>? AND status IN ('PENDING','QUEUED') ORDER BY id DESC LIMIT 20").bind(eventId).all<{id:number,payload:string}>();
   if(newer.results.some(item=>normalizeZaloEvent(JSON.parse(item.payload)).chatId===event.chatId)){
     await env.DB.prepare("UPDATE webhook_events SET status='SKIPPED',processed_at=? WHERE id=?").bind(Date.now(),eventId).run();return;
   }
@@ -192,8 +182,7 @@ export async function processZaloVideo(env: Env, eventId: number): Promise<void>
       .bind(JSON.stringify({reason:'INVALID_LINK'}),Date.now(),eventId).run();
     return;
   }
-  const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId:match[1],endDate,metadataContexts:[],forceRefresh:true};
-  const report=await loadMainReport(env,{advertiserId:input.advertiserId,storeId:input.storeId,startDate:endDate,endDate});input.metadataContexts=report.creativeContexts;
+  const endDate=dateInTimezone(new Date(),env.TIMEZONE);const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE,itemId:match[1],endDate,metadataContexts:[],forceRefresh:false};
   const stats=await loadVideoStats(env,input);const totals=stats.daily.reduce((a:any,p:any)=>({cost:a.cost+p.cost,orders:a.orders+p.orders}),{cost:0,orders:0});
   const chart={type:'line',data:{labels:stats.daily.map((p:any)=>p.date.slice(5)),datasets:[
     {label:'Cost',data:stats.daily.map((p:any)=>p.cost),borderColor:'#079d9b',pointRadius:2,yAxisID:'y'},

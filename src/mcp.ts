@@ -94,15 +94,20 @@ export async function resolveTool(env: Env, session: McpSession, candidates: str
 
 export async function pagedReport(env: Env, session: McpSession, args: Record<string, any>): Promise<McpRow[]> {
   const rows: McpRow[] = [];
+  await forEachReportPage(env, session, args, (pageRows) => { rows.push(...pageRows); });
+  return rows;
+}
+
+export async function forEachReportPage(env: Env, session: McpSession, args: Record<string, any>,
+  consumePage: (rows: McpRow[]) => void | Promise<void>): Promise<void> {
   let page = 1;
   let pages = 1;
   do {
     const data = await callTool(env, session, 'gmv_max_report_get', { ...args, page, page_size: 1000 });
-    rows.push(...(data.list || []));
+    await consumePage(data.list || []);
     pages = Number(data.page_info?.total_page) || 1;
     page += 1;
   } while (page <= pages);
-  return rows;
 }
 
 export async function listAdvertisers(env: Env, session: McpSession): Promise<any[]> {

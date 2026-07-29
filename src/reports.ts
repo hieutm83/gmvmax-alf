@@ -1,5 +1,5 @@
 import type { Env, McpRow, McpSession, ProductContext } from './types';
-import { callTool, createSession, pagedReport, resolveTool } from './mcp';
+import { callTool, createSession, forEachReportPage, pagedReport, resolveTool } from './mcp';
 import { cacheGet, cachePut, numberValue, stableKey, unique } from './utils';
 import { evaluateVideos } from './evaluator';
 
@@ -137,24 +137,45 @@ export async function loadVideoStats(env:Env,input:any):Promise<any>{
   const endDate=input.endDate;const start=new Date(`${endDate}T00:00:00Z`);start.setUTCDate(start.getUTCDate()-29);const startDate=start.toISOString().slice(0,10);
   const key=stableKey('video30',{advertiserId:input.advertiserId,storeId:input.storeId,itemId:input.itemId,endDate});if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
   const session=await createSession(env);let contexts:ProductContext[]=input.metadataContexts||[];
-  const campaignRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
-    dimensions:['campaign_id'],metrics:['cost'],start_date:startDate,end_date:endDate});
-  const campaignIds=unique(campaignRows.filter(row=>numberValue(row.metrics?.cost)>0)
-    .map(row=>rowId(row,'campaign_id')).filter(Boolean));
-  const discovered:ProductContext[]=[];
-  for(const campaignId of campaignIds){
-    const groupRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
-      dimensions:['item_group_id'],metrics:['cost'],start_date:startDate,end_date:endDate,
-      filtering:{campaign_ids:[campaignId]}});
-    for(const row of groupRows){
-      const itemGroupId=rowId(row,'item_group_id');
-      if(itemGroupId&&numberValue(row.metrics?.cost)>0)discovered.push({campaignId,itemGroupId});
+  const contextKey=stableKey('video-contexts',{advertiserId:input.advertiserId,storeId:input.storeId,startDate,endDate});
+  const cachedContexts=await cacheGet<ProductContext[]>(env,contextKey);
+  if(cachedContexts?.length)contexts=cachedContexts;
+  else {
+    const campaignRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
+      dimensions:['campaign_id'],metrics:['cost'],start_date:startDate,end_date:endDate});
+    const campaignIds=unique(campaignRows.filter(row=>numberValue(row.metrics?.cost)>0)
+      .map(row=>rowId(row,'campaign_id')).filter(Boolean));
+    if(campaignIds.length){
+      const seen=new Set<string>();const discovered:ProductContext[]=[];
+      for(let offset=0;offset<campaignIds.length;offset+=20){
+        const campaignChunk=campaignIds.slice(offset,offset+20);
+        await forEachReportPage(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
+          dimensions:['campaign_id','item_group_id'],metrics:['cost'],start_date:startDate,end_date:endDate,
+          filtering:{campaign_ids:campaignChunk}},rows=>{for(const row of rows){
+          const campaignId=rowId(row,'campaign_id'),itemGroupId=rowId(row,'item_group_id');const pair=`${campaignId}:${itemGroupId}`;
+          if(campaignId&&itemGroupId&&numberValue(row.metrics?.cost)>0&&!seen.has(pair)){
+            seen.add(pair);discovered.push({campaignId,itemGroupId});
+          }
+        }});
+      }
+      if(discovered.length)contexts=discovered;
     }
+    if(contexts.length)await cachePut(env,contextKey,contexts,3600);
   }
-  if(discovered.length)contexts=discovered;
-  const rows=await contextsRows(env,session,input.advertiserId,input.storeId,contexts,startDate,endDate,['item_id','stat_time_day'],['cost','orders','gross_revenue']);
   const dates=Array.from({length:30},(_,i)=>{const d=new Date(`${startDate}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+i);return d.toISOString().slice(0,10)});
-  const daily=dates.map(date=>({date,cost:0,orders:0,grossRevenue:0}));for(const row of rows){if(rowId(row,'item_id')!==String(input.itemId))continue;const date=String(row.dimensions?.stat_time_day||row.metrics?.stat_time_day||'').slice(0,10);const point=daily.find(p=>p.date===date);if(point){point.cost+=numberValue(row.metrics?.cost);point.orders+=numberValue(row.metrics?.orders);point.grossRevenue+=numberValue(row.metrics?.gross_revenue);}}
+  const daily=dates.map(date=>({date,cost:0,orders:0,grossRevenue:0}));const dailyByDate=new Map(daily.map(point=>[point.date,point]));
+  const contextCampaignIds=unique(contexts.map(context=>context.campaignId));
+  for(let offset=0;offset<contextCampaignIds.length;offset+=20){
+    const campaignChunk=contextCampaignIds.slice(offset,offset+20);const chunkSet=new Set(campaignChunk);
+    const itemGroupIds=unique(contexts.filter(context=>chunkSet.has(context.campaignId)).map(context=>context.itemGroupId));
+    await forEachReportPage(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
+      dimensions:['item_id','stat_time_day'],metrics:['cost','orders','gross_revenue'],start_date:startDate,end_date:endDate,
+      filtering:{campaign_ids:campaignChunk,item_group_ids:itemGroupIds}},rows=>{for(const row of rows){
+      if(rowId(row,'item_id')!==String(input.itemId))continue;
+      const date=String(row.dimensions?.stat_time_day||row.metrics?.stat_time_day||'').slice(0,10);const point=dailyByDate.get(date);
+      if(point){point.cost+=numberValue(row.metrics?.cost);point.orders+=numberValue(row.metrics?.orders);point.grossRevenue+=numberValue(row.metrics?.gross_revenue);}
+    }});
+  }
   const metadata=normalizeVideo({dimensions:{item_id:String(input.itemId)},metrics:{}});
   const cost=daily.reduce((s,p)=>s+p.cost,0),orders=daily.reduce((s,p)=>s+p.orders,0),grossRevenue=daily.reduce((s,p)=>s+p.grossRevenue,0);const result={itemId:String(input.itemId),startDate,endDate,generatedAt:new Date().toISOString(),source:'GMV_MAX_CREATIVES',contexts,daily,video:{...metadata,cost,orders,grossRevenue,costPerOrder:orders?cost/orders:null,roi:cost?grossRevenue/cost:null},cacheStatus:'REFRESHED'};
   await cachePut(env,key,result,3600);return result;
