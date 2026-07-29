@@ -29,10 +29,10 @@ queue = "gmv-max-tasks"
 
 [[queues.consumers]]
 queue = "gmv-max-tasks"
-max_batch_size = 5
-max_batch_timeout = 5
+max_batch_size = 1
+max_batch_timeout = 1
 max_retries = 3
-max_concurrency = 1
+max_concurrency = 3
 dead_letter_queue = "gmv-max-dead-letter"
 
 [[durable_objects.bindings]]

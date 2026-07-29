@@ -43,9 +43,11 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
 }
 
 async function webhook(request: Request, env: Env, url: URL): Promise<Response> {
-  if(env.ZALO_WEBHOOK_SECRET){const supplied=request.headers.get('x-webhook-secret')||url.searchParams.get('secret');
+  const storedSecret=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_WEBHOOK_SECRET'").first<{value:string}>();
+  const expectedSecret=storedSecret?.value||env.ZALO_WEBHOOK_SECRET;
+  if(expectedSecret){const supplied=request.headers.get('x-webhook-secret')||url.searchParams.get('secret');
     const zaloSecret=request.headers.get('x-bot-api-secret-token');
-    if(supplied!==env.ZALO_WEBHOOK_SECRET&&zaloSecret!==env.ZALO_WEBHOOK_SECRET)throw new HttpError(401,'Invalid webhook secret.');}
+    if(supplied!==expectedSecret&&zaloSecret!==expectedSecret)throw new HttpError(401,'Invalid webhook secret.');}
   const payload=await request.json<any>();const event=normalizeZaloEvent(payload);
   const result=await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status) VALUES('zalo',?,?,?,'PENDING')`)
     .bind(event.id||null,Date.now(),JSON.stringify(payload)).run();
@@ -111,6 +113,17 @@ export default {
     }
   },
   async queue(batch:MessageBatch<TaskMessage>,env:Env):Promise<void>{
-    for(const message of batch.messages){try{await consume(message.body,env);message.ack();}catch(error){console.error('Queue task failed',message.body,error);message.retry({delaySeconds:60});}}
+    for(const message of batch.messages){
+      try{await consume(message.body,env);message.ack();}
+      catch(error){
+        const details=error instanceof Error?error.message:String(error);
+        console.error('Queue task failed',message.body,details);
+        if(message.body.type==='zalo-video'){
+          await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
+            .bind(JSON.stringify({error:details}),message.body.eventId).run();
+        }
+        message.retry({delaySeconds:10});
+      }
+    }
   }
 } satisfies ExportedHandler<Env,TaskMessage>;
