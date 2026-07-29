@@ -14,16 +14,61 @@ async function zaloApi(env: Env, method: string, payload: unknown): Promise<any>
   return data.result || {};
 }
 
-export async function sendMessage(env: Env, text: string, chatId?: string): Promise<string> {
+export interface ZaloTextStyle { start: number; len: number; st: string[]; }
+
+export async function sendMessage(env: Env, text: string, chatId?: string, textStyles?: ZaloTextStyle[]): Promise<string> {
   const destination = chatId || env.ZALO_GROUP_CHAT_ID;
   if (!destination) throw new Error('Missing ZALO_GROUP_CHAT_ID.');
-  const result = await zaloApi(env, 'sendMessage', { chat_id: destination, text });
+  const payload:any={chat_id:destination,text};
+  if(textStyles?.length)payload.text_styles=textStyles;
+  const result = await zaloApi(env, 'sendMessage', payload);
   return String(result.message_id || '');
 }
 
 function integer(value: unknown): string { return Math.round(Number(value) || 0).toLocaleString('vi-VN'); }
 function recommendation(items: any[]): string[] {
   return items?.length ? items.map((item) => `${item.itemId} | ${String(item.reason || '')}`) : ['Không có'];
+}
+
+export function buildAdsStyles(text:string):ZaloTextStyle[]{
+  const styles:ZaloTextStyle[]=[];
+  const green='c_15a85f',red='c_db342e';
+  const add=(start:number,len:number,...st:string[])=>{if(start>=0&&len>0)styles.push({start,len,st});};
+  const titleEnd=text.indexOf('\n');
+  add(0,titleEnd<0?text.length:titleEnd,'i');
+  const bodyStart=titleEnd<0?text.length:titleEnd+1;
+  add(bodyStart,text.length-bodyStart,'f_13','b');
+
+  const colorTrend=(label:string,increaseIsGood:boolean)=>{
+    const start=text.indexOf(label);if(start<0)return;
+    const end=text.indexOf('\n',start);const line=text.slice(start,end<0?text.length:end);
+    const match=line.match(/[↑↓]\s*[\d.,]+%/);if(!match)return;
+    const good=match[0].startsWith('↑')?increaseIsGood:!increaseIsGood;
+    add(start+(match.index||0),match[0].length,good?green:red);
+  };
+  colorTrend('Cost:',false);colorTrend('Gross revenue:',true);colorTrend('Cost / order:',false);
+
+  const boostStart=text.indexOf('- Boost:');const stopStart=text.indexOf('- Tắt:');
+  add(boostStart,'- Boost:'.length,green);add(stopStart,'- Tắt:'.length,red);
+  const colorMatches=(source:string,offset:number,pattern:RegExp,color:string,group=0)=>{
+    let match:RegExpExecArray|null;
+    while((match=pattern.exec(source))!==null){
+      const value=match[group]||match[0];const within=group?match[0].lastIndexOf(value):0;
+      add(offset+match.index+within,value.length,color);
+    }
+  };
+  if(boostStart>=0){
+    const end=stopStart>=0?stopStart:text.length;const source=text.slice(boostStart,end);
+    colorMatches(source,boostStart,/ROI\s+[\d.,]+/g,green);
+    colorMatches(source,boostStart,/mốc\s+([\d.,]+)/g,red,1);
+  }
+  if(stopStart>=0){
+    const source=text.slice(stopStart);
+    colorMatches(source,stopStart,/Đã chi\s+([\d.]+)/g,red,1);
+    colorMatches(source,stopStart,/ROI\s+[\d.,]+/g,red);
+    colorMatches(source,stopStart,/mốc\s+([\d.,]+)/g,green,1);
+  }
+  return styles;
 }
 
 export async function sendScheduledReport(env: Env, reportDate: string, reportHour: number): Promise<void> {
@@ -52,7 +97,7 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     '- Tắt:',
     ...recommendation(summary.videoEvaluation?.stop)
   ].join('\n');
-  const messageId = await sendMessage(env, text);
+  const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text));
   await env.DB.prepare(`INSERT INTO scheduled_reports(report_date,report_hour,status,message_id,payload) VALUES(?,?,?,?,?)
     ON CONFLICT(report_date,report_hour) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
     .bind(reportDate, reportHour, 'SENT', messageId, JSON.stringify({ totals:t })).run();

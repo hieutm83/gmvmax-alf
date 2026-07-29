@@ -37,12 +37,12 @@ export function evaluateVideos(rows: McpRow[]): any {
     if ((video.cost >= evidenceSpend || video.orders >= 2) &&
         ((video.orders >= 2 && roi >= referenceRoi) ||
          (video.orders >= 1 && roi >= referenceRoi * 1.25 && video.cost >= evidenceSpend * 0.5))) {
-      video.reason = `ROI ${roi.toFixed(2).replace('.', ',')} so voi moc ${referenceRoi.toFixed(2).replace('.', ',')}\n${Math.round(video.orders)} SKU orders.`;
+      video.reason = `ROI ${roi.toFixed(2).replace('.', ',')} so với mốc ${referenceRoi.toFixed(2).replace('.', ',')}\n${Math.round(video.orders)} SKU orders.`;
       video.score = roi * Math.log(video.orders + 1); boost.push(video);
     } else if ((video.cost >= evidenceSpend && video.orders === 0) ||
       (video.cost >= evidenceSpend && video.orders > 0 && roi < referenceRoi * 0.55)) {
-      video.reason = video.orders === 0 ? `Da chi ${Math.round(video.cost).toLocaleString('vi-VN')} nhung chua co SKU order.` :
-        `ROI ${roi.toFixed(2).replace('.', ',')} thap hon ro ret so voi moc ${referenceRoi.toFixed(2).replace('.', ',')}.`;
+      video.reason = video.orders === 0 ? `Đã chi ${Math.round(video.cost).toLocaleString('vi-VN')} nhưng chưa có SKU order.` :
+        `ROI ${roi.toFixed(2).replace('.', ',')} thấp hơn rõ rệt so với mốc ${referenceRoi.toFixed(2).replace('.', ',')}.`;
       video.score = video.orders === 0 ? video.cost : video.cost * Math.max(0, referenceRoi - roi); stop.push(video);
     }
   }
