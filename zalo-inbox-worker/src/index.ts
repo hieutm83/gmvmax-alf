@@ -76,6 +76,13 @@ async function webhookSecret(env: Env): Promise<string> {
 
 async function ensureWebhook(env: Env): Promise<void> {
   const url = `${env.PUBLIC_BASE_URL.replace(/\/$/, '')}/webhooks/zalo`;
+  const state = await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_INBOX_MODE'").first<{ value: string }>();
+  if (state?.value) {
+    try {
+      const parsed = JSON.parse(state.value);
+      if (parsed.mode === 'DEDICATED_WEBHOOK' && parsed.url === url && Date.now() - Number(parsed.checkedAt) < 300000) return;
+    } catch { /* Repair invalid state below. */ }
+  }
   const secret = await webhookSecret(env);
   const info = await zaloApi(env, 'getWebhookInfo', {}).catch(() => ({}));
   if (String(info?.url || '') !== url) await zaloApi(env, 'setWebhook', { url, secret_token: secret });
