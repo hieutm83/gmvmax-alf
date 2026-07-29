@@ -135,9 +135,9 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
 
 export async function loadVideoStats(env:Env,input:any):Promise<any>{
   const endDate=input.endDate;const start=new Date(`${endDate}T00:00:00Z`);start.setUTCDate(start.getUTCDate()-29);const startDate=start.toISOString().slice(0,10);
-  const key=stableKey('video30',{advertiserId:input.advertiserId,storeId:input.storeId,itemId:input.itemId,endDate});if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
+  const key=stableKey('video30-v2',{advertiserId:input.advertiserId,storeId:input.storeId,itemId:input.itemId,endDate});if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
   const session=await createSession(env);let contexts:ProductContext[]=input.metadataContexts||[];
-  const contextKey=stableKey('video-contexts',{advertiserId:input.advertiserId,storeId:input.storeId,startDate,endDate});
+  const contextKey=stableKey('video-contexts-v2',{advertiserId:input.advertiserId,storeId:input.storeId,startDate,endDate});
   const cachedContexts=await cacheGet<ProductContext[]>(env,contextKey);
   if(cachedContexts?.length)contexts=cachedContexts;
   else {
