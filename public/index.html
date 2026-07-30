@@ -250,7 +250,7 @@
           <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">TikTok Shop Seller OAuth</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Seller.</span></div></div>
           <a id="sellerConnectButton" class="button" href="/seller/auth/connect" target="_top">Kết nối Seller</a>
         </div>
-        <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong>Cần kết nối TikTok Shop Seller</strong>Tab doanh thu sử dụng Seller Order API và token riêng, không dùng OAuth của TikTok Ads.</div></div>
+        <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong id="sellerRequiredTitle">Cần kết nối TikTok Shop Seller</strong><span id="sellerRequiredMeta">Tab doanh thu sử dụng Seller Order API và token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
         <div id="revenueContent" class="hidden">
           <div id="revenueSummary" class="summary revenue-summary"></div>
           <p class="analytics-note">Nguồn dữ liệu: TikTok Shop Seller Order API trong khoảng ngày đã chọn.</p>
@@ -413,9 +413,25 @@
         }
         document.getElementById('revenueAuthMeta').textContent = detail + '.';
         var connect = document.getElementById('sellerConnectButton');
-        connect.textContent = sellerOAuthConnected ? 'Ủy quyền lại' : 'Kết nối Seller';
-        connect.classList.toggle('disabled', !sellerOAuthConfigured);
-        connect.setAttribute('aria-disabled', String(!sellerOAuthConfigured));
+        var requiredTitle = document.getElementById('sellerRequiredTitle');
+        var requiredMeta = document.getElementById('sellerRequiredMeta');
+        if (!sellerOAuthConfigured) {
+          connect.textContent = 'Tạo ứng dụng Seller';
+          connect.href = 'https://partner.tiktokshop.com/';
+          connect.target = '_blank';
+          connect.rel = 'noopener noreferrer';
+          requiredTitle.textContent = 'Cần tạo ứng dụng TikTok Shop';
+          requiredMeta.textContent = 'Seller Admin chỉ phê duyệt quyền. Hãy tạo Custom App trong Partner Center, bật Seller Order API và đặt callback: ' + location.origin + '/seller/auth/callback';
+        } else {
+          connect.textContent = sellerOAuthConnected ? 'Ủy quyền lại' : 'Kết nối Seller';
+          connect.href = '/seller/auth/connect';
+          connect.target = '_top';
+          connect.removeAttribute('rel');
+          requiredTitle.textContent = 'Cần kết nối TikTok Shop Seller';
+          requiredMeta.textContent = 'Đăng nhập bằng Seller Admin để phê duyệt quyền đọc dữ liệu đơn hàng cho ứng dụng.';
+        }
+        connect.classList.remove('disabled');
+        connect.setAttribute('aria-disabled', 'false');
         document.getElementById('sellerConnectRequired').classList.toggle('hidden', sellerOAuthConnected);
         document.getElementById('revenueContent').classList.toggle('hidden', !sellerOAuthConnected);
       }
