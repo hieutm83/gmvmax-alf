@@ -206,6 +206,59 @@ async function shopPerformance(env: Env, startDate: string, endDate: string, sho
   }
 }
 
+function gmvAmount(value: any): number {
+  return numberValue(value?.amount ?? value);
+}
+
+async function productGmvAttribution(env: Env, startDate: string, endDate: string, shopCipher: string): Promise<any | null> {
+  const totals = {
+    total: 0,
+    affiliate: { total: 0, live: 0, video: 0, productCard: 0 },
+    seller: { total: 0, live: 0, video: 0, productCard: 0 }
+  };
+  let pageToken = ''; let pages = 0; let latestAvailableDate: string | null = null;
+  try {
+    do {
+      const data = await shopRequest(env, '/analytics/202605/shop_products/performance', 'GET', {
+        shop_cipher: shopCipher,
+        start_date_ge: startDate,
+        end_date_lt: shiftDate(endDate, 1),
+        page_size: 100,
+        page_token: pageToken || undefined,
+        sort_field: 'gmv',
+        sort_order: 'DESC',
+        currency: 'LOCAL',
+        product_status_filter: 'ALL'
+      });
+      latestAvailableDate = data.latest_available_date || latestAvailableDate;
+      for (const product of data.products || []) {
+        const affiliateTotal = gmvAmount(product.affiliate_total_performance?.attributed_gmv);
+        const affiliateLive = Math.min(affiliateTotal, gmvAmount(product.affiliate_live_performance?.live_attributed_gmv));
+        const affiliateVideo = Math.min(Math.max(0, affiliateTotal - affiliateLive),
+          gmvAmount(product.affiliate_video_performance?.attributed_video_gmv));
+        const sellerLive = gmvAmount(product.seller_live_performance?.attributed_gmv);
+        const sellerVideo = gmvAmount(product.seller_video_performance?.attributed_gmv);
+        const sellerProductCard = gmvAmount(product.seller_product_card_performance?.attributed_gmv);
+        totals.total += gmvAmount(product.total_performance?.gmv);
+        totals.affiliate.total += affiliateTotal;
+        totals.affiliate.live += affiliateLive;
+        totals.affiliate.video += affiliateVideo;
+        totals.affiliate.productCard += Math.max(0, affiliateTotal - affiliateLive - affiliateVideo);
+        totals.seller.live += sellerLive;
+        totals.seller.video += sellerVideo;
+        totals.seller.productCard += sellerProductCard;
+      }
+      pageToken = String(data.next_page_token || ''); pages += 1;
+    } while (pageToken && pages < 100);
+    totals.seller.total = totals.seller.live + totals.seller.video + totals.seller.productCard;
+    return { ...totals, attributedTotal: totals.affiliate.total + totals.seller.total, latestAvailableDate };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/access denied|required access scope|not authorized/i.test(message)) return null;
+    throw error;
+  }
+}
+
 function province(order: any): string {
   const address = order.recipient_address || {};
   const list = address.district_info || address.district_info_list || address.district_infos || [];
@@ -272,7 +325,7 @@ function applyShopPerformance(summary: any, data: any): any {
 
 export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<any> {
   const cacheScope = { startDate: input.startDate, endDate: input.endDate };
-  const key = stableKey('seller-revenue-v5', cacheScope);
+  const key = stableKey('seller-revenue-v6', cacheScope);
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
   const shop = await authorizedShop(env); if (!shop) throw new Error('Seller OAuth chưa trả về TikTok Shop được ủy quyền.');
@@ -280,11 +333,13 @@ export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<a
   const days = Math.floor((Date.parse(`${input.endDate}T00:00:00Z`) - Date.parse(`${input.startDate}T00:00:00Z`)) / 86400000) + 1;
   const chartStartDate = days === 1 ? shiftDate(input.endDate, -6) : input.startDate;
   const previousEndDate = shiftDate(input.startDate, -1); const previousStartDate = shiftDate(previousEndDate, -(days - 1));
-  const [currentOrders, previousOrders, currentPerformance, previousPerformance] = await Promise.all([
+  const [currentOrders, previousOrders, currentPerformance, previousPerformance, currentAttribution, previousAttribution] = await Promise.all([
     ordersForPeriod(env, chartStartDate, input.endDate, cipher),
     ordersForPeriod(env, previousStartDate, previousEndDate, cipher),
     shopPerformance(env, chartStartDate, input.endDate, cipher),
-    shopPerformance(env, previousStartDate, previousEndDate, cipher)
+    shopPerformance(env, previousStartDate, previousEndDate, cipher),
+    productGmvAttribution(env, input.startDate, input.endDate, cipher),
+    productGmvAttribution(env, previousStartDate, previousEndDate, cipher)
   ]);
   const currentOrdersWithAddresses = await hydrateMissingOrderAddresses(env, currentOrders, cipher);
   const current = applyShopPerformance(summarizeOrders(env, currentOrdersWithAddresses, input.startDate, input.endDate), currentPerformance);
@@ -294,6 +349,7 @@ export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<a
   const result = { startDate: input.startDate, endDate: input.endDate, chartStartDate, previousStartDate, previousEndDate,
     generatedAt: new Date().toISOString(), source: 'TIKTOK_SHOP_SELLER', shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },
     totals: current.totals, previousTotals: previous.totals, daily: charts.daily, provinces: charts.provinces,
+    gmvAttribution: currentAttribution, previousGmvAttribution: previousAttribution,
     analyticsAvailable: Boolean(current.analyticsAvailable), latestAvailableDate: current.latestAvailableDate || null };
   await cachePut(env, key, result, 300); return result;
 }

@@ -176,6 +176,25 @@
       .analytics-canvas canvas { width: 100% !important; height: 100% !important; }
       .analytics-unavailable { display: grid; place-items: center; min-height: 280px; padding: 28px; color: var(--text-muted); background: var(--surface-muted); border: 1px dashed #cbd5e1; border-radius: var(--radius-sm); text-align: center; }
       .analytics-unavailable strong { display: block; margin-bottom: 7px; color: var(--text-secondary); font-size: 14px; }
+      .gmv-analysis-panel { margin-top: 16px; padding: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+      .gmv-analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+      .gmv-analysis-head h2 { margin: 0; font-size: 16px; font-weight: 800; }
+      .gmv-analysis-head span { padding: 5px 9px; color: var(--text-secondary); background: var(--surface-muted); border: 1px solid var(--border); font-size: 11px; font-weight: 700; }
+      .gmv-analysis-grid { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(500px, 1.4fr); align-items: center; gap: 28px; }
+      .gmv-analysis-grid.hidden, .analytics-unavailable.hidden { display: none; }
+      .gmv-attribution-chart { position: relative; height: 300px; }
+      .gmv-source-table { table-layout: fixed; }
+      .gmv-source-table th:first-child, .gmv-source-table td:first-child { width: 52%; min-width: 0; }
+      .gmv-source-table th:nth-child(2), .gmv-source-table td:nth-child(2) { width: 27%; }
+      .gmv-source-table th:nth-child(3), .gmv-source-table td:nth-child(3) { width: 21%; }
+      .gmv-source-table td { height: 46px; }
+      .gmv-source-row td { color: var(--text); font-weight: 800; background: #f8fafc; }
+      .gmv-source-label { display: inline-flex; align-items: center; gap: 8px; }
+      .gmv-source-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; }
+      .gmv-source-child { padding-left: 30px; color: var(--text-secondary); }
+      .gmv-contribution { color: var(--text-muted); font-size: 11px; font-weight: 500; }
+      .gmv-change { font-size: 11px; font-weight: 700; }
+      .gmv-change.good { color: #059669; } .gmv-change.bad { color: #dc2626; } .gmv-change.neutral { color: var(--text-muted); }
       .admin-modal { width: min(720px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
       .admin-auth-modal { width: min(460px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
       .admin-body { display: grid; gap: 14px; padding: 20px; }
@@ -185,7 +204,7 @@
       .admin-body .seller-required { min-height: 0; margin: 0; padding: 16px; }
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
-      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid { grid-template-columns: 1fr; } }
       @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } }
     </style>
   </head>
@@ -270,6 +289,19 @@
               <div class="analytics-canvas"><canvas id="revenueProvinceChart"></canvas></div>
             </section>
           </div>
+          <section class="gmv-analysis-panel">
+            <header class="gmv-analysis-head"><h2>Phân tích GMV</h2><span>Theo nguồn đơn hàng</span></header>
+            <div id="gmvAttributionEmpty" class="analytics-unavailable hidden"><div><strong>Chưa có dữ liệu nguồn GMV</strong><span>TikTok Shop Analytics chưa trả dữ liệu phân bổ cho khoảng ngày này.</span></div></div>
+            <div id="gmvAttributionContent" class="gmv-analysis-grid">
+              <div class="gmv-attribution-chart"><canvas id="gmvAttributionChart"></canvas></div>
+              <div class="table-wrap">
+                <table class="gmv-source-table">
+                  <thead><tr><th>Nguồn</th><th>GMV</th><th>So với kỳ trước</th></tr></thead>
+                  <tbody id="gmvAttributionRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
     </main>
@@ -358,6 +390,7 @@
       var revenueAovChart = null;
       var revenueCustomersChart = null;
       var revenueProvinceChart = null;
+      var revenueAttributionChart = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
@@ -703,6 +736,71 @@
           revenueMetric('Tỉ lệ khách mua lại', totals.repurchaseRate == null ? '-' : percent(totals.repurchaseRate), 'repurchase', changeValue(totals.repurchaseRate, previous.repurchaseRate))
         );
         renderRevenueCharts(data.daily || [], data.provinces || []);
+        renderGmvAttribution(data.gmvAttribution, data.previousGmvAttribution);
+      }
+
+      function attributionValue(source, key) {
+        return Number(source && source[key]) || 0;
+      }
+
+      function renderGmvAttribution(data, previous) {
+        if (revenueAttributionChart) { revenueAttributionChart.destroy(); revenueAttributionChart = null; }
+        var empty = document.getElementById('gmvAttributionEmpty');
+        var content = document.getElementById('gmvAttributionContent');
+        var hasData = Boolean(data && Number(data.attributedTotal) > 0);
+        empty.classList.toggle('hidden', hasData);
+        content.classList.toggle('hidden', !hasData);
+        if (!hasData) return;
+        var affiliate = data.affiliate || {};
+        var seller = data.seller || {};
+        var total = Number(data.attributedTotal) || 0;
+        var affiliateTotal = attributionValue(affiliate, 'total');
+        var sellerTotal = attributionValue(seller, 'total');
+        var centerPlugin = {
+          id: 'gmvAttributionCenter',
+          afterDraw: function (chart) {
+            var area = chart.chartArea; if (!area) return;
+            var x = (area.left + area.right) / 2; var y = (area.top + area.bottom) / 2;
+            var context = chart.ctx; context.save(); context.textAlign = 'center'; context.textBaseline = 'middle';
+            context.fillStyle = '#475569'; context.font = '700 13px Inter'; context.fillText('GMV', x, y - 11);
+            context.fillStyle = '#0f172a'; context.font = '800 19px Inter'; context.fillText(compactMoney(total), x, y + 12); context.restore();
+          }
+        };
+        revenueAttributionChart = new Chart(document.getElementById('gmvAttributionChart'), {
+          type: 'doughnut',
+          plugins: [centerPlugin],
+          data: { labels: ['Liên kết', 'Người bán'], datasets: [{ data: [affiliateTotal, sellerTotal], backgroundColor: ['#0f9f9a', '#f7b942'], borderColor: '#fff', borderWidth: 3 }] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '64%', plugins: {
+            legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 11 } } },
+            tooltip: { callbacks: { label: function (context) { return context.label + ': ' + moneyWhole(context.raw) + ' (' + number(total ? Number(context.raw) / total * 100 : 0) + '%)'; } } }
+          } }
+        });
+
+        var rows = document.getElementById('gmvAttributionRows'); rows.replaceChildren();
+        function appendRow(label, value, previousValue, color, group) {
+          var row = document.createElement('tr'); if (group) row.className = 'gmv-source-row';
+          var labelCell = document.createElement('td');
+          var labelWrap = document.createElement('span'); labelWrap.className = group ? 'gmv-source-label' : 'gmv-source-child';
+          if (group) { var dot = document.createElement('span'); dot.className = 'gmv-source-dot'; dot.style.background = color; labelWrap.appendChild(dot); }
+          labelWrap.appendChild(document.createTextNode((group ? '' : '› ') + label));
+          var contribution = document.createElement('span'); contribution.className = 'gmv-contribution'; contribution.textContent = ' (Đóng góp ' + number(total ? value / total * 100 : 0) + '%)';
+          labelWrap.appendChild(contribution); labelCell.appendChild(labelWrap);
+          var valueCell = document.createElement('td'); valueCell.textContent = moneyWhole(value);
+          var changeCell = document.createElement('td'); var change = changeValue(value, previousValue);
+          changeCell.className = 'gmv-change ' + (change == null ? 'neutral' : (change >= 0 ? 'good' : 'bad'));
+          changeCell.textContent = change == null ? '—' : ((change >= 0 ? '↑ ' : '↓ ') + number(Math.abs(change)) + '%');
+          row.append(labelCell, valueCell, changeCell); rows.appendChild(row);
+        }
+        var previousAffiliate = previous && previous.affiliate || {};
+        var previousSeller = previous && previous.seller || {};
+        appendRow('Liên kết', affiliateTotal, attributionValue(previousAffiliate, 'total'), '#0f9f9a', true);
+        appendRow('LIVE', attributionValue(affiliate, 'live'), attributionValue(previousAffiliate, 'live'), '', false);
+        appendRow('Video', attributionValue(affiliate, 'video'), attributionValue(previousAffiliate, 'video'), '', false);
+        appendRow('Thẻ sản phẩm', attributionValue(affiliate, 'productCard'), attributionValue(previousAffiliate, 'productCard'), '', false);
+        appendRow('Người bán', sellerTotal, attributionValue(previousSeller, 'total'), '#f7b942', true);
+        appendRow('LIVE', attributionValue(seller, 'live'), attributionValue(previousSeller, 'live'), '', false);
+        appendRow('Video', attributionValue(seller, 'video'), attributionValue(previousSeller, 'video'), '', false);
+        appendRow('Thẻ sản phẩm', attributionValue(seller, 'productCard'), attributionValue(previousSeller, 'productCard'), '', false);
       }
 
       function renderRevenueCharts(daily, provinces) {
