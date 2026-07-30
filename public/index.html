@@ -433,9 +433,16 @@
           requiredMeta.textContent = 'Redirect URL đã hỗ trợ: ' + location.origin + '/auth/callback. Sau khi cấp quyền, tab sẽ tự nhận Seller token.';
         } else {
           connect.textContent = sellerOAuthConnected ? 'Ủy quyền lại' : 'Kết nối Seller';
-          connect.href = '/seller/auth/connect';
-          connect.target = '_top';
-          connect.removeAttribute('rel');
+          if (sellerOAuthConnected && !sellerOAuthCanAuthorize) {
+            connect.textContent = 'Mở Partner Center';
+            connect.href = 'https://partner.tiktokshop.com/';
+            connect.target = '_blank';
+            connect.rel = 'noopener noreferrer';
+          } else {
+            connect.href = '/seller/auth/connect';
+            connect.target = '_top';
+            connect.removeAttribute('rel');
+          }
           requiredTitle.textContent = 'Cần kết nối TikTok Shop Seller';
           requiredMeta.textContent = 'Đăng nhập bằng Seller Admin để phê duyệt quyền đọc dữ liệu đơn hàng cho ứng dụng.';
         }
@@ -630,8 +637,23 @@
             loadedRevenueScope = key;
             renderRevenueAnalysis(data);
           })
-          .withFailureHandler(showError)
+          .withFailureHandler(handleRevenueFailure)
           .loadRevenueAnalysis(scope);
+      }
+
+      function handleRevenueFailure(error) {
+        var message = error && error.message ? error.message : String(error || '');
+        if (/\/authorization\/202309\/shops: Access denied/i.test(message)) {
+          document.getElementById('revenueAuthTitle').textContent = 'Token Seller hợp lệ · App chưa có quyền API';
+          document.getElementById('revenueAuthMeta').textContent = 'Bật Shop Authorized Information và Order Information trong Partner Center, chờ phê duyệt rồi ủy quyền lại.';
+          document.getElementById('sellerRequiredTitle').textContent = 'TikTok chưa cấp quyền đọc dữ liệu Shop cho ứng dụng';
+          document.getElementById('sellerRequiredMeta').textContent = 'Vào App & Service → Manage → Manage API, bật seller.authorization.info và seller.order.info. Sau khi TikTok phê duyệt, thực hiện ủy quyền Seller lại.';
+          document.getElementById('sellerConnectRequired').classList.remove('hidden');
+          document.getElementById('revenueContent').classList.add('hidden');
+          showError({ message: 'TikTok Shop từ chối Get Authorized Shops: ứng dụng chưa được phê duyệt scope Shop Authorized Information.' });
+          return;
+        }
+        showError(error);
       }
 
       function changeValue(current, previous) {
