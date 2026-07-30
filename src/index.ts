@@ -1,7 +1,7 @@
 import type { Env, TaskMessage } from './types';
 import { OAuthCoordinator, createAuthorizationUrl, disconnect, getAccessToken, handleOAuthCallback, readTokens } from './oauth';
 import { createSession, listAdvertisers, listStores } from './mcp';
-import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
+import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadRevenueAnalysis, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
@@ -33,6 +33,10 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
       await env.DB.prepare(`INSERT INTO daily_metrics(advertiser_id,store_id,report_date,summary_json,products_json) VALUES(?,?,?,?,?)
         ON CONFLICT(advertiser_id,store_id,report_date) DO NOTHING`).bind(scope.advertiserId,scope.storeId,scope.endDate,JSON.stringify(report.totals),JSON.stringify(report.products)).run();
     }return ok(report);
+  }
+  if(url.pathname==='/api/revenue-analysis'){
+    const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
+    return ok(await loadRevenueAnalysis(env,scope));
   }
   if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
   if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));

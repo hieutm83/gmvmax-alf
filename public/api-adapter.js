@@ -8,6 +8,7 @@
     getGmvMaxStores: ['POST', '/api/stores'],
     getTikTokConnectUrl: ['GET', '/api/oauth/connect'],
     loadReport: ['POST', '/api/report'],
+    loadRevenueAnalysis: ['POST', '/api/revenue-analysis'],
     loadProductVideos: ['POST', '/api/product-videos'],
     loadCreativeSummaries: ['POST', '/api/creative-summaries'],
     loadYesterdayComparison: ['POST', '/api/comparison'],

@@ -148,14 +148,32 @@
       .video-metric { min-height: 92px; padding: 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
       .video-metric span { display: block; color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
       .video-metric strong { display: block; margin-top: 8px; color: var(--text); font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+      .report-tabs { display: flex; gap: 24px; margin: 0 0 20px; border-bottom: 1px solid var(--border); }
+      .report-tab { min-height: 42px; padding: 0 2px; color: var(--text-muted); background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0; font-weight: 700; }
+      .report-tab:hover { color: var(--primary); background: transparent; border-color: var(--primary-soft); }
+      .report-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+      .revenue-summary { margin-bottom: 20px; }
+      .revenue-summary .metric { min-height: 108px; }
+      .metric-revenueGmv { --metric-color: #059669; }
+      .metric-revenueOrders { --metric-color: #2563eb; }
+      .metric-revenueAov { --metric-color: #7c3aed; }
+      .metric-repurchase { --metric-color: #ea580c; }
+      .analytics-note { margin: -8px 0 18px; color: var(--text-muted); font-size: 12px; }
+      .analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      .analytics-panel { min-width: 0; min-height: 340px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+      .analytics-panel h2 { margin: 0 0 14px; color: var(--text-secondary); font-size: 13px; font-weight: 800; text-align: center; }
+      .analytics-canvas { position: relative; width: 100%; height: 280px; }
+      .analytics-canvas canvas { width: 100% !important; height: 100% !important; }
+      .analytics-unavailable { display: grid; place-items: center; min-height: 280px; padding: 28px; color: var(--text-muted); background: var(--surface-muted); border: 1px dashed #cbd5e1; border-radius: var(--radius-sm); text-align: center; }
+      .analytics-unavailable strong { display: block; margin-bottom: 7px; color: var(--text-secondary); font-size: 14px; }
       .admin-modal, .admin-auth-modal { width: min(460px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
       .admin-body { display: grid; gap: 14px; padding: 20px; }
       .admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
       .admin-error { min-height: 18px; color: var(--danger); font-size: 12px; }
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
-      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } }
-      @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } }
+      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } }
     </style>
   </head>
   <body>
@@ -174,6 +192,10 @@
         <button id="loadButton" type="submit">Tải báo cáo</button>
         <span id="updatedAt" class="updated-at"></span>
       </form>
+      <nav id="reportTabs" class="report-tabs hidden" aria-label="Loại báo cáo">
+        <button class="report-tab active" type="button" data-report-view="ads" aria-selected="true">Hiệu quả quảng cáo</button>
+        <button class="report-tab" type="button" data-report-view="revenue" aria-selected="false">Phân tích doanh thu</button>
+      </nav>
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
         <h2 class="section-title">Dữ liệu theo giờ</h2>
@@ -211,6 +233,28 @@
             <tbody id="stopVideoRows"></tbody>
           </table>
           <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
+        </div>
+      </section>
+      <section id="revenueReport" class="hidden">
+        <div id="revenueSummary" class="summary revenue-summary"></div>
+        <p class="analytics-note">Dữ liệu doanh thu được quy đổi từ báo cáo GMV Max Ads trong khoảng ngày đã chọn.</p>
+        <div class="analytics-grid">
+          <section class="analytics-panel">
+            <h2>Số lượng đơn và GMV theo ngày</h2>
+            <div class="analytics-canvas"><canvas id="revenueOrdersChart"></canvas></div>
+          </section>
+          <section class="analytics-panel">
+            <h2>AOV theo thời gian</h2>
+            <div class="analytics-canvas"><canvas id="revenueAovChart"></canvas></div>
+          </section>
+          <section class="analytics-panel">
+            <h2>Khách cũ và khách mới</h2>
+            <div class="analytics-unavailable"><div><strong>Chưa có dữ liệu khách hàng</strong>TikTok Ads MCP không cung cấp định danh khách mua để xác định khách mới, khách cũ hoặc tỷ lệ mua lại.</div></div>
+          </section>
+          <section class="analytics-panel">
+            <h2>Doanh thu theo Tỉnh/Thành phố</h2>
+            <div class="analytics-unavailable"><div><strong>Chưa có dữ liệu địa lý đơn hàng</strong>Cần kết nối TikTok Shop Order API để tổng hợp doanh thu theo tỉnh/thành và đơn hủy.</div></div>
+          </section>
         </div>
       </section>
     </main>
@@ -290,6 +334,10 @@
       var videoStatsRequestId = 0;
       var comparisonRequestId = 0;
       var videoStatsChart = null;
+      var revenueOrdersChart = null;
+      var revenueAovChart = null;
+      var activeReportView = 'ads';
+      var loadedRevenueScope = '';
       var videoHoverLinePlugin = {
         id: 'videoHoverLine',
         afterDraw: function (chart) {
@@ -331,7 +379,12 @@
 
       form.addEventListener('submit', function (event) {
         event.preventDefault();
-        requestReport(true);
+        if (activeReportView === 'revenue') requestRevenueAnalysis(true);
+        else requestReport(true);
+      });
+
+      document.querySelectorAll('[data-report-view]').forEach(function (tab) {
+        tab.addEventListener('click', function () { setReportView(tab.dataset.reportView); });
       });
 
       document.getElementById('disconnectButton').addEventListener('click', function () {
@@ -390,7 +443,10 @@
 
       function setAutoRefresh(enabled) {
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-        autoRefreshTimer = enabled ? setInterval(function () { requestReport(true); }, 300000) : null;
+        autoRefreshTimer = enabled ? setInterval(function () {
+          if (activeReportView === 'revenue') requestRevenueAnalysis(true);
+          else requestReport(true);
+        }, 300000) : null;
       }
 
       function loadStores() {
@@ -469,11 +525,119 @@
           });
       }
 
+      function reportScope() {
+        return {
+          advertiserId: document.getElementById('advertiserId').value,
+          storeId: document.getElementById('storeId').value,
+          startDate: document.getElementById('startDate').value,
+          endDate: document.getElementById('endDate').value
+        };
+      }
+
+      function setReportView(view) {
+        activeReportView = view === 'revenue' ? 'revenue' : 'ads';
+        document.querySelectorAll('[data-report-view]').forEach(function (tab) {
+          var selected = tab.dataset.reportView === activeReportView;
+          tab.classList.toggle('active', selected);
+          tab.setAttribute('aria-selected', String(selected));
+        });
+        document.getElementById('report').classList.toggle('hidden', activeReportView !== 'ads');
+        document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
+        if (activeReportView === 'revenue') {
+          var key = JSON.stringify(reportScope());
+          if (loadedRevenueScope !== key) requestRevenueAnalysis(false);
+        }
+      }
+
+      function requestRevenueAnalysis(force) {
+        if (button.disabled) return;
+        var scope = reportScope();
+        var key = JSON.stringify(scope);
+        if (!force && loadedRevenueScope === key) return;
+        setLoading(true);
+        hideError();
+        google.script.run
+          .withSuccessHandler(function (data) {
+            setLoading(false);
+            loadedRevenueScope = key;
+            renderRevenueAnalysis(data);
+          })
+          .withFailureHandler(showError)
+          .loadRevenueAnalysis(scope);
+      }
+
+      function changeValue(current, previous) {
+        if (!previous) return null;
+        return ((Number(current) - Number(previous)) / Math.abs(Number(previous))) * 100;
+      }
+
+      function revenueMetric(labelText, valueText, className, change) {
+        var box = document.createElement('div'); box.className = 'metric metric-' + className;
+        var label = document.createElement('span'); label.textContent = labelText;
+        var value = document.createElement('strong'); value.textContent = valueText;
+        var comparison = document.createElement('span'); comparison.className = 'metric-change neutral';
+        if (change == null) comparison.textContent = 'Không có dữ liệu kỳ trước';
+        else {
+          comparison.className = 'metric-change ' + (change >= 0 ? 'good' : 'bad');
+          comparison.textContent = (change >= 0 ? '↑ ' : '↓ ') + number(Math.abs(change)) + '% so với kỳ trước';
+        }
+        box.append(label, value, comparison);
+        return box;
+      }
+
+      function renderRevenueAnalysis(data) {
+        document.getElementById('reportTabs').classList.remove('hidden');
+        document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
+        var totals = data.totals || {};
+        var previous = data.previousTotals || {};
+        var summary = document.getElementById('revenueSummary'); summary.replaceChildren();
+        summary.append(
+          revenueMetric('Tổng GMV', compactMoney(totals.grossRevenue), 'revenueGmv', changeValue(totals.grossRevenue, previous.grossRevenue)),
+          revenueMetric('Tổng đơn hàng', integer(totals.orders), 'revenueOrders', changeValue(totals.orders, previous.orders)),
+          revenueMetric('AOV', compactMoney(totals.aov), 'revenueAov', changeValue(totals.aov, previous.aov)),
+          revenueMetric('Tỉ lệ khách mua lại', 'Chưa có dữ liệu', 'repurchase', null)
+        );
+        renderRevenueCharts(data.daily || []);
+      }
+
+      function renderRevenueCharts(daily) {
+        if (revenueOrdersChart) revenueOrdersChart.destroy();
+        if (revenueAovChart) revenueAovChart.destroy();
+        var labels = daily.map(function (point) {
+          var parts = String(point.date).split('-'); return parts[2] + '/' + parts[1];
+        });
+        var sharedOptions = {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 11 } } } },
+          scales: { x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 0, autoSkip: true } } }
+        };
+        revenueOrdersChart = new Chart(document.getElementById('revenueOrdersChart'), {
+          type: 'bar',
+          data: { labels: labels, datasets: [
+            { type: 'bar', label: 'GMV (VND)', data: daily.map(function (point) { return point.grossRevenue; }), yAxisID: 'y', backgroundColor: 'rgba(245, 158, 11, .82)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 4 },
+            { type: 'line', label: 'Số lượng đơn', data: daily.map(function (point) { return point.orders; }), yAxisID: 'y1', borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .3 }
+          ] },
+          options: Object.assign({}, sharedOptions, { scales: {
+            x: sharedOptions.scales.x,
+            y: { beginAtZero: true, position: 'left', ticks: { color: '#64748b', callback: function (value) { return compactMoney(value); } }, grid: { color: 'rgba(148,163,184,.22)' } },
+            y1: { beginAtZero: true, position: 'right', ticks: { color: '#64748b', precision: 0 }, grid: { drawOnChartArea: false } }
+          } })
+        });
+        revenueAovChart = new Chart(document.getElementById('revenueAovChart'), {
+          type: 'bar',
+          data: { labels: labels, datasets: [{ label: 'AOV (VND)', data: daily.map(function (point) { return point.aov; }), backgroundColor: 'rgba(37, 99, 235, .82)', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4 }] },
+          options: Object.assign({}, sharedOptions, { scales: { x: sharedOptions.scales.x,
+            y: { beginAtZero: true, ticks: { color: '#64748b', callback: function (value) { return compactMoney(value); } }, grid: { color: 'rgba(148,163,184,.22)' } } } })
+        });
+      }
+
       function renderReport(data, forceCreativeRefresh) {
         setLoading(false);
         document.getElementById('updatedAt').textContent = 'Cập nhật: ' +
           new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(data.generatedAt));
-        document.getElementById('report').classList.remove('hidden');
+        document.getElementById('reportTabs').classList.remove('hidden');
+        document.getElementById('report').classList.toggle('hidden', activeReportView !== 'ads');
         renderVideoRecommendations(null);
         var totals = data.totals;
         var items = [
@@ -1269,6 +1433,14 @@
       function integer(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value); }
       function money(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
       function moneyWhole(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value); }
+      function compactMoney(value) {
+        if (value == null) return '-';
+        var absolute = Math.abs(Number(value));
+        if (absolute >= 1000000000) return number(Number(value) / 1000000000) + 'B';
+        if (absolute >= 1000000) return number(Number(value) / 1000000) + 'M';
+        if (absolute >= 1000) return number(Number(value) / 1000) + 'K';
+        return integer(value);
+      }
       function percent(value) { return value == null ? '-' : new Intl.NumberFormat('vi-VN', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
       function rate(value) { return value == null ? '-' : number(value) + '%'; }
     </script>
