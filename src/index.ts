@@ -18,6 +18,7 @@ function validateSellerScope(input: any): any {
   return {
     startDate: validateDate(input?.startDate, 'startDate'),
     endDate: validateDate(input?.endDate, 'endDate'),
+    forceRefresh: input?.forceRefresh === true,
   };
 }
 

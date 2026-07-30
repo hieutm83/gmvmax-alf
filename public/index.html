@@ -525,8 +525,13 @@
       function setAutoRefresh(enabled) {
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = enabled ? setInterval(function () {
-          if (activeReportView === 'revenue') requestRevenueAnalysis(true);
-          else requestReport(true);
+          if (activeReportView === 'revenue') {
+            loadedReportScope = '';
+            requestRevenueAnalysis(true);
+          } else {
+            loadedRevenueScope = '';
+            requestReport(true);
+          }
         }, 300000) : null;
       }
 
@@ -601,7 +606,7 @@
             renderReport(data, forceCreativeRefresh === true);
           })
           .withFailureHandler(showError)
-          .loadReport(scope);
+          .loadReport(Object.assign({}, scope, { forceRefresh: forceCreativeRefresh === true }));
       }
 
       function reportScope() {
@@ -648,7 +653,7 @@
             renderRevenueAnalysis(data);
           })
           .withFailureHandler(handleRevenueFailure)
-          .loadRevenueAnalysis(scope);
+          .loadRevenueAnalysis(Object.assign({}, scope, { forceRefresh: force === true }));
       }
 
       function handleRevenueFailure(error) {
