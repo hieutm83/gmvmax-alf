@@ -57,7 +57,7 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   }
   if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
   if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));
-  if(url.pathname==='/api/comparison')return ok(await loadComparison(env,{advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),endDate:validateDate(input.endDate,'endDate')}));
+  if(url.pathname==='/api/comparison')return ok(await loadComparison(env,{advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),startDate:validateDate(input.startDate||input.endDate,'startDate'),endDate:validateDate(input.endDate,'endDate')}));
   if(url.pathname==='/api/video-stats')return ok(await loadVideoStats(env,{...input,advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),itemId:validateId(input.itemId,'Post ID'),endDate:validateDate(input.endDate,'endDate')}));
   if(url.pathname==='/api/video-metadata')return ok(await loadVideoMetadata(env,{...input,advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),itemId:validateId(input.itemId,'Post ID'),endDate:validateDate(input.endDate,'endDate')}));
   throw new HttpError(404,'API route not found.');

@@ -110,6 +110,8 @@
       .recommendation-video:hover { color: var(--primary-hover); background: transparent; text-decoration: underline; }
       .recommendation-reason { color: var(--text-secondary); line-height: 1.4; }
       .recommendation-table td.recommendation-reason { white-space: pre-line; }
+      .recommendation-more { display: flex; min-width: 120px; margin: 12px auto; color: var(--primary); background: var(--surface); border-color: var(--border); }
+      .recommendation-more:hover { color: #fff; background: var(--primary); border-color: var(--primary); }
       .live-toggle { display: flex; align-items: center; min-height: var(--touch); padding: 0 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); text-transform: none; }
       .live-toggle input { min-height: 0; margin: 0 8px 0 0; padding: 0; accent-color: var(--primary); }
       .updated-at { display: flex; align-items: center; min-height: var(--touch); padding: 0 14px; color: var(--text-secondary); background: var(--surface-muted); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; font-weight: 700; white-space: nowrap; }
@@ -212,9 +214,14 @@
       .operations-charts { margin-bottom: 20px; }
       .operations-charts .analytics-panel { min-height: 320px; }
       .operations-charts .analytics-canvas { height: 250px; }
-      .operations-table th:first-child, .operations-table td:first-child { min-width: 180px; }
-      .operations-table th:nth-child(4), .operations-table td:nth-child(4) { min-width: 270px; }
-      .operations-table th:nth-child(n+5), .operations-table td:nth-child(n+5) { min-width: 150px; }
+      .operations-table { width: 100%; min-width: 0; table-layout: fixed; }
+      .operations-table th, .operations-table td { padding-right: 10px; padding-left: 10px; }
+      .operations-table th:first-child, .operations-table td:first-child { width: 20%; min-width: 0; }
+      .operations-table th:nth-child(2), .operations-table td:nth-child(2) { width: 12%; }
+      .operations-table th:nth-child(3), .operations-table td:nth-child(3) { width: 11%; }
+      .operations-table th:nth-child(4), .operations-table td:nth-child(4) { width: 25%; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+      .operations-table th:nth-child(5), .operations-table td:nth-child(5) { width: 20%; min-width: 0; white-space: normal; }
+      .operations-table th:nth-child(6), .operations-table td:nth-child(6) { width: 12%; min-width: 0; white-space: normal; }
       .order-detail-link { color: var(--primary); font-weight: 700; text-decoration: none; }
       .order-detail-link:hover { text-decoration: underline; }
       .admin-modal { width: min(720px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
@@ -254,7 +261,7 @@
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
         <section class="analytics-panel hourly-chart-panel">
-          <h2>Dữ liệu theo giờ</h2>
+          <h2 id="adsTimeSeriesTitle">Dữ liệu theo giờ</h2>
           <div class="hourly-chart-canvas"><canvas id="hourlyPerformanceChart"></canvas></div>
         </section>
         <section class="gmv-analysis-panel cost-analysis-panel">
@@ -290,6 +297,7 @@
             <tbody id="boostVideoRows"></tbody>
           </table>
           <div id="boostVideoEmpty" class="empty">Đang đánh giá video...</div>
+          <button id="boostVideoMore" class="recommendation-more hidden" type="button">Thêm</button>
         </div>
         <h2 class="section-title">Video nên tắt</h2>
         <div class="table-wrap">
@@ -298,6 +306,7 @@
             <tbody id="stopVideoRows"></tbody>
           </table>
           <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
+          <button id="stopVideoMore" class="recommendation-more hidden" type="button">Thêm</button>
         </div>
       </section>
       <section id="revenueReport" class="hidden">
@@ -349,7 +358,7 @@
         <h2 class="section-title">Giám sát chi tiết</h2>
         <div class="table-wrap">
           <table class="operations-table">
-            <thead><tr><th>Mã đơn / Mã RMA</th><th>Loại sự cố</th><th>Nhóm / Khởi tạo</th><th>Lý do chi tiết</th><th>Thời gian vận chuyển</th><th>Thời gian hủy</th><th>Thời gian cập nhật</th></tr></thead>
+            <thead><tr><th>Mã đơn / Mã RMA</th><th>Loại sự cố</th><th>Nhóm / Khởi tạo</th><th>Lý do chi tiết</th><th>Thời gian vận chuyển</th><th>Thời gian hủy</th></tr></thead>
             <tbody id="operationsRows"></tbody>
           </table>
           <div id="operationsEmpty" class="empty hidden">Không có sự cố trong khoảng ngày đã chọn.</div>
@@ -427,6 +436,7 @@
       var currentSummaryContexts = [];
       var currentReportTotals = null;
       var currentReportHourly = [];
+      var recommendationExpanded = { boost: false, stop: false };
       var currentComparison = null;
       var currentCreativeSummary = null;
       var videoContextByItemId = {};
@@ -860,12 +870,12 @@
           options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { family: 'Inter', size: 10 } } } } }
         });
         returnReasonsChart = new Chart(document.getElementById('returnReasonsChart'), {
-          type: 'bar', plugins: [emptyChartPlugin], data: { labels: returns.labels, datasets: [{ label: 'Yêu cầu', data: returns.values, backgroundColor: '#d97706', borderRadius: 4 }] },
-          options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: returns.values.length > 0, beginAtZero: true, ticks: { precision: 0 } }, y: { display: returns.values.length > 0, ticks: { autoSkip: false } } } }
+          type: 'doughnut', plugins: [emptyChartPlugin], data: { labels: returns.labels, datasets: [{ data: returns.values, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { family: 'Inter', size: 10 } } } } }
         });
         failedReasonsChart = new Chart(document.getElementById('failedReasonsChart'), {
-          type: 'bar', plugins: [emptyChartPlugin], data: { labels: failed.labels, datasets: [{ label: 'Đơn huỷ SYSTEM', data: failed.values, backgroundColor: '#7c3aed', borderRadius: 4 }] },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: failed.values.length > 0, beginAtZero: true, ticks: { precision: 0 } }, x: { display: failed.values.length > 0, ticks: { maxRotation: 25, minRotation: 0 } } } }
+          type: 'doughnut', plugins: [emptyChartPlugin], data: { labels: failed.labels, datasets: [{ data: failed.values, backgroundColor: colors, borderColor: '#fff', borderWidth: 2 }] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { family: 'Inter', size: 10 } } } } }
         });
         deliveryFunnelChart = new Chart(document.getElementById('deliveryFunnelChart'), {
           type: 'bar', plugins: [emptyChartPlugin], data: { labels: funnel.map(function (item) { return item.label; }), datasets: [{ label: 'Đơn', data: funnel.map(function (item) { return item.count; }), backgroundColor: ['#f59e0b','#ea580c','#dc2626','#7c3aed','#059669'], borderRadius: 5 }] },
@@ -884,8 +894,7 @@
           orderId.target = '_blank'; orderId.rel = 'noopener noreferrer'; idCell.appendChild(orderId);
           if (item.rmaId && item.rmaId !== item.orderId) { var rma = document.createElement('span'); rma.className = 'campaign-meta'; rma.textContent = 'RMA: ' + item.rmaId; idCell.appendChild(rma); }
           row.appendChild(idCell);
-          [item.type, item.group, item.reason, operationShippingTime(item),
-            operationDate(item.cancelledAt), operationDate(item.updatedAt)]
+          [item.type, item.group, item.reason, operationShippingTime(item), operationDate(item.cancelledAt)]
             .forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value || '-'; row.appendChild(cell); });
           rows.appendChild(row);
         });
@@ -1150,7 +1159,9 @@
           }
           summary.appendChild(box);
         });
-        currentReportHourly = data.hourly || [];
+        var reportUsesDailySeries = data.startDate !== data.endDate;
+        document.getElementById('adsTimeSeriesTitle').textContent = reportUsesDailySeries ? 'Dữ liệu theo ngày' : 'Dữ liệu theo giờ';
+        currentReportHourly = reportUsesDailySeries ? (data.daily || []) : (data.hourly || []);
         renderHourlyChart(currentReportHourly);
 
         var rows = document.getElementById('productRows');
@@ -1357,29 +1368,40 @@
       }
 
       function renderVideoRecommendations(evaluation, errorMessage) {
+        recommendationExpanded.boost = false;
+        recommendationExpanded.stop = false;
         renderVideoRecommendationTable(
-          'boostVideoRows', 'boostVideoEmpty', evaluation && evaluation.boost,
+          'boostVideoRows', 'boostVideoEmpty', 'boostVideoMore', 'boost', evaluation && evaluation.boost,
           errorMessage || 'Không có video đủ tín hiệu để đề xuất boost.'
         );
         renderVideoRecommendationTable(
-          'stopVideoRows', 'stopVideoEmpty', evaluation && evaluation.stop,
+          'stopVideoRows', 'stopVideoEmpty', 'stopVideoMore', 'stop', evaluation && evaluation.stop,
           errorMessage || 'Không có video đủ tín hiệu để đề xuất tắt.'
         );
       }
 
-      function renderVideoRecommendationTable(rowsId, emptyId, recommendations, emptyMessage) {
+      function renderVideoRecommendationTable(rowsId, emptyId, moreId, kind, recommendations, emptyMessage) {
         var rows = document.getElementById(rowsId);
         var empty = document.getElementById(emptyId);
-        if (!rows || !empty) return;
+        var more = document.getElementById(moreId);
+        if (!rows || !empty || !more) return;
         rows.replaceChildren();
         if (recommendations == null) {
           empty.textContent = 'Đang đánh giá video...';
           empty.classList.remove('hidden');
+          more.classList.add('hidden');
           return;
         }
         empty.textContent = emptyMessage;
         empty.classList.toggle('hidden', recommendations.length > 0);
-        recommendations.forEach(function (video) {
+        var visibleRecommendations = recommendationExpanded[kind] ? recommendations : recommendations.slice(0, 5);
+        more.classList.toggle('hidden', recommendations.length <= 5);
+        more.textContent = recommendationExpanded[kind] ? 'Thu gọn' : 'Thêm';
+        more.onclick = function () {
+          recommendationExpanded[kind] = !recommendationExpanded[kind];
+          renderVideoRecommendationTable(rowsId, emptyId, moreId, kind, recommendations, emptyMessage);
+        };
+        visibleRecommendations.forEach(function (video) {
           var row = document.createElement('tr');
           var videoCell = document.createElement('td');
           var videoButton = document.createElement('button');
@@ -1488,14 +1510,6 @@
       }
 
       function requestYesterdayComparison(data) {
-        if (data.startDate !== data.endDate) {
-          ['cost', 'orders', 'costPerOrder', 'grossRevenue', 'roi',
-            'totalCreatives', 'impressions', 'traffic'].forEach(function (key) {
-            var element = document.getElementById('metric-change-' + key);
-            if (element) element.textContent = 'So sánh áp dụng cho báo cáo 1 ngày';
-          });
-          return;
-        }
         var requestId = ++comparisonRequestId;
         google.script.run
           .withSuccessHandler(function (comparison) {
@@ -1512,6 +1526,7 @@
           .loadYesterdayComparison({
             advertiserId: document.getElementById('advertiserId').value,
             storeId: document.getElementById('storeId').value,
+            startDate: data.startDate,
             endDate: data.endDate
           });
       }
@@ -1520,18 +1535,19 @@
         if (!currentReportTotals) return;
         currentComparison = data;
         if (currentCreativeSummary) renderCostAttribution(currentCreativeSummary.costAttribution, data.costAttribution);
-        var summaryLabel = data.summaryComparisonPeriod === 'same_hour'
+        var isPreviousPeriod = data.summaryComparisonPeriod === 'previous_period';
+        var summaryLabel = isPreviousPeriod ? '% so với kỳ trước' : (data.summaryComparisonPeriod === 'same_hour'
           ? '% so v\u1edbi c\u00f9ng gi\u1edd h\u00f4m qua'
-          : '% so v\u1edbi h\u00f4m qua';
-        var impressionsLabel = data.impressionsComparisonPeriod === 'same_hour'
+          : '% so v\u1edbi h\u00f4m qua');
+        var impressionsLabel = data.impressionsComparisonPeriod === 'previous_period' ? '% so với kỳ trước' : (data.impressionsComparisonPeriod === 'same_hour'
           ? '% so v\u1edbi c\u00f9ng gi\u1edd h\u00f4m qua'
-          : '% so v\u1edbi h\u00f4m qua';
+          : '% so v\u1edbi h\u00f4m qua');
         var configs = [
-          ['cost', currentReportTotals.cost, data.metrics.cost, true],
-          ['orders', currentReportTotals.orders, data.metrics.orders, false],
-          ['costPerOrder', currentReportTotals.costPerOrder, data.metrics.costPerOrder, true],
-          ['grossRevenue', currentReportTotals.grossRevenue, data.metrics.grossRevenue, false],
-          ['roi', currentReportTotals.roi, data.metrics.roi, false]
+          ['cost', currentReportTotals.cost, data.metrics.cost, true, summaryLabel],
+          ['orders', currentReportTotals.orders, data.metrics.orders, false, summaryLabel],
+          ['costPerOrder', currentReportTotals.costPerOrder, data.metrics.costPerOrder, true, summaryLabel],
+          ['grossRevenue', currentReportTotals.grossRevenue, data.metrics.grossRevenue, false, summaryLabel],
+          ['roi', currentReportTotals.roi, data.metrics.roi, false, summaryLabel]
         ];
         if (currentCreativeSummary) {
           configs.push(
@@ -1548,7 +1564,7 @@
           if (config[1] == null || config[2] == null ||
               !isFinite(current) || !isFinite(previous)) {
             element.className = 'metric-change neutral';
-            element.textContent = 'Không có mốc hôm qua';
+            element.textContent = isPreviousPeriod ? 'Không có dữ liệu kỳ trước' : 'Không có mốc hôm qua';
             return;
           }
           if (previous === 0) {

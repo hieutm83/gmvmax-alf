@@ -47,8 +47,9 @@ async function contextsRows(env: Env, session: McpSession, advertiserId: string,
 }
 
 export async function loadMainReport(env: Env, input: any, force = false): Promise<any> {
-  const key = stableKey('main', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
+  const key = stableKey('main-v2', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
   const { advertiserId, storeId, startDate, endDate } = input;
+  const multiDay = startDate !== endDate;
   const session = await createSession(env);
   const campaignRows = (await pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId],
     dimensions: ['campaign_id'], metrics: ['cost','orders','cost_per_order','gross_revenue','roi'], start_date: startDate, end_date: endDate }))
@@ -62,7 +63,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
       pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['item_group_id'],
         metrics: ['product_name','product_image_url','product_status','cost','orders','cost_per_order','gross_revenue','roi'],
         start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] }, sort_field: 'cost', sort_type: 'DESC' }),
-      pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['item_group_id','stat_time_hour'],
+      multiDay ? Promise.resolve([]) : pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['item_group_id','stat_time_hour'],
         metrics: ['cost','orders','gross_revenue'], start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] } })
     ]);
     hourlyRows.push(...hours);
@@ -84,10 +85,25 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
     const match = value.match(/(?:T|\s)(\d{1,2}):/) || value.match(/^(\d{1,2})$/); if (!match) continue;
     const index = Number(match[1]); if (index >= 0 && index < 24) add(hourly[index].metrics, metric(row.metrics || {}));
   }
+  const daily: any[] = [];
+  if (multiDay) {
+    const dailyRows = await pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId],
+      dimensions: ['campaign_id','stat_time_day'], metrics: ['cost','orders','gross_revenue'],
+      start_date: startDate, end_date: endDate });
+    const dailyByDate = new Map<string, any>();
+    for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
+      const point = { date, label: `${date.slice(8,10)}/${date.slice(5,7)}`, metrics: empty() };
+      daily.push(point); dailyByDate.set(date, point);
+    }
+    for (const row of dailyRows) {
+      const date = String(row.dimensions?.stat_time_day || row.metrics?.stat_time_day || '').slice(0, 10);
+      const point = dailyByDate.get(date); if (point) add(point.metrics, metric(row.metrics || {}));
+    }
+  }
   const result = { advertiserId, store: { storeId }, startDate, endDate, generatedAt: new Date().toISOString(), totals,
     products: products.filter((p) => (p.campaignActive && p.status === 'AVAILABLE') || p.metrics.cost > 0).sort((a,b) => b.metrics.cost-a.metrics.cost),
     availableProductCount: products.filter((p) => p.campaignActive && p.status === 'AVAILABLE').length,
-    creativeContexts: contexts, hourly };
+    creativeContexts: contexts, hourly, daily };
   await cachePut(env, key, result, endDate === new Date().toISOString().slice(0,10) ? 240 : 86400);
   return result;
 }
@@ -237,20 +253,23 @@ export async function loadVideoMetadata(env:Env,input:any):Promise<any>{
 }
 
 export async function loadComparison(env: Env, input: any): Promise<any> {
-  const date = new Date(`${input.endDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() - 1);
-  const comparisonDate = date.toISOString().slice(0, 10);
+  const currentStart = input.startDate || input.endDate;
+  const dayCount = Math.max(1, Math.round((Date.parse(`${input.endDate}T00:00:00Z`) - Date.parse(`${currentStart}T00:00:00Z`)) / 86400000) + 1);
+  const comparisonEndDate = shiftDate(currentStart, -1);
+  const comparisonStartDate = shiftDate(comparisonEndDate, -(dayCount - 1));
   const previous = await loadMainReport(env, { advertiserId: input.advertiserId, storeId: input.storeId,
-    startDate: comparisonDate, endDate: comparisonDate });
+    startDate: comparisonStartDate, endDate: comparisonEndDate });
   let totalCreatives = 0, impressions = 0, traffic = 0;
   let costAttribution = { total: 0, productCard: 0, seller: 0, affiliate: 0 };
   try {
     const summary = await loadCreativeSummaries(env, { advertiserId: input.advertiserId, storeId: input.storeId,
-      startDate: comparisonDate, endDate: comparisonDate, products: previous.products,
+      startDate: comparisonStartDate, endDate: comparisonEndDate, products: previous.products,
       allContexts: previous.creativeContexts, availableProducts: previous.availableProductCount });
     totalCreatives = summary.totalCreatives; impressions = summary.impressions; traffic = summary.traffic;
     costAttribution = summary.costAttribution || costAttribution;
   } catch { /* Comparison cards can still use the main metrics. */ }
-  return { comparisonDate, throughHour: 24, metrics: previous.totals,
+  return { comparisonDate: comparisonEndDate, comparisonStartDate, comparisonEndDate, throughHour: 24, metrics: previous.totals,
     availableProducts: previous.availableProductCount, totalCreatives, impressions, traffic, costAttribution,
-    summaryComparisonPeriod: 'previous_day', impressionsComparisonPeriod: 'previous_day' };
+    summaryComparisonPeriod: dayCount > 1 ? 'previous_period' : 'previous_day',
+    impressionsComparisonPeriod: dayCount > 1 ? 'previous_period' : 'previous_day' };
 }
