@@ -57,11 +57,13 @@ describe('buildOperationsReportStyles',()=>{
   it('uses compact typography and applies metric direction colors',()=>{
     const text=['Báo cáo chỉ số vận hành Tiktok shop ngày 29/07/2026','',
       '1. GMV: 4,4M (↓ 0,9%)','4. CHI TIÊU ADS: 2,34M (↑ 26,6%)',
-      '6. Tỷ lệ hủy: 2,1% (↓ 1,2%)','','Sản phẩm','1. Trà lạc tiên...','GMV: 3,2M'].join('\n');
+      '6. Tỷ lệ hủy: 2,1% ↓ 1,2%','','Sản phẩm','1. Trà lạc tiên...','GMV: 3,2M'].join('\n');
     const styles=buildOperationsReportStyles(text);
     expect(styles).toContainEqual({start:0,len:text.indexOf('\n'),st:['f_15','i']});
     expect(styles.some(style=>style.st.includes('f_13'))).toBe(true);
     expect(styles.some(style=>style.st.includes('c_15a85f'))).toBe(true);
     expect(styles.some(style=>style.st.includes('c_db342e'))).toBe(true);
+    const productGmvStart=text.lastIndexOf('GMV:');
+    expect(styles.some(style=>style.start===productGmvStart&&style.len===4&&style.st.includes('b'))).toBe(true);
   });
 });

@@ -71,6 +71,13 @@ export function buildOperationsReportStyles(text: string): OperationsTextStyle[]
     const start = text.indexOf(label);
     add(start, label.length, 'b', ...(label === 'Sản phẩm' ? ['u', GREEN] : []));
   }
+  const productSection = text.indexOf('\nSản phẩm\n');
+  if (productSection >= 0) {
+    const productGmvPattern = /^GMV:/gm;
+    productGmvPattern.lastIndex = productSection;
+    let match: RegExpExecArray | null;
+    while ((match = productGmvPattern.exec(text)) !== null) add(match.index, match[0].length, 'b');
+  }
   const lines = text.split('\n'); let offset = 0;
   const badWhenUp = new Set(['4. CHI TIÊU ADS:', '6. Tỷ lệ hủy:']);
   for (const line of lines) {
@@ -129,7 +136,13 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
   const products = (revenue.gmvAttribution?.products || []).filter((product: any) => Number(product.gmv) > 0);
   const displayDate = reportDate.split('-').reverse().join('/');
   const title = `${mode === 'REALTIME' ? 'Báo cáo realtime chỉ số vận hành' : 'Báo cáo chỉ số vận hành'} Tiktok shop ngày ${displayDate}`;
-  const lines = [title, '', ...values.map((item) => `${item.label} ${item.value} (${item.change.text})`), '', 'Sản phẩm'];
+  const lines = [
+    title,
+    '',
+    ...values.map((item) => `${item.label} ${item.value} ${item.label === '6. Tỷ lệ hủy:' ? item.change.text : `(${item.change.text})`}`),
+    '',
+    'Sản phẩm'
+  ];
   if (products.length) products.forEach((product: any, index: number) => {
     lines.push(`${index + 1}. ${shortProductName(product.name)}`, `GMV: ${compact(product.gmv)}`);
   });
