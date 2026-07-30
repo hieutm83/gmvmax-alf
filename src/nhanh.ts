@@ -136,7 +136,7 @@ function summarize(env: Env, orders: any[], startDate: string, endDate: string, 
   for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
     daily.set(date, { date, orders: 0, cancelledOrders: 0, grossRevenue: 0, aov: null, newCustomers: 0, returningCustomers: 0 });
   }
-  const seen = new Set(knownCustomers); const customers = new Map<string, number>(); const returning = new Set<string>(); const provinces = new Map<string, number>();
+  const seen = new Set(knownCustomers); const customers = new Map<string, number>(); const provinces = new Map<string, number>();
   const sorted = orders.slice().sort((a, b) => numberValue(a.info?.createdAt) - numberValue(b.info?.createdAt));
   for (const order of sorted) {
     const timestamp = numberValue(order.info?.createdAt || order.createdAt);
@@ -144,7 +144,7 @@ function summarize(env: Env, orders: any[], startDate: string, endDate: string, 
     if (CANCELLED_STATUSES.has(numberValue(order.info?.status ?? order.status))) { point.cancelledOrders += 1; continue; }
     const amount = orderAmount(order); const customer = customerId(order);
     if (customer) {
-      if (seen.has(customer)) { point.returningCustomers += 1; returning.add(customer); } else point.newCustomers += 1;
+      if (seen.has(customer)) point.returningCustomers += 1; else point.newCustomers += 1;
       seen.add(customer); customers.set(customer, (customers.get(customer) || 0) + 1);
     }
     point.orders += 1; point.grossRevenue += amount;
@@ -153,9 +153,10 @@ function summarize(env: Env, orders: any[], startDate: string, endDate: string, 
   const points = Array.from(daily.values()); points.forEach((point) => { point.aov = point.orders ? point.grossRevenue / point.orders : null; });
   const totals = points.reduce((sum, point) => ({ orders: sum.orders + point.orders, cancelledOrders: sum.cancelledOrders + point.cancelledOrders,
     grossRevenue: sum.grossRevenue + point.grossRevenue }), { orders: 0, cancelledOrders: 0, grossRevenue: 0 });
+  const repeatCustomers = Array.from(customers.values()).filter((count) => count > 1).length;
   return { daily: points, customerIds: new Set([...knownCustomers, ...customers.keys()]), totals: { ...totals,
     aov: totals.orders ? totals.grossRevenue / totals.orders : null,
-    repurchaseRate: customers.size ? returning.size / customers.size : null },
+    repurchaseRate: customers.size ? repeatCustomers / customers.size : null },
     provinces: Array.from(provinces, ([name, revenue]) => ({ name, revenue })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) };
 }
 
