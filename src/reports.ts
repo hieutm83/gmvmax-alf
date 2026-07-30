@@ -38,7 +38,8 @@ async function contextsRows(env: Env, session: McpSession, advertiserId: string,
   if (!contexts.length) return [];
   return pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId], dimensions, metrics,
     start_date: startDate, end_date: endDate, filtering: {
-      campaign_ids: unique(contexts.map((c) => c.campaignId)), item_group_ids: unique(contexts.map((c) => c.itemGroupId))
+      campaign_ids: unique(contexts.map((c) => c.campaignId)), item_group_ids: unique(contexts.map((c) => c.itemGroupId)),
+      ...(dimensions.includes('item_id') ? { creative_types: ['ADS_AND_ORGANIC'] } : {})
     } });
 }
 
@@ -122,14 +123,30 @@ export async function loadProductVideos(env: Env, input: any): Promise<any> {
 export async function loadCreativeSummaries(env: Env, input: any): Promise<any> {
   const key=stableKey('summary',{...input,forceRefresh:undefined}); if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
   const session=await createSession(env); const contexts=input.allContexts||input.products||[];
-  const rows=await contextsRows(env,session,input.advertiserId,input.storeId,contexts,input.startDate,input.endDate,
-    ['campaign_id','item_group_id','item_id'],['cost','orders','gross_revenue','creative_delivery_status','product_impressions','product_clicks']);
+  const rows:McpRow[]=[];const exactContexts=Array.from(new Map<string,ProductContext>(contexts.map((context:ProductContext)=>[`${context.campaignId}:${context.itemGroupId}`,context])).values());
+  for(let offset=0;offset<exactContexts.length;offset+=4){
+    const chunk=exactContexts.slice(offset,offset+4);
+    const chunkRows=await Promise.all(chunk.map(async context=>{
+      const values=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
+        dimensions:['item_id'],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
+        filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId],creative_types:['ADS_AND_ORGANIC']}});
+      values.forEach(row=>{row.dimensions={...(row.dimensions||{}),campaign_id:context.campaignId,item_group_id:context.itemGroupId};});
+      return values;
+    }));
+    chunkRows.forEach(values=>rows.push(...values));
+  }
   const ids=new Set<string>();let traffic=0,impressions=0;const map=new Map<string,any>();
+  const costAttribution={total:0,productCard:0,seller:0,affiliate:0};
   for(const row of rows){const m=row.metrics||{},id=rowId(row,'item_id'),k=`${rowId(row,'campaign_id')}:${rowId(row,'item_group_id')}`;
+    const cost=numberValue(m.cost),authorization=String(m.tt_account_authorization_type||'').toUpperCase();
+    costAttribution.total+=cost;
+    if(id==='-1')costAttribution.productCard+=cost;
+    else if(authorization.includes('AFFILIATE'))costAttribution.affiliate+=cost;
+    else costAttribution.seller+=cost;
     const entry=map.get(k)||{creativeCount:0,traffic:0,itemIds:[]}; impressions+=numberValue(m.product_impressions);traffic+=numberValue(m.product_clicks);
     if(numberValue(m.cost)||numberValue(m.orders)||numberValue(m.product_impressions)){if(id){ids.add(id);if(!entry.itemIds.includes(id))entry.itemIds.push(id);}entry.creativeCount++;entry.traffic+=numberValue(m.product_clicks);}map.set(k,entry);}
   const result={generatedAt:new Date().toISOString(),summaries:(input.products||[]).map((p:any)=>({campaignId:p.campaignId,itemGroupId:p.itemGroupId,...(map.get(`${p.campaignId}:${p.itemGroupId}`)||{creativeCount:0,traffic:0,itemIds:[]})})),
-    totalCreatives:ids.size,impressions,traffic,videoEvaluation:evaluateVideos(rows),hourlyTraffic:[],cacheStatus:'REFRESHED'};
+    totalCreatives:ids.size,impressions,traffic,costAttribution,videoEvaluation:evaluateVideos(rows),hourlyTraffic:[],cacheStatus:'REFRESHED'};
   await cachePut(env,key,result,300);return result;
 }
 
@@ -218,13 +235,15 @@ export async function loadComparison(env: Env, input: any): Promise<any> {
   const previous = await loadMainReport(env, { advertiserId: input.advertiserId, storeId: input.storeId,
     startDate: comparisonDate, endDate: comparisonDate });
   let totalCreatives = 0, impressions = 0, traffic = 0;
+  let costAttribution = { total: 0, productCard: 0, seller: 0, affiliate: 0 };
   try {
     const summary = await loadCreativeSummaries(env, { advertiserId: input.advertiserId, storeId: input.storeId,
       startDate: comparisonDate, endDate: comparisonDate, products: previous.products,
       allContexts: previous.creativeContexts, availableProducts: previous.availableProductCount });
     totalCreatives = summary.totalCreatives; impressions = summary.impressions; traffic = summary.traffic;
+    costAttribution = summary.costAttribution || costAttribution;
   } catch { /* Comparison cards can still use the main metrics. */ }
   return { comparisonDate, throughHour: 24, metrics: previous.totals,
-    availableProducts: previous.availableProductCount, totalCreatives, impressions, traffic,
+    availableProducts: previous.availableProductCount, totalCreatives, impressions, traffic, costAttribution,
     summaryComparisonPeriod: 'previous_day', impressionsComparisonPeriod: 'previous_day' };
 }

@@ -34,6 +34,10 @@ queue = "gmv-max-tasks"
 binding = "ZALO_INBOX_QUEUE"
 queue = "gmv-max-zalo-inbox"
 
+[[queues.producers]]
+binding = "TRACKING_QUEUE"
+queue = "gmv-max-tracking"
+
 [[queues.consumers]]
 queue = "gmv-max-tasks"
 max_batch_size = 1
@@ -48,6 +52,14 @@ max_batch_size = 1
 max_batch_timeout = 1
 max_retries = 5
 max_concurrency = 4
+dead_letter_queue = "gmv-max-dead-letter"
+
+[[queues.consumers]]
+queue = "gmv-max-tracking"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 5
+max_concurrency = 1
 dead_letter_queue = "gmv-max-dead-letter"
 
 [[durable_objects.bindings]]

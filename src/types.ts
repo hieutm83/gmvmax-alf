@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   TASK_QUEUE: Queue<TaskMessage>;
+  TRACKING_QUEUE: Queue<TaskMessage>;
   ZALO_INBOX_QUEUE: Queue<TaskMessage>;
   OAUTH_COORDINATOR: DurableObjectNamespace;
   ASSETS: Fetcher;
@@ -35,6 +36,7 @@ export type TaskMessage =
   | { type: 'zalo-video-day'; eventId: number; reportDate: string }
   | { type: 'zalo-video-finalize'; eventId: number }
   | { type: 'zalo-video-recover' }
+  | { type: 'tracking-sync'; orderId: string; shopCipher: string }
   | { type: 'sheet-backup'; reportDate: string };
 
 export interface OAuthTokenSet {

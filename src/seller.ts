@@ -167,6 +167,18 @@ export async function ordersForPeriod(env: Env, startDate: string, endDate: stri
   return orders;
 }
 
+export async function ordersUpdatedForPeriod(env: Env, startDate: string, endDate: string, shopCipher: string): Promise<any[]> {
+  const orders: any[] = []; let pageToken = ''; let pages = 0;
+  do {
+    const data = await shopRequest(env, '/order/202309/orders/search', 'POST', {
+      shop_cipher: shopCipher, page_size: 100, page_token: pageToken || undefined,
+      sort_field: 'update_time', sort_order: 'ASC'
+    }, { update_time_ge: epoch(startDate), update_time_lt: epoch(shiftDate(endDate, 1)) });
+    orders.push(...(data.orders || [])); pageToken = String(data.next_page_token || ''); pages += 1;
+  } while (pageToken && pages < 100);
+  return orders;
+}
+
 async function hydrateMissingOrderAddresses(env: Env, orders: any[], shopCipher: string): Promise<any[]> {
   const missingIds = orders
     .filter((order) => {

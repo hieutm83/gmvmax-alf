@@ -58,6 +58,10 @@
       .section-title { margin: 28px 0 12px; font-size: 15px; font-weight: 800; letter-spacing: 0; }
       .hourly-wrap, .table-wrap { overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); scrollbar-color: #94a3b8 transparent; }
       .hourly-wrap { max-height: 420px; }
+      .hourly-chart-panel { min-height: 390px; }
+      .hourly-chart-panel h2 { text-align: left; }
+      .hourly-chart-canvas { position: relative; width: 100%; height: 330px; }
+      .cost-analysis-panel { margin-top: 20px; }
       table { width: 100%; color: var(--text-secondary); border-collapse: separate; border-spacing: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
       th, td { padding: 11px 14px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
       th { color: var(--text-muted); background: var(--surface-muted); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
@@ -253,19 +257,29 @@
         <span id="updatedAt" class="updated-at"></span>
       </form>
       <nav id="reportTabs" class="report-tabs hidden" aria-label="Loại báo cáo">
-        <button class="report-tab active" type="button" data-report-view="ads" aria-selected="true">Hiệu quả quảng cáo</button>
-        <button class="report-tab" type="button" data-report-view="revenue" aria-selected="false">Phân tích doanh thu</button>
+        <button class="report-tab active" type="button" data-report-view="revenue" aria-selected="true">Phân Tích Doanh Thu</button>
+        <button class="report-tab" type="button" data-report-view="ads" aria-selected="false">Hiệu Quả Quảng Cáo</button>
         <button class="report-tab" type="button" data-report-view="operations" aria-selected="false">Đơn Hoàn Hủy &amp; Logistics</button>
       </nav>
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
-        <h2 class="section-title">Dữ liệu theo giờ</h2>
-        <div class="hourly-wrap">
-          <table class="hourly-table">
-            <thead><tr><th>Khung giờ</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>AOV</th><th>ROI</th></tr></thead>
-            <tbody id="hourlyRows"></tbody>
-          </table>
-        </div>
+        <section class="analytics-panel hourly-chart-panel">
+          <h2>Dữ liệu theo giờ</h2>
+          <div class="hourly-chart-canvas"><canvas id="hourlyPerformanceChart"></canvas></div>
+        </section>
+        <section class="gmv-analysis-panel cost-analysis-panel">
+          <header class="gmv-analysis-head"><h2>Phân tích COST</h2><span>Theo nguồn COST</span></header>
+          <div id="costAttributionEmpty" class="analytics-unavailable"><div><strong>Đang tải dữ liệu nguồn COST</strong><span>Dữ liệu được tổng hợp từ các creative trong khoảng ngày đã chọn.</span></div></div>
+          <div id="costAttributionContent" class="gmv-analysis-grid hidden">
+            <div class="gmv-attribution-chart"><canvas id="costAttributionChart"></canvas></div>
+            <div class="table-wrap">
+              <table class="gmv-source-table">
+                <thead><tr><th>Nguồn</th><th>COST</th><th>So với kỳ trước</th></tr></thead>
+                <tbody id="costAttributionRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
         <h2 class="section-title">Sản phẩm Available</h2>
         <form id="videoLookupForm" class="video-search">
           <input id="videoLookupInput" type="text" inputmode="url" autocomplete="off" placeholder="Dán link video TikTok hoặc Post ID" aria-label="Link video TikTok">
@@ -299,7 +313,6 @@
       <section id="revenueReport" class="hidden">
         <div id="revenueContent" class="hidden">
           <div id="revenueSummary" class="summary revenue-summary"></div>
-          <p class="analytics-note">Nguồn dữ liệu: TikTok Shop Analytics API cho GMV, đơn hàng và AOV; Seller Order API cho đơn hủy, khách hàng và tỉnh thành.</p>
           <div class="analytics-grid">
             <section class="analytics-panel">
               <h2>Số lượng đơn, đơn hủy và GMV theo ngày</h2>
@@ -444,6 +457,8 @@
       var revenueCustomersChart = null;
       var revenueProvinceChart = null;
       var revenueAttributionChart = null;
+      var hourlyPerformanceChart = null;
+      var costAttributionChart = null;
       var cancelReasonsChart = null;
       var returnReasonsChart = null;
       var failedReasonsChart = null;
@@ -454,7 +469,7 @@
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
-        (['ads', 'revenue', 'operations'].indexOf(requestedView) !== -1 ? requestedView : 'ads');
+        (['ads', 'revenue', 'operations'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
       var loadedRevenueScope = '';
       var loadedOperationsScope = '';
@@ -644,7 +659,7 @@
           .withSuccessHandler(function (stores) {
             setLoading(false);
             setStores(stores);
-            if (stores.length) requestReport(false);
+            if (stores.length) setReportView(activeReportView);
             else showError({ message: 'Không tìm thấy TikTok Shop hỗ trợ GMV Max cho tài khoản này.' });
           })
           .withFailureHandler(showError)
@@ -813,7 +828,7 @@
         var summary = document.getElementById('operationsSummary'); summary.replaceChildren();
         summary.append(
           operationsMetric('Tỷ lệ hủy đơn', percent(totals.cancellationRate), 'cancelRate',
-            integer(totals.cancellations) + ' đơn hủy / ' + integer(totals.openOrders) + ' đơn đang mở trong 30 ngày · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
+            integer(totals.cancellations) + ' đơn hủy cập nhật trong kỳ / ' + integer(totals.openOrders) + ' đơn đang mở được tạo trong kỳ · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
           operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate',
             integer(totals.returns) + ' yêu cầu / ' + integer(totals.returnEligibleOrders) + ' đơn DELIVERED · REFUND ' + integer(types.REFUND || 0) + ' · RETURN & REFUND ' + integer(types.RETURN_AND_REFUND || 0)),
           operationsMetric('Tỷ lệ giao hàng thất bại', percent(totals.failedDeliveryRate), 'failedRate',
@@ -904,7 +919,7 @@
           if (item.rmaId && item.rmaId !== item.orderId) { var rma = document.createElement('span'); rma.className = 'campaign-meta'; rma.textContent = 'RMA: ' + item.rmaId; idCell.appendChild(rma); }
           row.appendChild(idCell);
           [item.type, item.group, item.reason, (item.actionCode ? item.actionCode + ' · ' : '') + (item.status || '-'),
-            operationDate(item.shippingReadyAt), operationDate(item.cancelledAt), operationDate(item.updatedAt)]
+            item.shippingStatus || operationDate(item.shippingReadyAt), operationDate(item.cancelledAt), operationDate(item.updatedAt)]
             .forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value || '-'; row.appendChild(cell); });
           rows.appendChild(row);
         });
@@ -1014,6 +1029,63 @@
         appendRow('Thẻ sản phẩm', attributionValue(seller, 'productCard'), attributionValue(previousSeller, 'productCard'), '', false);
       }
 
+      function renderCostAttribution(data, previous) {
+        if (costAttributionChart) { costAttributionChart.destroy(); costAttributionChart = null; }
+        var empty = document.getElementById('costAttributionEmpty');
+        var content = document.getElementById('costAttributionContent');
+        var total = Number(data && data.total) || 0;
+        var hasData = total > 0;
+        empty.classList.toggle('hidden', hasData);
+        content.classList.toggle('hidden', !hasData);
+        if (!hasData) {
+          empty.querySelector('strong').textContent = 'Chưa có dữ liệu nguồn COST';
+          empty.querySelector('span').textContent = 'TikTok Ads chưa trả dữ liệu creative cho khoảng ngày này.';
+          return;
+        }
+        var sources = [
+          { key: 'productCard', label: 'Thẻ sản phẩm', color: '#2563eb' },
+          { key: 'seller', label: 'Người bán', color: '#f7b942' },
+          { key: 'affiliate', label: 'Affiliate', color: '#0f9f9a' }
+        ];
+        var centerPlugin = {
+          id: 'costAttributionCenter',
+          afterDraw: function (chart) {
+            var area = chart.chartArea; if (!area) return;
+            var x = (area.left + area.right) / 2; var y = (area.top + area.bottom) / 2;
+            var context = chart.ctx; context.save(); context.textAlign = 'center'; context.textBaseline = 'middle';
+            context.fillStyle = '#475569'; context.font = '700 13px Inter'; context.fillText('COST', x, y - 11);
+            context.fillStyle = '#0f172a'; context.font = '800 19px Inter'; context.fillText(compactMoney(total), x, y + 12); context.restore();
+          }
+        };
+        costAttributionChart = new Chart(document.getElementById('costAttributionChart'), {
+          type: 'doughnut', plugins: [centerPlugin],
+          data: { labels: sources.map(function (source) { return source.label; }), datasets: [{
+            data: sources.map(function (source) { return Number(data[source.key]) || 0; }),
+            backgroundColor: sources.map(function (source) { return source.color; }), borderColor: '#fff', borderWidth: 3
+          }] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '64%', plugins: {
+            legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 11 } } },
+            tooltip: { callbacks: { label: function (context) { return context.label + ': ' + moneyWhole(context.raw) + ' (' + number(total ? Number(context.raw) / total * 100 : 0) + '%)'; } } }
+          } }
+        });
+        var rows = document.getElementById('costAttributionRows'); rows.replaceChildren();
+        sources.forEach(function (source) {
+          var value = Number(data[source.key]) || 0;
+          var previousValue = Number(previous && previous[source.key]) || 0;
+          var row = document.createElement('tr'); row.className = 'gmv-source-row';
+          var labelCell = document.createElement('td'); var labelWrap = document.createElement('span'); labelWrap.className = 'gmv-source-label';
+          var dot = document.createElement('span'); dot.className = 'gmv-source-dot'; dot.style.background = source.color; labelWrap.appendChild(dot);
+          labelWrap.appendChild(document.createTextNode(source.label));
+          var contribution = document.createElement('span'); contribution.className = 'gmv-contribution'; contribution.textContent = ' (Đóng góp ' + number(value / total * 100) + '%)';
+          labelWrap.appendChild(contribution); labelCell.appendChild(labelWrap);
+          var valueCell = document.createElement('td'); valueCell.textContent = moneyWhole(value);
+          var changeCell = document.createElement('td'); var change = changeValue(value, previousValue);
+          changeCell.className = 'gmv-change ' + (change == null ? 'neutral' : (change <= 0 ? 'good' : 'bad'));
+          changeCell.textContent = change == null ? '—' : ((change >= 0 ? '↑ ' : '↓ ') + number(Math.abs(change)) + '%');
+          row.append(labelCell, valueCell, changeCell); rows.appendChild(row);
+        });
+      }
+
       function renderRevenueCharts(daily, provinces) {
         if (revenueOrdersChart) revenueOrdersChart.destroy();
         if (revenueAovChart) revenueAovChart.destroy();
@@ -1106,7 +1178,7 @@
           summary.appendChild(box);
         });
         currentReportHourly = data.hourly || [];
-        renderHourlyRows(currentReportHourly);
+        renderHourlyChart(currentReportHourly);
 
         var rows = document.getElementById('productRows');
         rows.replaceChildren();
@@ -1169,27 +1241,24 @@
         if (activeReportView !== 'ads') setReportView(activeReportView);
       }
 
-      function renderHourlyRows(hours) {
-        var rows = document.getElementById('hourlyRows');
-        rows.replaceChildren();
-        hours.forEach(function (hour) {
-          var row = document.createElement('tr');
-          var label = document.createElement('td'); label.textContent = hour.label; row.appendChild(label);
-          [
-            ['cost', moneyWhole(hour.metrics.cost)],
-            ['orders', integer(hour.metrics.orders)],
-            ['costPerOrder', moneyWhole(hour.metrics.costPerOrder)],
-            ['grossRevenue', moneyWhole(hour.metrics.grossRevenue)],
-            ['aov', hour.metrics.orders
-              ? moneyWhole(hour.metrics.grossRevenue / hour.metrics.orders)
-              : '-'],
-            ['roi', number(hour.metrics.roi)]
-          ].forEach(function (entry) {
-            var cell = document.createElement('td');
-            cell.textContent = entry[1];
-            row.appendChild(cell);
-          });
-          rows.appendChild(row);
+      function renderHourlyChart(hours) {
+        if (hourlyPerformanceChart) hourlyPerformanceChart.destroy();
+        hourlyPerformanceChart = new Chart(document.getElementById('hourlyPerformanceChart'), {
+          type: 'bar',
+          data: { labels: hours.map(function (hour) { return hour.label; }), datasets: [
+            { type: 'bar', label: 'Cost', data: hours.map(function (hour) { return hour.metrics.cost || 0; }), yAxisID: 'money', backgroundColor: 'rgba(37, 99, 235, .82)', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4 },
+            { type: 'bar', label: 'Gross revenue', data: hours.map(function (hour) { return hour.metrics.grossRevenue || 0; }), yAxisID: 'money', backgroundColor: 'rgba(15, 118, 110, .78)', borderColor: '#0f766e', borderWidth: 1, borderRadius: 4 },
+            { type: 'line', label: 'ROI', data: hours.map(function (hour) { return hour.metrics.roi || 0; }), yAxisID: 'roi', borderColor: '#7c3aed', backgroundColor: '#7c3aed', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
+          ] },
+          options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 11 } } },
+              tooltip: { callbacks: { label: function (context) { return context.dataset.label + ': ' + (context.dataset.yAxisID === 'roi' ? number(context.raw) : moneyWhole(context.raw)); } } } },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 0, autoSkip: true } },
+              money: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'VND' }, ticks: { color: '#64748b', callback: compactNumber } },
+              roi: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'ROI' }, grid: { drawOnChartArea: false }, ticks: { color: '#64748b' } }
+            }
+          }
         });
       }
 
@@ -1296,6 +1365,7 @@
         impressionsElement.textContent = integer(data.impressions);
         trafficElement.textContent = integer(data.traffic);
         currentCreativeSummary = data;
+        renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
         applyHourlyTraffic(data.hourlyTraffic || []);
         videoContextByItemId = {};
@@ -1476,6 +1546,7 @@
       function renderYesterdayComparison(data) {
         if (!currentReportTotals) return;
         currentComparison = data;
+        if (currentCreativeSummary) renderCostAttribution(currentCreativeSummary.costAttribution, data.costAttribution);
         var summaryLabel = data.summaryComparisonPeriod === 'same_hour'
           ? '% so v\u1edbi c\u00f9ng gi\u1edd h\u00f4m qua'
           : '% so v\u1edbi h\u00f4m qua';

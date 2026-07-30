@@ -4,7 +4,7 @@ import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
-import { loadOperationsAnalysis } from './operations';
+import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
@@ -111,6 +111,7 @@ async function resolveDefaultStore(env:Env):Promise<string>{
 
 async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
+  if(message.type==='tracking-sync')return syncTrackingOrder(env,message.orderId,message.shopCipher);
   if(message.type==='zalo-poll'||message.type==='zalo-webhook-ensure')return;
   if(message.type==='zalo-video'||message.type==='zalo-video-day'||message.type==='zalo-video-finalize'||message.type==='zalo-video-recover')return;
   if(message.type==='hourly-dispatch'){
@@ -194,7 +195,7 @@ export default {
           await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
             .bind(JSON.stringify({error:details}),message.body.eventId).run();
         }
-        message.retry({delaySeconds:10});
+        message.retry({delaySeconds:message.body.type==='tracking-sync'?60:10});
       }
     }
   }

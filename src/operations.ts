@@ -1,13 +1,22 @@
 import type { Env } from './types';
-import { authorizedShop, epoch, ordersForPeriod, shopRequest } from './seller';
+import { authorizedShop, epoch, ordersForPeriod, ordersUpdatedForPeriod, shopRequest } from './seller';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
 
-const TRACKING_CONCURRENCY = 2;
+const TRACKING_THROTTLE_MS = 500;
+const TRACKING_RETRY_DELAYS = [2000, 5000, 10000];
+const MAX_TRACKING_REQUESTS_PER_LOAD = 5;
 const STUCK_RETURN_DAYS = 3;
 const DELIVERY_FAILURE_CODES = new Set(['40601', '40801', '41801', '41901', '60101']);
 const RECEIVED_CODES = new Set(['43101', '43201', '60201', '80101']);
 const OPEN_ORDER_STATUSES = new Set(['UNPAID', 'ON_HOLD', 'AWAITING_SHIPMENT', 'PARTIALLY_SHIPPING', 'AWAITING_COLLECTION', 'IN_TRANSIT']);
 const DELIVERY_POPULATION_STATUSES = new Set(['AWAITING_COLLECTION', 'IN_TRANSIT']);
+const CANCELLATION_STATUS_LABELS: Record<string, string> = {
+  CANCELLATION_REQUEST_PENDING: 'Đang chờ duyệt huỷ',
+  CANCELLATION_REQUEST_SUCCESS: 'Đã duyệt huỷ',
+  CANCELLATION_REQUEST_CANCEL: 'Yêu cầu huỷ đã bị huỷ bỏ',
+  CANCELLATION_REQUEST_CANCELLED: 'Yêu cầu huỷ đã bị huỷ bỏ',
+  CANCELLATION_REQUEST_COMPLETE: 'Đã hoàn tất huỷ đơn'
+};
 
 const ACTION_LABELS: Record<string, string> = {
   '40601': 'Giao thất bại lần 1',
@@ -46,8 +55,8 @@ async function pagedSearch(env: Env, path: string, listKey: string, shopCipher: 
       sort_field: 'update_time',
       sort_order: 'DESC'
     }, {
-      create_time_ge: epoch(startDate),
-      create_time_lt: epoch(shiftDate(endDate, 1)),
+      update_time_ge: epoch(startDate),
+      update_time_lt: epoch(shiftDate(endDate, 1)),
       locale: 'vi-VN'
     });
     rows.push(...(Array.isArray(data?.[listKey]) ? data[listKey] : []));
@@ -57,19 +66,51 @@ async function pagedSearch(env: Env, path: string, listKey: string, shopCipher: 
   return rows;
 }
 
-async function trackingForOrder(env: Env, orderId: string, shopCipher: string): Promise<any> {
-  const key = stableKey('shop-tracking-v1', { orderId, shopCipher });
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isRateLimit(error: unknown): boolean {
+  return /too many requests|rate limit|429/i.test(errorMessage(error));
+}
+
+async function enqueueTrackingRetry(env: Env, orderId: string, shopCipher: string): Promise<void> {
+  const key = stableKey('tracking-retry-queued', { orderId, shopCipher });
+  if (await cacheGet(env, key)) return;
+  await env.TRACKING_QUEUE.send({ type: 'tracking-sync', orderId, shopCipher }, { delaySeconds: 60 });
+  await cachePut(env, key, true, 300);
+}
+
+async function trackingForOrder(env: Env, orderId: string, shopCipher: string, queueOnRateLimit = true): Promise<any> {
+  const key = stableKey('shop-tracking-v2', { orderId, shopCipher });
   const cached = await cacheGet<any>(env, key);
-  if (cached) return cached;
+  if (cached) return { ...cached, cacheHit: true };
   let data: any;
-  try {
-    data = await shopRequest(env, `/logistics/202604/orders/${orderId}/tracking`, 'GET', { shop_cipher: shopCipher });
-  } catch (error) {
-    if (!/11007009|not in supported business scenes|not in supported scope/i.test(errorMessage(error))) throw error;
-    data = { order_id: orderId, logistics_details: [], unsupported: true };
+  for (let attempt = 0; attempt <= TRACKING_RETRY_DELAYS.length; attempt += 1) {
+    try {
+      data = await shopRequest(env, `/logistics/202604/orders/${orderId}/tracking`, 'GET', { shop_cipher: shopCipher });
+      break;
+    } catch (error) {
+      if (/11007009|not in supported business scenes|not in supported scope/i.test(errorMessage(error))) {
+        data = { order_id: orderId, logistics_details: [], unsupported: true };
+        break;
+      }
+      if (!isRateLimit(error)) throw error;
+      if (attempt < TRACKING_RETRY_DELAYS.length) {
+        await sleep(TRACKING_RETRY_DELAYS[attempt]);
+        continue;
+      }
+      if (!queueOnRateLimit) throw new Error('TRACKING_RATE_LIMIT');
+      await enqueueTrackingRetry(env, orderId, shopCipher);
+      return { order_id: orderId, logistics_details: [], rateLimited: true };
+    }
   }
   await cachePut(env, key, data, 900);
   return data;
+}
+
+export async function syncTrackingOrder(env: Env, orderId: string, shopCipher: string): Promise<void> {
+  await trackingForOrder(env, orderId, shopCipher, false);
 }
 
 async function orderDetails(env: Env, orderIds: string[], shopCipher: string): Promise<any[]> {
@@ -93,17 +134,10 @@ function returnRefund(item: any): number {
   return lineTotal || numberValue(item?.refund_amount?.refund_total);
 }
 
-async function mapConcurrent<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>): Promise<R[]> {
-  const output = new Array<R>(items.length);
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    while (cursor < items.length) {
-      const index = cursor++;
-      output[index] = await mapper(items[index]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return output;
+function isLogisticsCancellation(item: any): boolean {
+  const role = String(item?.role || '').toUpperCase();
+  const reason = `${item?.cancel_reason_text || ''} ${item?.cancel_reason || ''}`;
+  return role === 'SYSTEM' && /giao gói hàng thất bại|package delivery failed|delivery fail/i.test(reason);
 }
 
 function trackingEvents(data: any): any[] {
@@ -145,7 +179,7 @@ function timestampMillis(value: unknown): number {
 }
 
 export async function loadOperationsAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-operations-v2', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('seller-operations-v3', { startDate: input.startDate, endDate: input.endDate });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
 
@@ -155,9 +189,13 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
   if (!cipher) throw new Error('Không tìm thấy shop_cipher.');
 
   const warnings: string[] = [];
-  const populationStart = shiftDate(input.endDate, -29);
-  const populationOrders = await ordersForPeriod(env, populationStart, input.endDate, cipher);
+  const populationStart = input.startDate;
+  const [populationOrders, updatedOrders] = await Promise.all([
+    ordersForPeriod(env, populationStart, input.endDate, cipher),
+    ordersUpdatedForPeriod(env, input.startDate, input.endDate, cipher)
+  ]);
   const orderById = new Map(populationOrders.map((order) => [String(order.id || order.order_id || ''), order]));
+  updatedOrders.forEach((order) => orderById.set(String(order.id || order.order_id || ''), order));
 
   const [cancellations, returns] = await Promise.all([
     pagedSearch(env, '/return_refund/202602/cancellations/search', 'cancellations', cipher, input.startDate, input.endDate)
@@ -182,24 +220,59 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
   const openOrders = populationOrders.filter((order) => OPEN_ORDER_STATUSES.has(String(order.status || '').toUpperCase()));
   const deliveredOrders = populationOrders.filter((order) => String(order.status || '').toUpperCase() === 'DELIVERED');
   const deliveryPopulation = populationOrders.filter((order) => DELIVERY_POPULATION_STATUSES.has(String(order.status || '').toUpperCase()));
+  const cancellationByOrderId = new Map(cancellations.map((item) => [String(item.order_id || ''), item]));
   const rangeStart = epoch(input.startDate) * 1000;
   const rangeEnd = epoch(shiftDate(input.endDate, 1)) * 1000;
-  const trackingCandidates = deliveryPopulation.filter((order) => {
+  const candidateById = new Map<string, any>();
+  updatedOrders.filter((order) => {
     const updatedAt = timestampMillis(order.update_time);
-    return updatedAt >= rangeStart && updatedAt < rangeEnd;
-  });
+    const status = String(order.status || '').toUpperCase();
+    const cancellation = cancellationByOrderId.get(String(order.id || order.order_id || ''));
+    const cancelledBeforeShipping = String(cancellation?.cancel_status || '').toUpperCase() === 'CANCELLATION_REQUEST_COMPLETE' &&
+      !isLogisticsCancellation(cancellation) && !DELIVERY_POPULATION_STATUSES.has(status);
+    return updatedAt >= rangeStart && updatedAt < rangeEnd && !/UNPAID|ON_HOLD/.test(status) && !cancelledBeforeShipping;
+  }).forEach((order) => candidateById.set(String(order.id || order.order_id || ''), order));
+  for (const cancellation of cancellations.filter(isLogisticsCancellation)) {
+    const orderId = String(cancellation.order_id || '');
+    if (orderId && orderById.has(orderId)) candidateById.set(orderId, orderById.get(orderId));
+  }
+  const trackingCandidates = Array.from(candidateById.values());
   let trackingFailures = 0;
   let firstTrackingError = '';
-  const tracked = await mapConcurrent(trackingCandidates, TRACKING_CONCURRENCY, async (order) => {
+  let rateLimitedCount = 0;
+  let rateLimitOpen = false;
+  let liveTrackingRequests = 0;
+  const tracked: Array<{ order: any; events: any[] }> = [];
+  for (const order of trackingCandidates) {
+    const id = String(order.id || order.order_id || '');
+    const trackingKey = stableKey('shop-tracking-v2', { orderId: id, shopCipher: cipher });
+    const cachedTracking = await cacheGet<any>(env, trackingKey);
+    if (cachedTracking) {
+      tracked.push({ order, events: trackingEvents(cachedTracking) });
+      continue;
+    }
+    if (rateLimitOpen || liveTrackingRequests >= MAX_TRACKING_REQUESTS_PER_LOAD) {
+      await enqueueTrackingRetry(env, id, cipher);
+      rateLimitedCount += 1;
+      tracked.push({ order, events: [] });
+      continue;
+    }
     try {
-      const id = String(order.id || order.order_id || '');
-      return { order, events: trackingEvents(await trackingForOrder(env, id, cipher)) };
+      liveTrackingRequests += 1;
+      const response = await trackingForOrder(env, id, cipher);
+      if (response.rateLimited) {
+        rateLimitOpen = true;
+        rateLimitedCount += 1;
+      }
+      tracked.push({ order, events: trackingEvents(response) });
+      if (!response.cacheHit) await sleep(TRACKING_THROTTLE_MS);
     } catch (error) {
       trackingFailures += 1;
       if (!firstTrackingError) firstTrackingError = errorMessage(error);
-      return { order, events: [] };
+      tracked.push({ order, events: [] });
     }
-  });
+  }
+  if (rateLimitedCount) warnings.push(`${rateLimitedCount}/${trackingCandidates.length} đơn tạm thời chưa lấy được tracking do giới hạn tần suất API — sẽ tự động thử lại.`);
   if (trackingFailures) warnings.push(`Không đọc được tracking của ${trackingFailures}/${trackingCandidates.length} đơn có cập nhật trong kỳ${firstTrackingError ? `: ${firstTrackingError}` : ''}.`);
 
   const cancellationRoles = { BUYER: 0, SYSTEM: 0, SELLER: 0 };
@@ -211,6 +284,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
   const refundByOrderId = new Map<string, number>();
   const incidents: any[] = [];
 
+  const trackingByOrderId = new Map(tracked.map((entry) => [String(entry.order.id || entry.order.order_id || ''), entry.events]));
   for (const item of cancellations) {
     const orderId = String(item.order_id || '');
     const role = String(item.role || 'SYSTEM').toUpperCase();
@@ -223,9 +297,14 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     }
     const order = orderById.get(orderId);
     const fallbackCancelledAt = timestampMillis(latestTimestamp(item.update_time, item.create_time));
+    const cancelStatus = String(item.cancel_status || '').toUpperCase();
+    const cancellationEvents = trackingByOrderId.get(orderId) || [];
+    const shippingReadyAt = numberValue(cancellationEvents.find((event) => String(event.action_code || '') === '20101')?.update_time_millis);
+    const cancelledBeforeShipping = cancelStatus === 'CANCELLATION_REQUEST_COMPLETE' && !isLogisticsCancellation(item) && !shippingReadyAt;
     incidents.push({ id: String(item.cancel_id || orderId), orderId, rmaId: String(item.cancel_id || ''), type: 'Hủy đơn',
-      group: role === 'SYSTEM' ? 'SYSTEM · Tự động hủy do sự cố logistics' : role,
-      reason, status: String(item.cancel_status || ''), actionCode: '', shippingReadyAt: 0,
+      group: role,
+      reason, status: CANCELLATION_STATUS_LABELS[cancelStatus] || cancelStatus, actionCode: '', shippingReadyAt,
+      shippingStatus: cancelledBeforeShipping ? 'Đơn huỷ trước khi vận chuyển' : '',
       cancelledAt: timestampMillis(order?.cancel_time) || fallbackCancelledAt, updatedAt: fallbackCancelledAt });
   }
 
