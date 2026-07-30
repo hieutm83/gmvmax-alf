@@ -339,12 +339,12 @@
       <section id="operationsReport" class="hidden">
         <div id="operationsSummary" class="summary operations-summary"></div>
         <div id="operationsWarnings" class="operations-warning hidden"></div>
-        <p class="analytics-note">Giám sát thụ động từ Search Cancellations, Search Returns, Seller Orders và Get Logistics Tracking. Dashboard chỉ đọc, không thực hiện thao tác trên đơn.</p>
+        <p class="analytics-note">Giám sát thụ động từ Search Cancellations, Search Returns và Get Order List. Dashboard chỉ đọc, không thực hiện thao tác trên đơn.</p>
         <div class="analytics-grid operations-charts">
           <section class="analytics-panel"><h2>Cơ cấu lý do hủy đơn</h2><div class="analytics-canvas"><canvas id="cancelReasonsChart"></canvas></div></section>
           <section class="analytics-panel"><h2>Lý do trả hàng &amp; hoàn tiền</h2><div class="analytics-canvas"><canvas id="returnReasonsChart"></canvas></div></section>
-          <section class="analytics-panel"><h2>Lý do giao hàng thất bại</h2><div class="analytics-canvas"><canvas id="failedReasonsChart"></canvas></div></section>
-          <section class="analytics-panel"><h2>Phễu trạng thái giao lại</h2><div class="analytics-canvas"><canvas id="deliveryFunnelChart"></canvas></div></section>
+          <section class="analytics-panel"><h2>Cơ cấu lý do huỷ do hệ thống/logistics</h2><div class="analytics-canvas"><canvas id="failedReasonsChart"></canvas></div></section>
+          <section class="analytics-panel"><h2>Phễu vòng đời đơn hàng</h2><div class="analytics-canvas"><canvas id="deliveryFunnelChart"></canvas></div></section>
         </div>
         <h2 class="section-title">Giám sát chi tiết</h2>
         <div class="table-wrap">
@@ -816,10 +816,10 @@
             integer(totals.cancellations) + ' đơn hủy có thời gian tạo trong kỳ / ' + integer(totals.openOrders) + ' đơn đang mở được tạo trong kỳ · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
           operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate',
             integer(totals.returns) + ' yêu cầu / ' + integer(totals.returnEligibleOrders) + ' đơn DELIVERED · REFUND ' + integer(types.REFUND || 0) + ' · RETURN & REFUND ' + integer(types.RETURN_AND_REFUND || 0)),
-          operationsMetric('Tỷ lệ giao hàng thất bại', percent(totals.failedDeliveryRate), 'failedRate',
-            integer(totals.failedDeliveries) + ' / ' + integer(totals.deliveryPopulationOrders) + ' đơn AWAITING_COLLECTION hoặc IN_TRANSIT'),
+          operationsMetric('Tỷ lệ đơn huỷ do sự cố logistics', percent(totals.logisticsCancellationRate), 'failedRate',
+            integer(totals.logisticsCancellations) + ' đơn SYSTEM do giao gói hàng thất bại / ' + integer(totals.totalOrders) + ' đơn tạo trong kỳ'),
           operationsMetric('Giá trị tiền hàng rủi ro', moneyWhole(totals.atRiskValue) + ' VND', 'riskValue',
-            'Không trùng mã đơn · ưu tiên tiền hoàn, sau đó mới dùng tổng thanh toán')
+            'Tổng giá trị đơn thuộc nhóm huỷ do sự cố logistics · không trùng mã đơn')
         );
         var warning = document.getElementById('operationsWarnings');
         warning.textContent = (data.warnings || []).join(' · ');
@@ -864,7 +864,7 @@
           options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: returns.values.length > 0, beginAtZero: true, ticks: { precision: 0 } }, y: { display: returns.values.length > 0, ticks: { autoSkip: false } } } }
         });
         failedReasonsChart = new Chart(document.getElementById('failedReasonsChart'), {
-          type: 'bar', plugins: [emptyChartPlugin], data: { labels: failed.labels, datasets: [{ label: 'Đơn', data: failed.values, backgroundColor: '#7c3aed', borderRadius: 4 }] },
+          type: 'bar', plugins: [emptyChartPlugin], data: { labels: failed.labels, datasets: [{ label: 'Đơn huỷ SYSTEM', data: failed.values, backgroundColor: '#7c3aed', borderRadius: 4 }] },
           options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: failed.values.length > 0, beginAtZero: true, ticks: { precision: 0 } }, x: { display: failed.values.length > 0, ticks: { maxRotation: 25, minRotation: 0 } } } }
         });
         deliveryFunnelChart = new Chart(document.getElementById('deliveryFunnelChart'), {
@@ -884,7 +884,7 @@
           orderId.target = '_blank'; orderId.rel = 'noopener noreferrer'; idCell.appendChild(orderId);
           if (item.rmaId && item.rmaId !== item.orderId) { var rma = document.createElement('span'); rma.className = 'campaign-meta'; rma.textContent = 'RMA: ' + item.rmaId; idCell.appendChild(rma); }
           row.appendChild(idCell);
-          [item.type, item.group, item.reason, operationDate(item.shippingReadyAt),
+          [item.type, item.group, item.reason, operationShippingTime(item),
             operationDate(item.cancelledAt), operationDate(item.updatedAt)]
             .forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value || '-'; row.appendChild(cell); });
           rows.appendChild(row);
@@ -894,6 +894,13 @@
 
       function operationDate(value) {
         return value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '-';
+      }
+
+      function operationShippingTime(item) {
+        var values = [];
+        if (item.collectionTime) values.push('Thu gom: ' + operationDate(item.collectionTime));
+        if (item.deliveryTime) values.push('Giao: ' + operationDate(item.deliveryTime));
+        return values.join(' · ') || '-';
       }
 
       function changeValue(current, previous) {
