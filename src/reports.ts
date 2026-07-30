@@ -2,6 +2,9 @@ import type { Env, McpRow, McpSession, ProductContext } from './types';
 import { callTool, createSession, forEachReportPage, pagedReport, resolveTool } from './mcp';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey, unique } from './utils';
 import { evaluateVideos } from './evaluator';
+import { sellerOwnedVideoIds } from './seller';
+
+const SELLER_TIKTOK_USERNAMES = ['anlanh.farm', 'anlanhfarmvn', 'tracagaileoalf', 'anlanhherbs'];
 
 function metric(m: Record<string, unknown>): any {
   const cost = numberValue(m.cost), orders = numberValue(m.orders), grossRevenue = numberValue(m.gross_revenue);
@@ -135,14 +138,18 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     }));
     chunkRows.forEach(values=>rows.push(...values));
   }
+  const sellerVideoIds = await sellerOwnedVideoIds(env, shiftDate(input.startDate, -29), input.endDate, SELLER_TIKTOK_USERNAMES)
+    .catch(() => new Set<string>());
   const ids=new Set<string>();let traffic=0,impressions=0;const map=new Map<string,any>();
   const costAttribution={total:0,productCard:0,seller:0,affiliate:0};
   for(const row of rows){const m=row.metrics||{},id=rowId(row,'item_id'),k=`${rowId(row,'campaign_id')}:${rowId(row,'item_group_id')}`;
-    const cost=numberValue(m.cost),authorization=String(m.tt_account_authorization_type||'').toUpperCase();
+    const cost=numberValue(m.cost);
+    const title=String(m.title||row.dimensions?.title||'').trim().toLowerCase();
+    const isProductCard=id==='-1'||title.includes('product card')||title.includes('thẻ sản phẩm');
     costAttribution.total+=cost;
-    if(id==='-1')costAttribution.productCard+=cost;
-    else if(authorization.includes('AFFILIATE'))costAttribution.affiliate+=cost;
-    else costAttribution.seller+=cost;
+    if(isProductCard)costAttribution.productCard+=cost;
+    else if(sellerVideoIds.has(id))costAttribution.seller+=cost;
+    else costAttribution.affiliate+=cost;
     const entry=map.get(k)||{creativeCount:0,traffic:0,itemIds:[]}; impressions+=numberValue(m.product_impressions);traffic+=numberValue(m.product_clicks);
     if(numberValue(m.cost)||numberValue(m.orders)||numberValue(m.product_impressions)){if(id){ids.add(id);if(!entry.itemIds.includes(id))entry.itemIds.push(id);}entry.creativeCount++;entry.traffic+=numberValue(m.product_clicks);}map.set(k,entry);}
   const result={generatedAt:new Date().toISOString(),summaries:(input.products||[]).map((p:any)=>({campaignId:p.campaignId,itemGroupId:p.itemGroupId,...(map.get(`${p.campaignId}:${p.itemGroupId}`)||{creativeCount:0,traffic:0,itemIds:[]})})),

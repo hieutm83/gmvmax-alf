@@ -5,9 +5,7 @@ import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
 const TRACKING_THROTTLE_MS = 500;
 const TRACKING_RETRY_DELAYS = [2000, 5000, 10000];
 const MAX_TRACKING_REQUESTS_PER_LOAD = 5;
-const STUCK_RETURN_DAYS = 3;
 const DELIVERY_FAILURE_CODES = new Set(['40601', '40801', '41801', '41901', '60101']);
-const RECEIVED_CODES = new Set(['43101', '43201', '60201', '80101']);
 const OPEN_ORDER_STATUSES = new Set(['UNPAID', 'ON_HOLD', 'AWAITING_SHIPMENT', 'PARTIALLY_SHIPPING', 'AWAITING_COLLECTION', 'IN_TRANSIT']);
 const DELIVERY_POPULATION_STATUSES = new Set(['AWAITING_COLLECTION', 'IN_TRANSIT']);
 const CANCELLATION_STATUS_LABELS: Record<string, string> = {
@@ -178,8 +176,12 @@ function timestampMillis(value: unknown): number {
   return timestamp > 0 && timestamp < 1e12 ? timestamp * 1000 : timestamp;
 }
 
+function shippingReadyTimestamp(events: any[]): number {
+  return numberValue(events.find((event) => String(event.action_code || '') === '20101')?.update_time_millis);
+}
+
 export async function loadOperationsAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-operations-v3', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('seller-operations-v4', { startDate: input.startDate, endDate: input.endDate });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
 
@@ -223,6 +225,12 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
   const cancellationByOrderId = new Map(cancellations.map((item) => [String(item.order_id || ''), item]));
   const rangeStart = epoch(input.startDate) * 1000;
   const rangeEnd = epoch(shiftDate(input.endDate, 1)) * 1000;
+  const cancellationsCreatedInRange = cancellations.filter((item) => {
+    const order = orderById.get(String(item.order_id || ''));
+    const createdAt = timestampMillis(order?.create_time);
+    return createdAt >= rangeStart && createdAt < rangeEnd;
+  });
+  const cancellationKpiSet = new Set(cancellationsCreatedInRange);
   const candidateById = new Map<string, any>();
   updatedOrders.filter((order) => {
     const updatedAt = timestampMillis(order.update_time);
@@ -234,6 +242,10 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
   }).forEach((order) => candidateById.set(String(order.id || order.order_id || ''), order));
   for (const cancellation of cancellations.filter(isLogisticsCancellation)) {
     const orderId = String(cancellation.order_id || '');
+    if (orderId && orderById.has(orderId)) candidateById.set(orderId, orderById.get(orderId));
+  }
+  for (const item of returns) {
+    const orderId = String(item.order_id || '');
     if (orderId && orderById.has(orderId)) candidateById.set(orderId, orderById.get(orderId));
   }
   const trackingCandidates = Array.from(candidateById.values());
@@ -288,7 +300,9 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
   for (const item of cancellations) {
     const orderId = String(item.order_id || '');
     const role = String(item.role || 'SYSTEM').toUpperCase();
-    if (role in cancellationRoles) cancellationRoles[role as keyof typeof cancellationRoles] += 1;
+    if (cancellationKpiSet.has(item) && role in cancellationRoles) {
+      cancellationRoles[role as keyof typeof cancellationRoles] += 1;
+    }
     const reason = String(item.cancel_reason_text || item.cancel_reason || 'Không xác định');
     addCount(cancelReasons, reason);
     if (orderId) {
@@ -299,7 +313,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     const fallbackCancelledAt = timestampMillis(latestTimestamp(item.update_time, item.create_time));
     const cancelStatus = String(item.cancel_status || '').toUpperCase();
     const cancellationEvents = trackingByOrderId.get(orderId) || [];
-    const shippingReadyAt = numberValue(cancellationEvents.find((event) => String(event.action_code || '') === '20101')?.update_time_millis);
+    const shippingReadyAt = shippingReadyTimestamp(cancellationEvents);
     const cancelledBeforeShipping = cancelStatus === 'CANCELLATION_REQUEST_COMPLETE' && !isLogisticsCancellation(item) && !shippingReadyAt;
     incidents.push({ id: String(item.cancel_id || orderId), orderId, rmaId: String(item.cancel_id || ''), type: 'Hủy đơn',
       group: role,
@@ -318,39 +332,27 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
       atRiskOrderIds.add(orderId);
       refundByOrderId.set(orderId, Math.max(refundByOrderId.get(orderId) || 0, returnRefund(item)));
     }
+    const returnEvents = trackingByOrderId.get(orderId) || [];
     incidents.push({ id: String(item.return_id || orderId), orderId, rmaId: String(item.return_id || ''), type: type === 'REFUND' ? 'Hoàn tiền' : 'Trả hàng',
       group: String(item.role || 'BUYER'), reason, status: String(item.return_status || ''), actionCode: '',
-      shippingReadyAt: 0, cancelledAt: 0, updatedAt: timestampMillis(latestTimestamp(item.update_time, item.create_time)) });
+      shippingReadyAt: shippingReadyTimestamp(returnEvents), cancelledAt: 0, updatedAt: timestampMillis(latestTimestamp(item.update_time, item.create_time)) });
   }
 
   const funnelCodes = ['40601', '40801', '41801', '70201', '43101'];
   const funnelCount = new Map(funnelCodes.map((code) => [code, 0]));
-  const stuckReturns: any[] = [];
-  const returnFailures: any[] = [];
   let failedDeliveries = 0;
   for (const trackedOrder of tracked) {
     const orderId = String(trackedOrder.order.id || trackedOrder.order.order_id || '');
     const events = trackedOrder.events;
     const codes = new Set(events.map((event) => String(event.action_code || '')));
     funnelCodes.forEach((code) => { if (codes.has(code)) funnelCount.set(code, (funnelCount.get(code) || 0) + 1); });
-    const shippingReadyAt = numberValue(events.find((event) => String(event.action_code || '') === '20101')?.update_time_millis);
+    const shippingReadyAt = shippingReadyTimestamp(events);
     const periodEvents = events.filter((event) => {
       const timestamp = numberValue(event.update_time_millis);
       return timestamp >= rangeStart && timestamp < rangeEnd;
     });
     const failedEvents = periodEvents.filter((event) => DELIVERY_FAILURE_CODES.has(String(event.action_code || '')));
     const latestAll = events.at(-1);
-    const returning = events.filter((event) => String(event.action_code || '') === '70201').at(-1);
-    const alertIncident = { id: orderId, orderId, rmaId: '', type: 'Giao thất bại', group: 'LOGISTICS',
-      reason: latestAll ? failedReason(latestAll) : 'Sự cố logistics',
-      status: String(latestAll?.action_code_name || ACTION_LABELS[String(latestAll?.action_code || '')] || ''),
-      actionCode: String(latestAll?.action_code || ''), shippingReadyAt, cancelledAt: 0,
-      updatedAt: numberValue(latestAll?.update_time_millis) };
-    if (returning && !Array.from(RECEIVED_CODES).some((code) => codes.has(code))) {
-      const ageDays = Math.floor((Date.now() - numberValue(returning.update_time_millis)) / 86400000);
-      if (ageDays > STUCK_RETURN_DAYS) stuckReturns.push({ ...alertIncident, ageDays });
-    }
-    if (codes.has('70301')) returnFailures.push(alertIncident);
     const currentCode = String(latestAll?.action_code || '');
     if (DELIVERY_FAILURE_CODES.has(currentCode) || ['70201', '70301', '70401', '70501'].includes(currentCode)) {
       atRiskOrderIds.add(orderId);
@@ -383,8 +385,8 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
       totalOrders,
       populationStart,
       openOrders: openOrders.length,
-      cancellations: cancellations.length,
-      cancellationRate: openOrders.length ? cancellations.length / openOrders.length : 0,
+      cancellations: cancellationsCreatedInRange.length,
+      cancellationRate: openOrders.length ? cancellationsCreatedInRange.length / openOrders.length : 0,
       cancellationRoles,
       returns: returns.length,
       returnEligibleOrders: deliveredOrders.length,
@@ -401,7 +403,6 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     returnReasons: breakdown(returnReasons),
     failedReasons: breakdown(failedReasons),
     funnel: funnelCodes.map((code) => ({ code, label: ACTION_LABELS[code], count: funnelCount.get(code) || 0 })),
-    alerts: { stuckReturns, returnFailures, stuckThresholdDays: STUCK_RETURN_DAYS },
     incidents
   };
   await cachePut(env, key, result, 300);

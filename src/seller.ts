@@ -151,6 +151,47 @@ export async function authorizedShop(env: Env): Promise<any> {
   return shops.find((shop: any) => [shop.code, shop.shop_code, shop.name].some((value) => String(value || '').toUpperCase().includes(wanted))) || shops[0];
 }
 
+export async function sellerOwnedVideoIds(env: Env, startDate: string, endDate: string,
+  sellerUsernames: string[]): Promise<Set<string>> {
+  const normalizedUsernames = new Set(sellerUsernames.map((value) => value.trim().toLowerCase().replace(/^@/, '')));
+  const cacheKey = stableKey('seller-owned-videos-v1', { startDate, endDate, sellerUsernames: Array.from(normalizedUsernames).sort() });
+  const cached = await cacheGet<string[]>(env, cacheKey);
+  if (cached) return new Set(cached);
+
+  const shop = await authorizedShop(env);
+  const shopCipher = String(shop?.cipher || shop?.shop_cipher || shop?.id || '');
+  if (!shopCipher) return new Set();
+
+  const videoIds = new Set<string>();
+  for (const accountType of ['OFFICIAL_ACCOUNTS', 'MARKETING_ACCOUNTS']) {
+    let pageToken = '';
+    let pages = 0;
+    do {
+      const data = await shopRequest(env, '/analytics/202605/shop_videos/performance', 'GET', {
+        start_date_ge: startDate,
+        end_date_lt: shiftDate(endDate, 1),
+        page_size: 100,
+        sort_field: 'gmv',
+        sort_order: 'DESC',
+        currency: 'LOCAL',
+        account_type: accountType,
+        shop_cipher: shopCipher,
+        page_token: pageToken || undefined
+      });
+      for (const video of data.videos || []) {
+        const username = String(video.username || video.creator?.user_name || '').trim().toLowerCase().replace(/^@/, '');
+        if (normalizedUsernames.has(username) && video.id) videoIds.add(String(video.id));
+      }
+      pageToken = String(data.next_page_token || '');
+      pages += 1;
+    } while (pageToken && pages < 100);
+  }
+
+  const result = Array.from(videoIds);
+  await cachePut(env, cacheKey, result, 300);
+  return new Set(result);
+}
+
 export function epoch(date: string): number {
   return Math.floor(Date.parse(`${date}T00:00:00+07:00`) / 1000);
 }

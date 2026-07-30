@@ -2,6 +2,7 @@
 <html lang="vi">
   <head>
     <meta charset="utf-8">
+    <link rel="icon" type="image/png" href="/FAVICON.png">
     <base target="_top">
     <title>Dashboard TikTok Report by MH</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -211,20 +212,9 @@
       .operations-charts { margin-bottom: 20px; }
       .operations-charts .analytics-panel { min-height: 320px; }
       .operations-charts .analytics-canvas { height: 250px; }
-      .risk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
-      .risk-panel { min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
-      .risk-panel h2 { margin: 0; padding: 14px 16px; color: var(--text-secondary); background: var(--surface-muted); border-bottom: 1px solid var(--border); font-size: 13px; }
-      .risk-list { max-height: 230px; overflow: auto; }
-      .risk-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
-      .risk-item:last-child { border-bottom: 0; }
-      .risk-item strong, .risk-item span { display: block; }
-      .risk-item strong { color: var(--text); }
-      .risk-item span { margin-top: 3px; color: var(--text-muted); }
-      .risk-item em { color: var(--danger); font-style: normal; font-weight: 700; }
       .operations-table th:first-child, .operations-table td:first-child { min-width: 180px; }
       .operations-table th:nth-child(4), .operations-table td:nth-child(4) { min-width: 270px; }
-      .operations-table th:nth-child(5), .operations-table td:nth-child(5) { min-width: 220px; }
-      .operations-table th:nth-child(n+6), .operations-table td:nth-child(n+6) { min-width: 150px; }
+      .operations-table th:nth-child(n+5), .operations-table td:nth-child(n+5) { min-width: 150px; }
       .order-detail-link { color: var(--primary); font-weight: 700; text-decoration: none; }
       .order-detail-link:hover { text-decoration: underline; }
       .admin-modal { width: min(720px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
@@ -236,7 +226,7 @@
       .admin-body .seller-required { min-height: 0; margin: 0; padding: 16px; }
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
-      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid, .risk-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid { grid-template-columns: 1fr; } }
       @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } }
     </style>
   </head>
@@ -356,15 +346,10 @@
           <section class="analytics-panel"><h2>Lý do giao hàng thất bại</h2><div class="analytics-canvas"><canvas id="failedReasonsChart"></canvas></div></section>
           <section class="analytics-panel"><h2>Phễu trạng thái giao lại</h2><div class="analytics-canvas"><canvas id="deliveryFunnelChart"></canvas></div></section>
         </div>
-        <h2 class="section-title">Cảnh báo rủi ro logistics</h2>
-        <div class="risk-grid">
-          <section class="risk-panel"><h2>Đơn hoàn bị ngâm quá <span id="stuckThresholdDays">3</span> ngày</h2><div id="stuckReturnList" class="risk-list"></div></section>
-          <section class="risk-panel"><h2>Trả hàng gặp sự cố (70301)</h2><div id="returnFailureList" class="risk-list"></div></section>
-        </div>
         <h2 class="section-title">Giám sát chi tiết</h2>
         <div class="table-wrap">
           <table class="operations-table">
-            <thead><tr><th>Mã đơn / Mã RMA</th><th>Loại sự cố</th><th>Nhóm / Khởi tạo</th><th>Lý do chi tiết</th><th>Trạng thái hiện tại</th><th>Thời gian vận chuyển</th><th>Thời gian hủy</th><th>Thời gian cập nhật</th></tr></thead>
+            <thead><tr><th>Mã đơn / Mã RMA</th><th>Loại sự cố</th><th>Nhóm / Khởi tạo</th><th>Lý do chi tiết</th><th>Thời gian vận chuyển</th><th>Thời gian hủy</th><th>Thời gian cập nhật</th></tr></thead>
             <tbody id="operationsRows"></tbody>
           </table>
           <div id="operationsEmpty" class="empty hidden">Không có sự cố trong khoảng ngày đã chọn.</div>
@@ -828,7 +813,7 @@
         var summary = document.getElementById('operationsSummary'); summary.replaceChildren();
         summary.append(
           operationsMetric('Tỷ lệ hủy đơn', percent(totals.cancellationRate), 'cancelRate',
-            integer(totals.cancellations) + ' đơn hủy cập nhật trong kỳ / ' + integer(totals.openOrders) + ' đơn đang mở được tạo trong kỳ · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
+            integer(totals.cancellations) + ' đơn hủy có thời gian tạo trong kỳ / ' + integer(totals.openOrders) + ' đơn đang mở được tạo trong kỳ · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
           operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate',
             integer(totals.returns) + ' yêu cầu / ' + integer(totals.returnEligibleOrders) + ' đơn DELIVERED · REFUND ' + integer(types.REFUND || 0) + ' · RETURN & REFUND ' + integer(types.RETURN_AND_REFUND || 0)),
           operationsMetric('Tỷ lệ giao hàng thất bại', percent(totals.failedDeliveryRate), 'failedRate',
@@ -840,9 +825,6 @@
         warning.textContent = (data.warnings || []).join(' · ');
         warning.classList.toggle('hidden', !(data.warnings || []).length);
         renderOperationsCharts(data);
-        renderRiskList('stuckReturnList', data.alerts && data.alerts.stuckReturns || [], true);
-        renderRiskList('returnFailureList', data.alerts && data.alerts.returnFailures || [], false);
-        document.getElementById('stuckThresholdDays').textContent = integer(data.alerts && data.alerts.stuckThresholdDays || 3);
         renderOperationsRows(data.incidents || []);
       }
 
@@ -891,22 +873,6 @@
         });
       }
 
-      function renderRiskList(elementId, items, showAge) {
-        var container = document.getElementById(elementId); container.replaceChildren();
-        if (!items.length) {
-          var empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Không có cảnh báo.'; container.appendChild(empty); return;
-        }
-        items.forEach(function (item) {
-          var row = document.createElement('div'); row.className = 'risk-item';
-          var copy = document.createElement('div'); var title = document.createElement('a'); title.className = 'order-detail-link'; title.textContent = item.orderId;
-          title.href = 'https://seller-vn.tiktok.com/order/detail?order_no=' + encodeURIComponent(item.orderId || '') + '&shop_region=VN';
-          title.target = '_blank'; title.rel = 'noopener noreferrer';
-          var detail = document.createElement('span'); detail.textContent = item.reason || item.status || '-'; copy.append(title, detail);
-          var marker = document.createElement('em'); marker.textContent = showAge ? integer(item.ageDays) + ' ngày' : '70301';
-          row.append(copy, marker); container.appendChild(row);
-        });
-      }
-
       function renderOperationsRows(items) {
         var rows = document.getElementById('operationsRows'); rows.replaceChildren();
         items.forEach(function (item) {
@@ -918,8 +884,8 @@
           orderId.target = '_blank'; orderId.rel = 'noopener noreferrer'; idCell.appendChild(orderId);
           if (item.rmaId && item.rmaId !== item.orderId) { var rma = document.createElement('span'); rma.className = 'campaign-meta'; rma.textContent = 'RMA: ' + item.rmaId; idCell.appendChild(rma); }
           row.appendChild(idCell);
-          [item.type, item.group, item.reason, (item.actionCode ? item.actionCode + ' · ' : '') + (item.status || '-'),
-            item.shippingStatus || operationDate(item.shippingReadyAt), operationDate(item.cancelledAt), operationDate(item.updatedAt)]
+          [item.type, item.group, item.reason, operationDate(item.shippingReadyAt),
+            operationDate(item.cancelledAt), operationDate(item.updatedAt)]
             .forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value || '-'; row.appendChild(cell); });
           rows.appendChild(row);
         });
