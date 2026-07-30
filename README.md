@@ -55,7 +55,7 @@ npx wrangler secret put TIKTOK_SHOP_SERVICE_ID
 Trong TikTok Shop Partner Center, cau hinh redirect URL chinh xac:
 
 ```text
-https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/auth/callback
+https://anlanhfarm.indevs.in/auth/callback
 ```
 
 Ung dung Seller can quyen doc thong tin shop, analytics va don hang (`seller.authorization.info`, `data.shop_analytics.public.read`, `seller.order.info`). GMV, so don va AOV duoc lay tu Shop Analytics; Order API bo sung don huy, khach hang va tinh/thanh pho.
@@ -63,7 +63,7 @@ Ung dung Seller can quyen doc thong tin shop, analytics va don hang (`seller.aut
 Webhook URL:
 
 ```text
-https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/tiktok/webhook
+https://anlanhfarm.indevs.in/tiktok/webhook
 ```
 - Spreadsheet backup can co tab ten `GMV_MAX_BACKUP` va duoc share quyen Editor cho service-account email.
 
