@@ -833,7 +833,10 @@
         revenueAovChart = new Chart(document.getElementById('revenueAovChart'), {
           type: 'bar',
           data: { labels: labels, datasets: [{ label: 'AOV (VND)', data: daily.map(function (point) { return point.aov; }), backgroundColor: 'rgba(37, 99, 235, .82)', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4 }] },
-          options: Object.assign({}, sharedOptions, { scales: { x: sharedOptions.scales.x,
+          options: Object.assign({}, sharedOptions, { plugins: {
+            legend: sharedOptions.plugins.legend,
+            tooltip: { callbacks: { label: function (context) { return 'AOV (VND): ' + moneyWhole(context.raw); } } }
+          }, scales: { x: sharedOptions.scales.x,
             y: { beginAtZero: true, ticks: { color: '#64748b', callback: function (value) { return compactMoney(value); } }, grid: { color: 'rgba(148,163,184,.22)' } } } })
         });
         revenueCustomersChart = new Chart(document.getElementById('revenueCustomersChart'), {

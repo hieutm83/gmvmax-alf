@@ -325,7 +325,7 @@ function applyShopPerformance(summary: any, data: any): any {
 
 export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<any> {
   const cacheScope = { startDate: input.startDate, endDate: input.endDate };
-  const key = stableKey('seller-revenue-v6', cacheScope);
+  const key = stableKey('seller-revenue-v7', cacheScope);
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
   const shop = await authorizedShop(env); if (!shop) throw new Error('Seller OAuth chưa trả về TikTok Shop được ủy quyền.');
@@ -346,6 +346,8 @@ export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<a
   const charts = chartStartDate === input.startDate ? current :
     applyShopPerformance(summarizeOrders(env, currentOrdersWithAddresses, chartStartDate, input.endDate), currentPerformance);
   const previous = applyShopPerformance(summarizeOrders(env, previousOrders, previousStartDate, previousEndDate), previousPerformance);
+  if (numberValue(currentAttribution?.attributedTotal) > 0) current.totals.grossRevenue = currentAttribution.attributedTotal;
+  if (numberValue(previousAttribution?.attributedTotal) > 0) previous.totals.grossRevenue = previousAttribution.attributedTotal;
   const result = { startDate: input.startDate, endDate: input.endDate, chartStartDate, previousStartDate, previousEndDate,
     generatedAt: new Date().toISOString(), source: 'TIKTOK_SHOP_SELLER', shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },
     totals: current.totals, previousTotals: previous.totals, daily: charts.daily, provinces: charts.provinces,
