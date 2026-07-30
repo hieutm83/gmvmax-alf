@@ -26,12 +26,17 @@ async function oauthJson(url: string, init: RequestInit): Promise<Record<string,
   return body;
 }
 
-async function getClient(env: Env, origin: string): Promise<{ clientId: string; redirectUri: string }> {
-  const redirectUri = `${origin}/oauth/callback`;
+async function getClient(env: Env, origin: string, callbackUri?: string): Promise<{ clientId: string; redirectUri: string }> {
+  const redirectUri = callbackUri || `${origin}/auth/callback`;
   const stored = await setting(env, CLIENT_KEY);
   if (stored) {
     const parsed = JSON.parse(stored) as { clientId: string; redirectUri: string };
     if (parsed.redirectUri === redirectUri) return parsed;
+    const existingTokens = await readTokens(env);
+    if (existingTokens && !existingTokens.clientId) {
+      existingTokens.clientId = parsed.clientId;
+      await putSetting(env, TOKEN_KEY, await encryptTokens(env, existingTokens));
+    }
   }
   const data = await oauthJson(`${env.MCP_URL}/oauth/register`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -66,13 +71,13 @@ export async function handleOAuthCallback(env: Env, url: URL): Promise<Response>
   try {
     if (url.searchParams.get('error')) throw new Error(url.searchParams.get('error_description') || url.searchParams.get('error')!);
     if (!row || row.expires_at < Date.now()) throw new Error('Phien OAuth khong hop le hoac da het han.');
-    const client = await getClient(env, url.origin);
+    const client = await getClient(env, url.origin, row.redirect_uri);
     const data = await oauthJson(`${env.MCP_URL}/oauth/token`, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: formEncode({ grant_type: 'authorization_code', code: url.searchParams.get('code'),
         client_id: client.clientId, redirect_uri: row.redirect_uri, code_verifier: row.verifier, resource: env.MCP_URL })
     });
-    await saveTokens(env, data);
+    await saveTokens(env, data, undefined, client.clientId);
     await env.DB.prepare('DELETE FROM oauth_states WHERE state=?').bind(state).run();
     return new Response(null, { status: 302, headers: { Location: '/?connected=1' } });
   } catch (error) {
@@ -80,11 +85,12 @@ export async function handleOAuthCallback(env: Env, url: URL): Promise<Response>
   }
 }
 
-async function saveTokens(env: Env, raw: Record<string, any>, previous?: OAuthTokenSet): Promise<OAuthTokenSet> {
+async function saveTokens(env: Env, raw: Record<string, any>, previous?: OAuthTokenSet, clientId?: string): Promise<OAuthTokenSet> {
   if (!raw.access_token) throw new Error('OAuth did not return access_token.');
   const tokens: OAuthTokenSet = {
     accessToken: String(raw.access_token), refreshToken: String(raw.refresh_token || previous?.refreshToken || ''),
     expiresAt: raw.expires_in ? Date.now() + Math.max(Number(raw.expires_in) - 60, 60) * 1000 : 0,
+    clientId: clientId || previous?.clientId,
     tokenType: raw.token_type, scope: raw.scope
   };
   await putSetting(env, TOKEN_KEY, await encryptTokens(env, tokens));
@@ -120,14 +126,14 @@ export class OAuthCoordinator implements DurableObject {
       const tokens = await readTokens(this.env);
       if (!tokens?.refreshToken) throw new Error('Khong co refresh token. Vui long ket noi lai mot lan.');
       const clientRaw = await setting(this.env, CLIENT_KEY);
-      if (!clientRaw) throw new Error('Khong co OAuth client.');
-      const client = JSON.parse(clientRaw) as { clientId: string };
+      if (!tokens.clientId && !clientRaw) throw new Error('Khong co OAuth client.');
+      const clientId = tokens.clientId || (JSON.parse(clientRaw!) as { clientId: string }).clientId;
       const raw = await oauthJson(`${this.env.MCP_URL}/oauth/token`, {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formEncode({ grant_type: 'refresh_token', refresh_token: tokens.refreshToken,
-          client_id: client.clientId, scope: this.env.MCP_SCOPE, resource: this.env.MCP_URL })
+          client_id: clientId, scope: this.env.MCP_SCOPE, resource: this.env.MCP_URL })
       });
-      const saved = await saveTokens(this.env, raw, tokens);
+      const saved = await saveTokens(this.env, raw, tokens, clientId);
       return Response.json({ accessToken: saved.accessToken });
     } catch (error) {
       return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

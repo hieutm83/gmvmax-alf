@@ -18,6 +18,7 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
     const tokens=await readTokens(env);let advertisers:any[]=[];let connectionError:string|undefined;
     if(tokens){try{advertisers=await listAdvertisers(env,await createSession(env));}catch(error){connectionError=error instanceof Error?error.message:String(error);}}
     const today=dateInTimezone(new Date(),env.TIMEZONE);return ok({connected:Boolean(tokens),startDate:today,endDate:today,
+      oauth:{connected:Boolean(tokens),expiresAt:tokens?.expiresAt||null,scope:tokens?.scope||env.MCP_SCOPE,storage:'Encrypted D1'},
       defaultAdvertiserId:env.DEFAULT_ADVERTISER_ID,defaultStoreCode:env.DEFAULT_STORE_CODE,advertisers,connectionError});
   }
   if(request.method==='GET'&&url.pathname==='/api/oauth/connect')return ok(await createAuthorizationUrl(env,url.origin));
@@ -131,7 +132,8 @@ export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url);
     try{
-      if(url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
+      if(url.pathname==='/auth/connect'&&request.method==='GET')return Response.redirect(await createAuthorizationUrl(env,url.origin),302);
+      if(url.pathname==='/auth/callback'||url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
       const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
       if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);
