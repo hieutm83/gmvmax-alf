@@ -176,10 +176,13 @@
       .analytics-canvas canvas { width: 100% !important; height: 100% !important; }
       .analytics-unavailable { display: grid; place-items: center; min-height: 280px; padding: 28px; color: var(--text-muted); background: var(--surface-muted); border: 1px dashed #cbd5e1; border-radius: var(--radius-sm); text-align: center; }
       .analytics-unavailable strong { display: block; margin-bottom: 7px; color: var(--text-secondary); font-size: 14px; }
-      .admin-modal, .admin-auth-modal { width: min(460px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
+      .admin-modal { width: min(720px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
+      .admin-auth-modal { width: min(460px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
       .admin-body { display: grid; gap: 14px; padding: 20px; }
       .admin-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
       .admin-error { min-height: 18px; color: var(--danger); font-size: 12px; }
+      .admin-body .revenue-auth { margin: 0; box-shadow: none; }
+      .admin-body .seller-required { min-height: 0; margin: 0; padding: 16px; }
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
       @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid { grid-template-columns: 1fr; } }
@@ -246,11 +249,6 @@
         </div>
       </section>
       <section id="revenueReport" class="hidden">
-        <div class="revenue-auth">
-          <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">TikTok Shop Seller OAuth</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Seller.</span></div></div>
-          <a id="sellerConnectButton" class="button" href="/seller/auth/connect" target="_top">Kết nối Seller</a>
-        </div>
-        <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong id="sellerRequiredTitle">Cần kết nối TikTok Shop Seller</strong><span id="sellerRequiredMeta">Tab doanh thu sử dụng Shop Analytics và Seller Order API với token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
         <div id="revenueContent" class="hidden">
           <div id="revenueSummary" class="summary revenue-summary"></div>
           <p class="analytics-note">Nguồn dữ liệu: TikTok Shop Analytics API cho GMV, đơn hàng và AOV; Seller Order API cho đơn hủy, khách hàng và tỉnh thành.</p>
@@ -324,6 +322,11 @@
             <label class="live-toggle"><input id="autoRefresh" type="checkbox" checked>Tự cập nhật 5 phút</label>
             <button id="disconnectButton" class="button secondary" type="button">Ngắt kết nối</button>
           </div>
+          <div class="revenue-auth">
+            <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">TikTok Shop Seller OAuth</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Seller.</span></div></div>
+            <a id="sellerConnectButton" class="button" href="/seller/auth/connect" target="_top">Kết nối Seller</a>
+          </div>
+          <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong id="sellerRequiredTitle">Cần kết nối TikTok Shop Seller</strong><span id="sellerRequiredMeta">Tab doanh thu sử dụng Shop Analytics và Seller Order API với token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
         </div>
       </section>
     </div>
@@ -635,6 +638,9 @@
           .withSuccessHandler(function (data) {
             setLoading(false);
             loadedRevenueScope = key;
+            document.getElementById('sellerConnectRequired').classList.add('hidden');
+            document.getElementById('revenueContent').classList.remove('hidden');
+            document.getElementById('revenueAuthTitle').textContent = 'Đã kết nối TikTok Shop Seller';
             renderRevenueAnalysis(data);
           })
           .withFailureHandler(handleRevenueFailure)
