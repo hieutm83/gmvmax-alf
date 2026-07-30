@@ -1,0 +1,209 @@
+import type { Env, SellerTokenSet } from './types';
+import { decryptJson, encryptJson } from './crypto';
+import { cacheGet, cachePut, dateInTimezone, HttpError, numberValue, randomBase64Url, shiftDate, stableKey } from './utils';
+
+const SELLER_TOKEN_KEY = 'seller_oauth_tokens';
+const SHOP_API = 'https://open-api.tiktokglobalshop.com';
+const SHOP_AUTH_API = 'https://auth.tiktok-shops.com/api/v2';
+
+function configured(env: Env): boolean {
+  return Boolean(env.TIKTOK_SHOP_APP_KEY && env.TIKTOK_SHOP_APP_SECRET && env.TIKTOK_SHOP_SERVICE_ID);
+}
+
+function requireConfig(env: Env): void {
+  if (!configured(env)) throw new HttpError(503,
+    'Chưa cấu hình TikTok Shop Seller OAuth. Cần TIKTOK_SHOP_APP_KEY, TIKTOK_SHOP_APP_SECRET và TIKTOK_SHOP_SERVICE_ID.');
+}
+
+async function setting(env: Env, key: string): Promise<string | null> {
+  const row = await env.DB.prepare('SELECT value FROM app_settings WHERE key=?').bind(key).first<{ value: string }>();
+  return row?.value || null;
+}
+
+async function putSetting(env: Env, key: string, value: string): Promise<void> {
+  await env.DB.prepare(`INSERT INTO app_settings(key,value) VALUES(?,?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP`).bind(key, value).run();
+}
+
+function expiry(value: unknown, fallbackSeconds: number): number {
+  const numeric = Number(value);
+  if (!numeric) return Date.now() + fallbackSeconds * 1000;
+  return numeric > 10_000_000_000 ? numeric : numeric > 1_000_000_000 ? numeric * 1000 : Date.now() + numeric * 1000;
+}
+
+function tokenFrom(data: any, previous?: SellerTokenSet): SellerTokenSet {
+  if (!data?.access_token) throw new Error('TikTok Shop OAuth không trả access_token.');
+  return {
+    accessToken: String(data.access_token),
+    refreshToken: String(data.refresh_token || previous?.refreshToken || ''),
+    accessTokenExpiresAt: expiry(data.access_token_expire_in, 7 * 86400),
+    refreshTokenExpiresAt: expiry(data.refresh_token_expire_in, 365 * 86400),
+    openId: data.open_id ? String(data.open_id) : previous?.openId,
+    sellerName: data.seller_name || previous?.sellerName,
+    grantedScopes: data.granted_scopes || data.granted_permissions || previous?.grantedScopes || []
+  };
+}
+
+async function saveSellerTokens(env: Env, tokens: SellerTokenSet): Promise<void> {
+  await putSetting(env, SELLER_TOKEN_KEY, await encryptJson(env, tokens));
+}
+
+export async function readSellerTokens(env: Env): Promise<SellerTokenSet | null> {
+  const raw = await setting(env, SELLER_TOKEN_KEY);
+  return raw ? decryptJson<SellerTokenSet>(env, raw) : null;
+}
+
+async function tokenRequest(env: Env, path: 'get' | 'refresh', params: Record<string, string>): Promise<any> {
+  const query = new URLSearchParams({ app_key: env.TIKTOK_SHOP_APP_KEY!, app_secret: env.TIKTOK_SHOP_APP_SECRET!, ...params });
+  const response = await fetch(`${SHOP_AUTH_API}/token/${path}?${query}`);
+  const payload = await response.json<any>().catch(() => ({}));
+  if (!response.ok || Number(payload.code) !== 0) throw new Error(payload.message || `TikTok Shop OAuth HTTP ${response.status}`);
+  return payload.data || {};
+}
+
+export async function createSellerAuthorizationUrl(env: Env): Promise<string> {
+  requireConfig(env);
+  const state = randomBase64Url(32);
+  await env.DB.prepare('INSERT INTO seller_oauth_states(state,expires_at) VALUES(?,?)')
+    .bind(state, Date.now() + 30 * 60_000).run();
+  const query = new URLSearchParams({ service_id: env.TIKTOK_SHOP_SERVICE_ID!, state });
+  return `https://services.tiktokshop.com/open/authorize?${query}`;
+}
+
+export async function handleSellerOAuthCallback(env: Env, url: URL): Promise<Response> {
+  try {
+    requireConfig(env);
+    const state = url.searchParams.get('state') || '';
+    const row = await env.DB.prepare('SELECT expires_at FROM seller_oauth_states WHERE state=?')
+      .bind(state).first<{ expires_at: number }>();
+    if (url.searchParams.get('error')) throw new Error(url.searchParams.get('error_description') || url.searchParams.get('error')!);
+    if (!row || row.expires_at < Date.now()) throw new Error('Phiên TikTok Shop OAuth không hợp lệ hoặc đã hết hạn.');
+    const code = url.searchParams.get('code'); if (!code) throw new Error('TikTok Shop không trả authorization code.');
+    const data = await tokenRequest(env, 'get', { auth_code: code, grant_type: 'authorized_code' });
+    if (data.user_type != null && Number(data.user_type) !== 0) throw new Error('Token nhận được không phải Seller token.');
+    await saveSellerTokens(env, tokenFrom(data));
+    await env.DB.prepare('DELETE FROM seller_oauth_states WHERE state=?').bind(state).run();
+    return Response.redirect(`${url.origin}/?seller_connected=1`, 302);
+  } catch (error) {
+    return new Response(`TikTok Shop OAuth: ${error instanceof Error ? error.message : String(error)}`,
+      { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+}
+
+async function sellerAccessToken(env: Env): Promise<string> {
+  requireConfig(env);
+  const tokens = await readSellerTokens(env);
+  if (!tokens) throw new HttpError(401, 'Chưa kết nối TikTok Shop Seller.');
+  if (tokens.accessTokenExpiresAt > Date.now() + 5 * 60_000) return tokens.accessToken;
+  if (!tokens.refreshToken || tokens.refreshTokenExpiresAt <= Date.now()) throw new HttpError(401, 'Ủy quyền TikTok Shop Seller đã hết hạn.');
+  const data = await tokenRequest(env, 'refresh', { refresh_token: tokens.refreshToken, grant_type: 'refresh_token' });
+  const refreshed = tokenFrom(data, tokens); await saveSellerTokens(env, refreshed); return refreshed.accessToken;
+}
+
+export async function sellerOAuthState(env: Env): Promise<any> {
+  const tokens = configured(env) ? await readSellerTokens(env) : null;
+  return { configured: configured(env), connected: Boolean(tokens), expiresAt: tokens?.accessTokenExpiresAt || null,
+    refreshExpiresAt: tokens?.refreshTokenExpiresAt || null, sellerName: tokens?.sellerName || '',
+    grantedScopes: tokens?.grantedScopes || [], storage: 'Encrypted D1' };
+}
+
+export async function disconnectSeller(env: Env): Promise<void> {
+  await env.DB.prepare('DELETE FROM app_settings WHERE key=?').bind(SELLER_TOKEN_KEY).run();
+}
+
+async function hmacHex(secret: string, value: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(signature)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function shopRequest(env: Env, path: string, method: 'GET' | 'POST', query: Record<string, any>, body?: any): Promise<any> {
+  const accessToken = await sellerAccessToken(env);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const params: Record<string, string> = { app_key: env.TIKTOK_SHOP_APP_KEY!, timestamp: String(timestamp) };
+  Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== '') params[key] = String(value); });
+  const bodyText = body == null ? '' : JSON.stringify(body);
+  const joined = Object.keys(params).sort().map((key) => `${key}${params[key]}`).join('');
+  const base = `${env.TIKTOK_SHOP_APP_SECRET}${path}${joined}${bodyText}${env.TIKTOK_SHOP_APP_SECRET}`;
+  params.sign = await hmacHex(env.TIKTOK_SHOP_APP_SECRET!, base);
+  const response = await fetch(`${SHOP_API}${path}?${new URLSearchParams(params)}`, {
+    method, headers: { 'Content-Type': 'application/json', 'x-tts-access-token': accessToken },
+    body: method === 'POST' ? bodyText : undefined
+  });
+  const payload = await response.json<any>().catch(() => ({}));
+  if (!response.ok || Number(payload.code) !== 0) throw new Error(payload.message || `TikTok Shop API HTTP ${response.status}`);
+  return payload.data || {};
+}
+
+async function authorizedShop(env: Env): Promise<any> {
+  const data = await shopRequest(env, '/authorization/202309/shops', 'GET', {});
+  const shops = data.shops || data.shop_list || [];
+  const wanted = String(env.DEFAULT_STORE_CODE || '').toUpperCase();
+  return shops.find((shop: any) => [shop.code, shop.shop_code, shop.name].some((value) => String(value || '').toUpperCase().includes(wanted))) || shops[0];
+}
+
+function epoch(date: string): number {
+  return Math.floor(Date.parse(`${date}T00:00:00+07:00`) / 1000);
+}
+
+async function ordersForPeriod(env: Env, startDate: string, endDate: string, shopCipher: string): Promise<any[]> {
+  const orders: any[] = []; let pageToken = ''; let pages = 0;
+  do {
+    const data = await shopRequest(env, '/order/202309/orders/search', 'POST', {
+      shop_cipher: shopCipher, page_size: 100, page_token: pageToken || undefined,
+      sort_field: 'create_time', sort_order: 'ASC'
+    }, { create_time_ge: epoch(startDate), create_time_lt: epoch(shiftDate(endDate, 1)) });
+    orders.push(...(data.orders || [])); pageToken = String(data.next_page_token || ''); pages += 1;
+  } while (pageToken && pages < 100);
+  return orders;
+}
+
+function province(order: any): string {
+  const address = order.recipient_address || {};
+  const list = address.district_info_list || address.district_infos || [];
+  const region = list.find((item: any) => /LEVEL_1|PROVINCE|STATE/i.test(String(item.address_level || item.level || item.address_type || ''))) || list[0];
+  return String(region?.address_name || region?.name || address.state || address.province || 'Không xác định');
+}
+
+function summarizeOrders(env: Env, orders: any[], startDate: string, endDate: string): any {
+  const daily = new Map<string, any>();
+  for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) daily.set(date, { date, orders: 0, cancelledOrders: 0, grossRevenue: 0, aov: null, newCustomers: 0, returningCustomers: 0 });
+  const customers = new Map<string, number>(); const provinces = new Map<string, number>();
+  const sorted = orders.slice().sort((a, b) => numberValue(a.create_time) - numberValue(b.create_time));
+  for (const order of sorted) {
+    const date = dateInTimezone(new Date(numberValue(order.create_time) * 1000), env.TIMEZONE); const point = daily.get(date); if (!point) continue;
+    const status = String(order.status || '').toUpperCase(); const cancelled = /CANCEL/.test(status);
+    if (cancelled) { point.cancelledOrders += 1; continue; }
+    if (/UNPAID/.test(status)) continue;
+    const amount = numberValue(order.payment?.total_amount ?? order.payment?.original_total_product_price ?? order.total_amount);
+    const customer = String(order.user_id || order.buyer_user_id || order.recipient_address?.phone_number || order.id);
+    const previous = customers.get(customer) || 0; customers.set(customer, previous + 1);
+    if (previous) point.returningCustomers += 1; else point.newCustomers += 1;
+    point.orders += 1; point.grossRevenue += amount;
+    const region = province(order); provinces.set(region, (provinces.get(region) || 0) + amount);
+  }
+  const points = Array.from(daily.values()); points.forEach((point) => { point.aov = point.orders ? point.grossRevenue / point.orders : null; });
+  const totals = points.reduce((sum, point) => ({ orders: sum.orders + point.orders, cancelledOrders: sum.cancelledOrders + point.cancelledOrders,
+    grossRevenue: sum.grossRevenue + point.grossRevenue }), { orders: 0, cancelledOrders: 0, grossRevenue: 0 });
+  const repeatCustomers = Array.from(customers.values()).filter((count) => count > 1).length;
+  return { daily: points, totals: { ...totals, aov: totals.orders ? totals.grossRevenue / totals.orders : null,
+    repurchaseRate: customers.size ? repeatCustomers / customers.size : null },
+    provinces: Array.from(provinces, ([name, revenue]) => ({ name, revenue })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) };
+}
+
+export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<any> {
+  const key = stableKey('seller-revenue-v1', input); const cached = await cacheGet<any>(env, key); if (cached) return cached;
+  const shop = await authorizedShop(env); if (!shop) throw new Error('Seller OAuth chưa trả về TikTok Shop được ủy quyền.');
+  const cipher = String(shop.cipher || shop.shop_cipher || shop.id || ''); if (!cipher) throw new Error('Không tìm thấy shop_cipher.');
+  const days = Math.floor((Date.parse(`${input.endDate}T00:00:00Z`) - Date.parse(`${input.startDate}T00:00:00Z`)) / 86400000) + 1;
+  const previousEndDate = shiftDate(input.startDate, -1); const previousStartDate = shiftDate(previousEndDate, -(days - 1));
+  const currentOrders = await ordersForPeriod(env, input.startDate, input.endDate, cipher);
+  const previousOrders = await ordersForPeriod(env, previousStartDate, previousEndDate, cipher);
+  const current = summarizeOrders(env, currentOrders, input.startDate, input.endDate);
+  const previous = summarizeOrders(env, previousOrders, previousStartDate, previousEndDate);
+  const result = { startDate: input.startDate, endDate: input.endDate, previousStartDate, previousEndDate,
+    generatedAt: new Date().toISOString(), source: 'TIKTOK_SHOP_SELLER', shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },
+    totals: current.totals, previousTotals: previous.totals, daily: current.daily, provinces: current.provinces };
+  await cachePut(env, key, result, 300); return result;
+}

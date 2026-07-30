@@ -168,7 +168,7 @@
       .revenue-auth .button { min-height: 38px; flex: 0 0 auto; color: var(--primary); background: var(--surface); border-color: var(--border); font-size: 12px; }
       .revenue-auth .button:hover { color: #fff; background: var(--primary); border-color: var(--primary); }
       .revenue-auth .button.disabled { pointer-events: none; color: var(--text-muted); background: var(--surface-muted); opacity: .7; }
-      .revenue-connect-required { min-height: 220px; margin-top: 16px; }
+      .seller-required { min-height: 220px; margin-top: 16px; }
       .analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
       .analytics-panel { min-width: 0; min-height: 340px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
       .analytics-panel h2 { margin: 0 0 14px; color: var(--text-secondary); font-size: 13px; font-weight: 800; text-align: center; }
@@ -247,13 +247,13 @@
       </section>
       <section id="revenueReport" class="hidden">
         <div class="revenue-auth">
-          <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">Nhanh.vn Open API</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Nhanh.vn.</span></div></div>
-          <a id="nhanhConnectButton" class="button" href="/nhanh/connect" target="_top">Kết nối Nhanh.vn</a>
+          <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">TikTok Shop Seller OAuth</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Seller.</span></div></div>
+          <a id="sellerConnectButton" class="button" href="/seller/auth/connect" target="_top">Kết nối Seller</a>
         </div>
-        <div id="nhanhConnectRequired" class="analytics-unavailable revenue-connect-required"><div><strong id="nhanhRequiredTitle">Cần kết nối Nhanh.vn</strong><span id="nhanhRequiredMeta">Tab doanh thu sử dụng Nhanh.vn Order API và token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
+        <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong id="sellerRequiredTitle">Cần kết nối TikTok Shop Seller</strong><span id="sellerRequiredMeta">Tab doanh thu sử dụng Seller Order API và token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
         <div id="revenueContent" class="hidden">
           <div id="revenueSummary" class="summary revenue-summary"></div>
-          <p class="analytics-note">Nguồn dữ liệu: Nhanh.vn Open API v3 trong khoảng ngày đã chọn.</p>
+          <p class="analytics-note">Nguồn dữ liệu: TikTok Shop Seller Order API trong khoảng ngày đã chọn.</p>
           <div class="analytics-grid">
             <section class="analytics-panel">
               <h2>Số lượng đơn, đơn hủy và GMV theo ngày</h2>
@@ -355,9 +355,9 @@
       var revenueAovChart = null;
       var revenueCustomersChart = null;
       var revenueProvinceChart = null;
-      var nhanhOAuthConnected = false;
-      var nhanhOAuthConfigured = false;
-      var activeReportView = new URLSearchParams(window.location.search).has('nhanh_connected') ? 'revenue' : 'ads';
+      var sellerOAuthConnected = false;
+      var sellerOAuthConfigured = false;
+      var activeReportView = new URLSearchParams(window.location.search).has('seller_connected') ? 'revenue' : 'ads';
       var loadedRevenueScope = '';
       var videoHoverLinePlugin = {
         id: 'videoHoverLine',
@@ -385,7 +385,7 @@
         document.getElementById('endDate').value = state.endDate;
         defaultAdvertiserId = state.defaultAdvertiserId || defaultAdvertiserId;
         defaultStoreCode = state.defaultStoreCode || defaultStoreCode;
-        renderRevenueOAuthState(state.nhanhOAuth || {});
+        renderRevenueOAuthState(state.sellerOAuth || {});
         document.getElementById('connectPanel').classList.toggle('hidden', state.connected);
         form.classList.toggle('hidden', !state.connected);
         if (state.connectionError) document.getElementById('connectMessage').textContent = state.connectionError;
@@ -400,39 +400,40 @@
       }).getInitialState();
 
       function renderRevenueOAuthState(oauth) {
-        nhanhOAuthConfigured = Boolean(oauth && oauth.configured);
-        nhanhOAuthConnected = Boolean(oauth && oauth.connected);
-        var title = nhanhOAuthConnected ? 'Đã kết nối Nhanh.vn' :
-          (nhanhOAuthConfigured ? 'Chưa kết nối Nhanh.vn' : 'Chưa cấu hình Nhanh.vn Open API');
+        sellerOAuthConfigured = Boolean(oauth && oauth.configured);
+        sellerOAuthConnected = Boolean(oauth && oauth.connected);
+        var title = sellerOAuthConnected ? 'Đã kết nối TikTok Shop Seller' :
+          (sellerOAuthConfigured ? 'Chưa kết nối TikTok Shop Seller' : 'Chưa cấu hình TikTok Shop Seller OAuth');
         document.getElementById('revenueAuthTitle').textContent = title;
-        var detail = nhanhOAuthConnected ? 'Access token Nhanh.vn được mã hóa và lưu riêng trong D1 · Business ID ' + oauth.businessId :
-          (nhanhOAuthConfigured ? 'Cấp quyền đọc đơn hàng Nhanh.vn' : 'Thiếu App ID hoặc Secret Key Nhanh.vn trong Cloudflare');
-        if (nhanhOAuthConnected && oauth.expiresAt) {
+        var detail = sellerOAuthConnected ? 'Seller access token được mã hóa và lưu riêng trong D1' :
+          (sellerOAuthConfigured ? 'Ủy quyền Seller để đọc dữ liệu đơn hàng' : 'Thiếu App Key, App Secret hoặc Service ID trong Cloudflare');
+        if (sellerOAuthConnected && oauth.sellerName) detail += ' · ' + oauth.sellerName;
+        if (sellerOAuthConnected && oauth.expiresAt) {
           detail += ' · token hết hạn ' + new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(oauth.expiresAt));
         }
         document.getElementById('revenueAuthMeta').textContent = detail + '.';
-        var connect = document.getElementById('nhanhConnectButton');
-        var requiredTitle = document.getElementById('nhanhRequiredTitle');
-        var requiredMeta = document.getElementById('nhanhRequiredMeta');
-        if (!nhanhOAuthConfigured) {
-          connect.textContent = 'Cấu hình Nhanh.vn';
-          connect.href = 'https://open.nhanh.vn/';
+        var connect = document.getElementById('sellerConnectButton');
+        var requiredTitle = document.getElementById('sellerRequiredTitle');
+        var requiredMeta = document.getElementById('sellerRequiredMeta');
+        if (!sellerOAuthConfigured) {
+          connect.textContent = 'Tạo ứng dụng Seller';
+          connect.href = 'https://partner.tiktokshop.com/';
           connect.target = '_blank';
           connect.rel = 'noopener noreferrer';
-          requiredTitle.textContent = 'Cần cấu hình Nhanh.vn Open API';
-          requiredMeta.textContent = 'Đặt Redirect URL ' + location.origin + '/nhanh/callback, sau đó lưu App ID và Secret Key trong Cloudflare.';
+          requiredTitle.textContent = 'Cần tạo ứng dụng TikTok Shop';
+          requiredMeta.textContent = 'Seller Admin chỉ phê duyệt quyền. Hãy tạo Custom App trong Partner Center, bật Seller Order API và đặt callback: ' + location.origin + '/seller/auth/callback';
         } else {
-          connect.textContent = nhanhOAuthConnected ? 'Cấp quyền lại' : 'Kết nối Nhanh.vn';
-          connect.href = '/nhanh/connect';
+          connect.textContent = sellerOAuthConnected ? 'Ủy quyền lại' : 'Kết nối Seller';
+          connect.href = '/seller/auth/connect';
           connect.target = '_top';
           connect.removeAttribute('rel');
-          requiredTitle.textContent = 'Cần kết nối Nhanh.vn';
-          requiredMeta.textContent = 'Đăng nhập bằng tài khoản Nhanh.vn có quyền đơn hàng và cấp quyền cho ứng dụng.';
+          requiredTitle.textContent = 'Cần kết nối TikTok Shop Seller';
+          requiredMeta.textContent = 'Đăng nhập bằng Seller Admin để phê duyệt quyền đọc dữ liệu đơn hàng cho ứng dụng.';
         }
         connect.classList.remove('disabled');
         connect.setAttribute('aria-disabled', 'false');
-        document.getElementById('nhanhConnectRequired').classList.toggle('hidden', nhanhOAuthConnected);
-        document.getElementById('revenueContent').classList.toggle('hidden', !nhanhOAuthConnected);
+        document.getElementById('sellerConnectRequired').classList.toggle('hidden', sellerOAuthConnected);
+        document.getElementById('revenueContent').classList.toggle('hidden', !sellerOAuthConnected);
       }
 
       form.addEventListener('submit', function (event) {
@@ -603,12 +604,12 @@
         document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
         if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
-          if (nhanhOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
+          if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
         }
       }
 
       function requestRevenueAnalysis(force) {
-        if (button.disabled || !nhanhOAuthConnected) return;
+        if (button.disabled || !sellerOAuthConnected) return;
         var scope = reportScope();
         var key = JSON.stringify(scope);
         if (!force && loadedRevenueScope === key) return;

@@ -18,7 +18,6 @@ PUBLIC_BASE_URL = "https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev"
 ZALO_ADVERTISER_ID = "7535665207776231441"
 ZALO_STORE_CODE = "VNLC33LWAS"
 ZALO_STORE_ID = "7496309672412416866"
-NHANH_APP_ID = "76036"
 
 [[d1_databases]]
 binding = "DB"
