@@ -19,6 +19,10 @@ export interface Env {
   ZALO_ADVERTISER_ID?: string;
   ZALO_STORE_CODE?: string;
   ZALO_STORE_ID?: string;
+  ZALO_OPERATIONS_BOT_TOKEN?: string;
+  ZALO_OPERATIONS_GROUP_CHAT_ID?: string;
+  ZALO_OPERATIONS_GROUP_NAME?: string;
+  ZALO_OPERATIONS_WEBHOOK_SECRET?: string;
   TIKTOK_SHOP_APP_KEY?: string;
   TIKTOK_SHOP_APP_SECRET?: string;
   TIKTOK_SHOP_SERVICE_ID?: string;
@@ -30,6 +34,7 @@ export interface Env {
 export type TaskMessage =
   | { type: 'hourly-dispatch'; reportDate: string; reportHour: number; backupDate?: string }
   | { type: 'scheduled-report'; reportDate: string; reportHour: number }
+  | { type: 'operations-daily-report'; reportDate: string; mode: 'DAILY' | 'REALTIME'; chatId?: string; eventId?: string }
   | { type: 'zalo-poll' }
   | { type: 'zalo-webhook-ensure' }
   | { type: 'zalo-video'; eventId: number }

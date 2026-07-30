@@ -267,7 +267,8 @@ async function productGmvAttribution(env: Env, startDate: string, endDate: strin
   const totals = {
     total: 0,
     affiliate: { total: 0, live: 0, video: 0, productCard: 0 },
-    seller: { total: 0, live: 0, video: 0, productCard: 0 }
+    seller: { total: 0, live: 0, video: 0, productCard: 0 },
+    products: [] as Array<{ id: string; name: string; gmv: number }>
   };
   let pageToken = ''; let pages = 0; let latestAvailableDate: string | null = null;
   try {
@@ -285,6 +286,7 @@ async function productGmvAttribution(env: Env, startDate: string, endDate: strin
       });
       latestAvailableDate = data.latest_available_date || latestAvailableDate;
       for (const product of data.products || []) {
+        const productGmv = gmvAmount(product.total_performance?.gmv);
         const affiliateTotal = gmvAmount(product.affiliate_total_performance?.attributed_gmv);
         const affiliateLive = Math.min(affiliateTotal, gmvAmount(product.affiliate_live_performance?.live_attributed_gmv));
         const affiliateVideo = Math.min(Math.max(0, affiliateTotal - affiliateLive),
@@ -292,7 +294,12 @@ async function productGmvAttribution(env: Env, startDate: string, endDate: strin
         const sellerLive = gmvAmount(product.seller_live_performance?.attributed_gmv);
         const sellerVideo = gmvAmount(product.seller_video_performance?.attributed_gmv);
         const sellerProductCard = gmvAmount(product.seller_product_card_performance?.attributed_gmv);
-        totals.total += gmvAmount(product.total_performance?.gmv);
+        totals.total += productGmv;
+        if (productGmv > 0) totals.products.push({
+          id: String(product.id || product.product_id || ''),
+          name: String(product.product_name || product.name || product.title || ''),
+          gmv: productGmv
+        });
         totals.affiliate.total += affiliateTotal;
         totals.affiliate.live += affiliateLive;
         totals.affiliate.video += affiliateVideo;
@@ -347,6 +354,19 @@ function summarizeOrders(env: Env, orders: any[], startDate: string, endDate: st
     provinces: Array.from(provinces, ([name, revenue]) => ({ name, revenue })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) };
 }
 
+function productNamesFromOrders(orders: any[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const order of orders) {
+    const groups = [order.line_items, order.items, ...(Array.isArray(order.packages) ? order.packages.map((item: any) => item?.products || item?.items) : [])];
+    for (const group of groups) for (const item of (Array.isArray(group) ? group : [])) {
+      const id = String(item.product_id || item.id || '');
+      const name = String(item.product_name || item.name || item.title || '');
+      if (id && name && !names.has(id)) names.set(id, name);
+    }
+  }
+  return names;
+}
+
 function applyShopPerformance(summary: any, data: any): any {
   const intervals = data?.performance?.intervals;
   if (!Array.isArray(intervals) || !intervals.length) return summary;
@@ -395,6 +415,10 @@ export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<a
     productGmvAttribution(env, previousStartDate, previousEndDate, cipher)
   ]);
   const currentOrdersWithAddresses = await hydrateMissingOrderAddresses(env, currentOrders, cipher);
+  const productNames = productNamesFromOrders(currentOrdersWithAddresses);
+  if (currentAttribution?.products) currentAttribution.products = currentAttribution.products
+    .map((product: any) => ({ ...product, name: product.name || productNames.get(String(product.id)) || `Sản phẩm ${product.id}` }))
+    .sort((left: any, right: any) => numberValue(right.gmv) - numberValue(left.gmv));
   const current = applyShopPerformance(summarizeOrders(env, currentOrdersWithAddresses, input.startDate, input.endDate), currentPerformance);
   const charts = chartStartDate === input.startDate ? current :
     applyShopPerformance(summarizeOrders(env, currentOrdersWithAddresses, chartStartDate, input.endDate), currentPerformance);

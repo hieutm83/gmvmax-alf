@@ -6,6 +6,7 @@ import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
 import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
+import { ensureOperationsBotWebhook, sendOperationsReport } from './operations-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
@@ -117,9 +118,20 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   if(message.type==='hourly-dispatch'){
     try{await getAccessToken(runtime);}catch(error){console.error('TikTok OAuth refresh failed',error instanceof Error?error.message:String(error));return;}
     const tasks:Promise<unknown>[]=[];
+    if(env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
+      tasks.push(ensureOperationsBotWebhook(env).catch((error)=>console.error('Operations bot webhook setup failed',error instanceof Error?error.message:String(error))));
+      if(message.reportHour===8)await env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:shiftDate(message.reportDate,-1),mode:'DAILY'});
+    }
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
-    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour}));
+    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},message.reportHour===8?{delaySeconds:30}:undefined));
     await Promise.all(tasks);return;
+  }
+  if(message.type==='operations-daily-report'){
+    const storeId=env.ZALO_STORE_ID||await resolveDefaultStore(runtime);
+    await sendOperationsReport({...runtime,DEFAULT_STORE_CODE:storeId},message.reportDate,message.mode,message.chatId);
+    if(message.eventId)await env.DB.prepare("UPDATE operations_bot_events SET status='DONE',processed_at=? WHERE external_id=?")
+      .bind(Date.now(),message.eventId).run();
+    return;
   }
   if(message.type==='sheet-backup'){
     const storeId=await resolveDefaultStore(runtime);const report=await loadMainReport(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
@@ -141,6 +153,20 @@ async function assetResponse(request:Request,env:Env):Promise<Response>{
   if(isHtml){headers.set('Content-Type','text/html; charset=UTF-8');headers.set('Cache-Control','no-store');}
   if(assetUrl.pathname.endsWith('.js'))headers.set('Content-Type','application/javascript; charset=UTF-8');
   return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+
+async function operationsBotWebhook(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
+  const supplied=request.headers.get('x-bot-api-secret-token')||request.headers.get('x-webhook-secret');
+  if(env.ZALO_OPERATIONS_WEBHOOK_SECRET&&supplied!==env.ZALO_OPERATIONS_WEBHOOK_SECRET)throw new HttpError(401,'Invalid operations bot webhook secret.');
+  const payload=await request.json<any>();
+  const event=normalizeZaloEvent(payload);
+  if(event.senderIsBot||event.chatId!==env.ZALO_OPERATIONS_GROUP_CHAT_ID||!/\bcheck\b/i.test(event.text))return json({ok:true,ignored:true});
+  const rawId=event.id||Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(payload)))))
+    .map((value)=>value.toString(16).padStart(2,'0')).join('');
+  const result=await env.DB.prepare("INSERT OR IGNORE INTO operations_bot_events(external_id,chat_id,received_at,status) VALUES(?,?,?,'QUEUED')")
+    .bind(rawId,event.chatId,Date.now()).run();
+  if(result.meta.changes)ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:dateInTimezone(new Date(),env.TIMEZONE),mode:'REALTIME',chatId:event.chatId,eventId:rawId}));
+  return json({ok:true,queued:Boolean(result.meta.changes)});
 }
 
 async function chartImage(env:Env,id:string):Promise<Response>{
@@ -170,6 +196,7 @@ export default {
       if(url.pathname==='/seller/auth/connect'&&request.method==='GET')return Response.redirect(await createSellerAuthorizationUrl(env),302);
       if(url.pathname==='/seller/auth/callback'&&request.method==='GET')return handleSellerOAuthCallback(env,url);
       if(url.pathname==='/tiktok/webhook')return await tiktokShopWebhook(request,env);
+      if(url.pathname==='/webhooks/zalo-operations'&&request.method==='POST')return operationsBotWebhook(request,env,ctx);
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
       const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
       if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);
@@ -194,6 +221,10 @@ export default {
         if(message.body.type==='zalo-video'){
           await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
             .bind(JSON.stringify({error:details}),message.body.eventId).run();
+        }
+        if(message.body.type==='operations-daily-report'&&message.body.eventId){
+          await env.DB.prepare("UPDATE operations_bot_events SET status='RETRYING' WHERE external_id=?")
+            .bind(message.body.eventId).run();
         }
         message.retry({delaySeconds:message.body.type==='tracking-sync'?60:10});
       }
