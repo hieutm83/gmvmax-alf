@@ -58,7 +58,7 @@ Trong TikTok Shop Partner Center, cau hinh redirect URL chinh xac:
 https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/auth/callback
 ```
 
-Ung dung Seller can quyen doc thong tin shop va don hang (`seller.authorization.info`, `seller.order.info`).
+Ung dung Seller can quyen doc thong tin shop, analytics va don hang (`seller.authorization.info`, `data.shop_analytics.public.read`, `seller.order.info`). GMV, so don va AOV duoc lay tu Shop Analytics; Order API bo sung don huy, khach hang va tinh/thanh pho.
 
 Webhook URL:
 

@@ -250,10 +250,10 @@
           <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">TikTok Shop Seller OAuth</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Seller.</span></div></div>
           <a id="sellerConnectButton" class="button" href="/seller/auth/connect" target="_top">Kết nối Seller</a>
         </div>
-        <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong id="sellerRequiredTitle">Cần kết nối TikTok Shop Seller</strong><span id="sellerRequiredMeta">Tab doanh thu sử dụng Seller Order API và token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
+        <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong id="sellerRequiredTitle">Cần kết nối TikTok Shop Seller</strong><span id="sellerRequiredMeta">Tab doanh thu sử dụng Shop Analytics và Seller Order API với token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
         <div id="revenueContent" class="hidden">
           <div id="revenueSummary" class="summary revenue-summary"></div>
-          <p class="analytics-note">Nguồn dữ liệu: TikTok Shop Seller Order API trong khoảng ngày đã chọn.</p>
+          <p class="analytics-note">Nguồn dữ liệu: TikTok Shop Analytics API cho GMV, đơn hàng và AOV; Seller Order API cho đơn hủy, khách hàng và tỉnh thành.</p>
           <div class="analytics-grid">
             <section class="analytics-panel">
               <h2>Số lượng đơn, đơn hủy và GMV theo ngày</h2>
@@ -423,7 +423,7 @@
           connect.target = '_blank';
           connect.rel = 'noopener noreferrer';
           requiredTitle.textContent = 'Cần tạo ứng dụng TikTok Shop';
-          requiredMeta.textContent = 'Seller Admin chỉ phê duyệt quyền. Hãy tạo Custom App trong Partner Center, bật Seller Order API và đặt callback: ' + location.origin + '/seller/auth/callback';
+          requiredMeta.textContent = 'Seller Admin chỉ phê duyệt quyền. Hãy tạo Custom App, bật Shop Authorized Information, Order Information và Shop Analytics rồi đặt callback: ' + location.origin + '/seller/auth/callback';
         } else if (!sellerOAuthCanAuthorize && !sellerOAuthConnected) {
           connect.textContent = 'Mở Partner Center';
           connect.href = 'https://partner.tiktokshop.com/';
@@ -645,9 +645,9 @@
         var message = error && error.message ? error.message : String(error || '');
         if (/\/authorization\/202309\/shops: Access denied/i.test(message)) {
           document.getElementById('revenueAuthTitle').textContent = 'Token Seller hợp lệ · App chưa có quyền API';
-          document.getElementById('revenueAuthMeta').textContent = 'Bật Shop Authorized Information và Order Information trong Partner Center, chờ phê duyệt rồi ủy quyền lại.';
+          document.getElementById('revenueAuthMeta').textContent = 'Bật Shop Authorized Information, Order Information và Shop Analytics trong Partner Center, chờ phê duyệt rồi ủy quyền lại.';
           document.getElementById('sellerRequiredTitle').textContent = 'TikTok chưa cấp quyền đọc dữ liệu Shop cho ứng dụng';
-          document.getElementById('sellerRequiredMeta').textContent = 'Vào App & Service → Manage → Manage API, bật seller.authorization.info và seller.order.info. Sau khi TikTok phê duyệt, thực hiện ủy quyền Seller lại.';
+          document.getElementById('sellerRequiredMeta').textContent = 'Vào App & Service → Manage → Manage API, bật seller.authorization.info, seller.order.info và data.shop_analytics.public.read. Sau khi TikTok phê duyệt, Publish changes rồi ủy quyền Seller lại.';
           document.getElementById('sellerConnectRequired').classList.remove('hidden');
           document.getElementById('revenueContent').classList.add('hidden');
           showError({ message: 'TikTok Shop từ chối Get Authorized Shops: ứng dụng chưa được phê duyệt scope Shop Authorized Information.' });

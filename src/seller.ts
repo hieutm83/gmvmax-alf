@@ -167,6 +167,22 @@ async function ordersForPeriod(env: Env, startDate: string, endDate: string, sho
   return orders;
 }
 
+async function shopPerformance(env: Env, startDate: string, endDate: string, shopCipher: string): Promise<any | null> {
+  try {
+    return await shopRequest(env, '/analytics/202509/shop/performance', 'GET', {
+      shop_cipher: shopCipher,
+      start_date_ge: startDate,
+      end_date_lt: shiftDate(endDate, 1),
+      granularity: '1D',
+      currency: 'LOCAL'
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/access denied|required access scope|not authorized/i.test(message)) return null;
+    throw error;
+  }
+}
+
 function province(order: any): string {
   const address = order.recipient_address || {};
   const list = address.district_info_list || address.district_infos || [];
@@ -200,18 +216,50 @@ function summarizeOrders(env: Env, orders: any[], startDate: string, endDate: st
     provinces: Array.from(provinces, ([name, revenue]) => ({ name, revenue })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) };
 }
 
+function applyShopPerformance(summary: any, data: any): any {
+  const intervals = data?.performance?.intervals;
+  if (!Array.isArray(intervals) || !intervals.length) return summary;
+  const byDate = new Map(intervals.map((interval: any) => [String(interval.start_date || ''), interval]));
+  for (const point of summary.daily) {
+    const interval: any = byDate.get(point.date);
+    if (!interval) continue;
+    const sales = interval.sales || {};
+    point.grossRevenue = numberValue(sales.gmv?.overall?.amount);
+    point.orders = numberValue(sales.orders_count);
+    point.aov = point.orders ? point.grossRevenue / point.orders : null;
+  }
+  const totals = summary.daily.reduce((result: any, point: any) => ({
+    orders: result.orders + numberValue(point.orders),
+    cancelledOrders: result.cancelledOrders + numberValue(point.cancelledOrders),
+    grossRevenue: result.grossRevenue + numberValue(point.grossRevenue)
+  }), { orders: 0, cancelledOrders: 0, grossRevenue: 0 });
+  summary.totals = {
+    ...summary.totals,
+    ...totals,
+    aov: totals.orders ? totals.grossRevenue / totals.orders : null
+  };
+  summary.analyticsAvailable = true;
+  summary.latestAvailableDate = data.latest_available_date || null;
+  return summary;
+}
+
 export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-revenue-v1', input); const cached = await cacheGet<any>(env, key); if (cached) return cached;
+  const key = stableKey('seller-revenue-v2', input); const cached = await cacheGet<any>(env, key); if (cached) return cached;
   const shop = await authorizedShop(env); if (!shop) throw new Error('Seller OAuth chưa trả về TikTok Shop được ủy quyền.');
   const cipher = String(shop.cipher || shop.shop_cipher || shop.id || ''); if (!cipher) throw new Error('Không tìm thấy shop_cipher.');
   const days = Math.floor((Date.parse(`${input.endDate}T00:00:00Z`) - Date.parse(`${input.startDate}T00:00:00Z`)) / 86400000) + 1;
   const previousEndDate = shiftDate(input.startDate, -1); const previousStartDate = shiftDate(previousEndDate, -(days - 1));
-  const currentOrders = await ordersForPeriod(env, input.startDate, input.endDate, cipher);
-  const previousOrders = await ordersForPeriod(env, previousStartDate, previousEndDate, cipher);
-  const current = summarizeOrders(env, currentOrders, input.startDate, input.endDate);
-  const previous = summarizeOrders(env, previousOrders, previousStartDate, previousEndDate);
+  const [currentOrders, previousOrders, currentPerformance, previousPerformance] = await Promise.all([
+    ordersForPeriod(env, input.startDate, input.endDate, cipher),
+    ordersForPeriod(env, previousStartDate, previousEndDate, cipher),
+    shopPerformance(env, input.startDate, input.endDate, cipher),
+    shopPerformance(env, previousStartDate, previousEndDate, cipher)
+  ]);
+  const current = applyShopPerformance(summarizeOrders(env, currentOrders, input.startDate, input.endDate), currentPerformance);
+  const previous = applyShopPerformance(summarizeOrders(env, previousOrders, previousStartDate, previousEndDate), previousPerformance);
   const result = { startDate: input.startDate, endDate: input.endDate, previousStartDate, previousEndDate,
     generatedAt: new Date().toISOString(), source: 'TIKTOK_SHOP_SELLER', shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },
-    totals: current.totals, previousTotals: previous.totals, daily: current.daily, provinces: current.provinces };
+    totals: current.totals, previousTotals: previous.totals, daily: current.daily, provinces: current.provinces,
+    analyticsAvailable: Boolean(current.analyticsAvailable), latestAvailableDate: current.latestAvailableDate || null };
   await cachePut(env, key, result, 300); return result;
 }
