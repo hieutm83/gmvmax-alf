@@ -137,7 +137,10 @@ async function shopRequest(env: Env, path: string, method: 'GET' | 'POST', query
     body: method === 'POST' ? bodyText : undefined
   });
   const payload = await response.json<any>().catch(() => ({}));
-  if (!response.ok || Number(payload.code) !== 0) throw new Error(payload.message || `TikTok Shop API HTTP ${response.status}`);
+  if (!response.ok || Number(payload.code) !== 0) {
+    const requestId = payload.request_id ? ` · request_id ${payload.request_id}` : '';
+    throw new Error(`TikTok Shop API ${path}: ${payload.message || `HTTP ${response.status}`}${requestId}`);
+  }
   return payload.data || {};
 }
 
