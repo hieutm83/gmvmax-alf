@@ -123,7 +123,7 @@ async function hmacHex(secret: string, value: string): Promise<string> {
   return Array.from(new Uint8Array(signature)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function shopRequest(env: Env, path: string, method: 'GET' | 'POST', query: Record<string, any>, body?: any): Promise<any> {
+export async function shopRequest(env: Env, path: string, method: 'GET' | 'POST', query: Record<string, any>, body?: any): Promise<any> {
   const accessToken = await sellerAccessToken(env);
   const timestamp = Math.floor(Date.now() / 1000);
   const params: Record<string, string> = { app_key: env.TIKTOK_SHOP_APP_KEY!, timestamp: String(timestamp) };
@@ -144,18 +144,18 @@ async function shopRequest(env: Env, path: string, method: 'GET' | 'POST', query
   return payload.data || {};
 }
 
-async function authorizedShop(env: Env): Promise<any> {
+export async function authorizedShop(env: Env): Promise<any> {
   const data = await shopRequest(env, '/authorization/202309/shops', 'GET', {});
   const shops = data.shops || data.shop_list || [];
   const wanted = String(env.DEFAULT_STORE_CODE || '').toUpperCase();
   return shops.find((shop: any) => [shop.code, shop.shop_code, shop.name].some((value) => String(value || '').toUpperCase().includes(wanted))) || shops[0];
 }
 
-function epoch(date: string): number {
+export function epoch(date: string): number {
   return Math.floor(Date.parse(`${date}T00:00:00+07:00`) / 1000);
 }
 
-async function ordersForPeriod(env: Env, startDate: string, endDate: string, shopCipher: string): Promise<any[]> {
+export async function ordersForPeriod(env: Env, startDate: string, endDate: string, shopCipher: string): Promise<any[]> {
   const orders: any[] = []; let pageToken = ''; let pages = 0;
   do {
     const data = await shopRequest(env, '/order/202309/orders/search', 'POST', {

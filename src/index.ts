@@ -4,6 +4,7 @@ import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
+import { loadOperationsAnalysis } from './operations';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
@@ -49,6 +50,10 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   if(url.pathname==='/api/revenue-analysis'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
     return ok(await loadSellerRevenueAnalysis(env,scope));
+  }
+  if(url.pathname==='/api/operations-analysis'){
+    const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    return ok(await loadOperationsAnalysis(env,scope));
   }
   if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
   if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));
