@@ -42,23 +42,29 @@ npx wrangler secret put ZALO_WEBHOOK_SECRET
 npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_EMAIL
 npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
 npx wrangler secret put GOOGLE_BACKUP_SPREADSHEET_ID
-npx wrangler secret put TIKTOK_SHOP_APP_KEY
-npx wrangler secret put TIKTOK_SHOP_APP_SECRET
-npx wrangler secret put TIKTOK_SHOP_SERVICE_ID
+npx wrangler secret put NHANH_SECRET_KEY
+npx wrangler secret put NHANH_WEBHOOK_VERIFY_TOKEN
 ```
 
 - `ADMIN_PASSWORD`: dat mot mat khau rieng, khong ghi gia tri that vao source code.
 - `TOKEN_ENCRYPTION_KEY`: chuoi ngau nhien toi thieu 32 ky tu.
 - Ba secret Google co the bo qua neu chua dung backup.
-- Ba bien `TIKTOK_SHOP_*` la cau hinh rieng cho tab Phan tich doanh thu. Chung khong dung chung token Ads MCP.
+- `NHANH_SECRET_KEY` la Secret Key cua app tren open.nhanh.vn. `NHANH_APP_ID` duoc cau hinh trong `wrangler.toml`.
+- `NHANH_WEBHOOK_VERIFY_TOKEN` phai trung voi Webhooks verify token trong cau hinh app Nhanh.vn.
 
-Trong TikTok Shop Partner Center, cau hinh redirect URL chinh xac:
+Trong cau hinh app tai open.nhanh.vn, dat Redirect URL chinh xac:
 
 ```text
-https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/seller/auth/callback
+https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/nhanh/callback
 ```
 
-Ung dung Seller can quyen doc thong tin shop va don hang (`seller.authorization.info`, `seller.order.info`).
+Webhooks callback URL:
+
+```text
+https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/nhanh/webhook
+```
+
+Tai khoan cap quyen can co quyen doc danh sach don hang tren Nhanh.vn.
 - Spreadsheet backup can co tab ten `GMV_MAX_BACKUP` va duoc share quyen Editor cho service-account email.
 
 ## Deploy va ket noi TikTok

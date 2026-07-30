@@ -3,7 +3,7 @@ import { OAuthCoordinator, createAuthorizationUrl, disconnect, getAccessToken, h
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
-import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
+import { createNhanhAuthorizationUrl, disconnectNhanh, handleNhanhCallback, loadNhanhRevenueAnalysis, nhanhOAuthState, receiveNhanhWebhook } from './nhanh';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
@@ -14,7 +14,7 @@ function validateScope(input: any): any {
     endDate: validateDate(input?.endDate, 'endDate') };
 }
 
-function validateSellerScope(input: any): any {
+function validateRevenueScope(input: any): any {
   return {
     startDate: validateDate(input?.startDate, 'startDate'),
     endDate: validateDate(input?.endDate, 'endDate'),
@@ -27,12 +27,12 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
     if(tokens){try{advertisers=await listAdvertisers(env,await createSession(env));}catch(error){connectionError=error instanceof Error?error.message:String(error);}}
     const today=dateInTimezone(new Date(),env.TIMEZONE);return ok({connected:Boolean(tokens),startDate:today,endDate:today,
       adsOAuth:{connected:Boolean(tokens),expiresAt:tokens?.expiresAt||null,scope:tokens?.scope||env.MCP_SCOPE,storage:'Encrypted D1'},
-      sellerOAuth:await sellerOAuthState(env),
+      nhanhOAuth:await nhanhOAuthState(env),
       defaultAdvertiserId:env.DEFAULT_ADVERTISER_ID,defaultStoreCode:env.DEFAULT_STORE_CODE,advertisers,connectionError});
   }
   if(request.method==='GET'&&url.pathname==='/api/oauth/connect')return ok(await createAuthorizationUrl(env,url.origin));
   if(request.method==='POST'&&url.pathname==='/api/oauth/disconnect'){await disconnect(env);return ok(true);}
-  if(request.method==='POST'&&url.pathname==='/api/seller/disconnect'){await disconnectSeller(env);return ok(true);}
+  if(request.method==='POST'&&url.pathname==='/api/nhanh/disconnect'){await disconnectNhanh(env);return ok(true);}
   if(request.method==='POST'&&url.pathname==='/api/admin/verify'){const value=await readJson<any>(request);return ok(String(value||'')===env.ADMIN_PASSWORD);}
   if(request.method==='POST'&&url.pathname==='/api/stores'){const advertiserId=validateId(await readJson<any>(request),'Advertiser ID');return ok(await listStores(env,await createSession(env),advertiserId));}
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
@@ -46,8 +46,8 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
     }return ok(report);
   }
   if(url.pathname==='/api/revenue-analysis'){
-    const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
-    return ok(await loadSellerRevenueAnalysis(env,scope));
+    const scope=validateRevenueScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
+    return ok(await loadNhanhRevenueAnalysis(env,scope));
   }
   if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
   if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));
@@ -144,8 +144,12 @@ export default {
     try{
       if(url.pathname==='/auth/connect'&&request.method==='GET')return Response.redirect(await createAuthorizationUrl(env,url.origin),302);
       if(url.pathname==='/auth/callback'||url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
-      if(url.pathname==='/seller/auth/connect'&&request.method==='GET')return Response.redirect(await createSellerAuthorizationUrl(env),302);
-      if(url.pathname==='/seller/auth/callback'&&request.method==='GET')return handleSellerOAuthCallback(env,url);
+      if(url.pathname==='/nhanh/connect'&&request.method==='GET')return Response.redirect(createNhanhAuthorizationUrl(env,url.origin),302);
+      if(url.pathname==='/nhanh/callback'&&request.method==='GET')return handleNhanhCallback(env,url);
+      if(url.pathname==='/nhanh/webhook'){
+        if(request.method==='POST')return await receiveNhanhWebhook(request,env);
+        if(request.method==='GET'||request.method==='HEAD'||request.method==='OPTIONS')return new Response(request.method==='HEAD'?null:'OK',{status:200});
+      }
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
       const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
       if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);
