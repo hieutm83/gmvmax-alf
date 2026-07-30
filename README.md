@@ -42,11 +42,23 @@ npx wrangler secret put ZALO_WEBHOOK_SECRET
 npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_EMAIL
 npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
 npx wrangler secret put GOOGLE_BACKUP_SPREADSHEET_ID
+npx wrangler secret put TIKTOK_SHOP_APP_KEY
+npx wrangler secret put TIKTOK_SHOP_APP_SECRET
+npx wrangler secret put TIKTOK_SHOP_SERVICE_ID
 ```
 
 - `ADMIN_PASSWORD`: dat mot mat khau rieng, khong ghi gia tri that vao source code.
 - `TOKEN_ENCRYPTION_KEY`: chuoi ngau nhien toi thieu 32 ky tu.
 - Ba secret Google co the bo qua neu chua dung backup.
+- Ba bien `TIKTOK_SHOP_*` la cau hinh rieng cho tab Phan tich doanh thu. Chung khong dung chung token Ads MCP.
+
+Trong TikTok Shop Partner Center, cau hinh redirect URL chinh xac:
+
+```text
+https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/seller/auth/callback
+```
+
+Ung dung Seller can quyen doc thong tin shop va don hang (`seller.authorization.info`, `seller.order.info`).
 - Spreadsheet backup can co tab ten `GMV_MAX_BACKUP` va duoc share quyen Editor cho service-account email.
 
 ## Deploy va ket noi TikTok

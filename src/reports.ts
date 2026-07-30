@@ -25,57 +25,6 @@ function campaignActive(info: any): boolean {
   return !/DISABLE|INACTIVE|PAUSE|OFF|END|DELETE|TERMINAT|NOT_DELIVERY/.test(status);
 }
 
-function reportDate(row: McpRow): string {
-  const raw = String(row.dimensions?.stat_time_day || row.metrics?.stat_time_day || '');
-  const match = raw.match(/\d{4}-\d{2}-\d{2}/);
-  return match ? match[0] : '';
-}
-
-function inclusiveDayCount(startDate: string, endDate: string): number {
-  return Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1;
-}
-
-async function revenuePeriod(env: Env, session: McpSession, advertiserId: string, storeId: string,
-  startDate: string, endDate: string): Promise<any> {
-  const rows = await pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId],
-    dimensions: ['campaign_id', 'stat_time_day'], metrics: ['orders', 'gross_revenue'],
-    start_date: startDate, end_date: endDate });
-  const byDate = new Map<string, { date: string; orders: number; grossRevenue: number; aov: number | null }>();
-  for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
-    byDate.set(date, { date, orders: 0, grossRevenue: 0, aov: null });
-  }
-  for (const row of rows) {
-    const date = reportDate(row); if (!date || !byDate.has(date)) continue;
-    const point = byDate.get(date)!;
-    point.orders += numberValue(row.metrics?.orders);
-    point.grossRevenue += numberValue(row.metrics?.gross_revenue);
-  }
-  const daily = Array.from(byDate.values());
-  daily.forEach((point) => { point.aov = point.orders ? point.grossRevenue / point.orders : null; });
-  const totals = daily.reduce((result, point) => {
-    result.orders += point.orders; result.grossRevenue += point.grossRevenue; return result;
-  }, { orders: 0, grossRevenue: 0, aov: null as number | null });
-  totals.aov = totals.orders ? totals.grossRevenue / totals.orders : null;
-  return { totals, daily };
-}
-
-export async function loadRevenueAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('revenue-analysis-v1', input);
-  const cached = await cacheGet<any>(env, key); if (cached) return cached;
-  const { advertiserId, storeId, startDate, endDate } = input;
-  const days = inclusiveDayCount(startDate, endDate);
-  const previousEndDate = shiftDate(startDate, -1);
-  const previousStartDate = shiftDate(previousEndDate, -(days - 1));
-  const session = await createSession(env);
-  const current = await revenuePeriod(env, session, advertiserId, storeId, startDate, endDate);
-  const previous = await revenuePeriod(env, session, advertiserId, storeId, previousStartDate, previousEndDate);
-  const result = { startDate, endDate, previousStartDate, previousEndDate, generatedAt: new Date().toISOString(),
-    totals: current.totals, previousTotals: previous.totals, daily: current.daily,
-    unavailable: ['repurchaseRate', 'customerSegments', 'provinceRevenue', 'cancelledOrders'] };
-  await cachePut(env, key, result, 300);
-  return result;
-}
-
 async function campaignInfo(env: Env, session: McpSession, advertiserId: string, campaignId: string): Promise<any> {
   const key = `campaign:${campaignId}`;
   const cached = await cacheGet<any>(env, key); if (cached) return cached;

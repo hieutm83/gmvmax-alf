@@ -6,17 +6,25 @@ async function encryptionKey(secret: string): Promise<CryptoKey> {
 }
 
 export async function encryptTokens(env: Env, tokens: OAuthTokenSet): Promise<string> {
+  return encryptJson(env, tokens);
+}
+
+export async function encryptJson(env: Env, value: unknown): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encoded = new TextEncoder().encode(JSON.stringify(tokens));
+  const encoded = new TextEncoder().encode(JSON.stringify(value));
   const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await encryptionKey(env.TOKEN_ENCRYPTION_KEY), encoded);
   return `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...new Uint8Array(cipher)))}`;
 }
 
 export async function decryptTokens(env: Env, value: string): Promise<OAuthTokenSet> {
+  return decryptJson<OAuthTokenSet>(env, value);
+}
+
+export async function decryptJson<T>(env: Env, value: string): Promise<T> {
   const [ivText, cipherText] = value.split('.');
   if (!ivText || !cipherText) throw new Error('Du lieu token khong hop le.');
   const iv = Uint8Array.from(atob(ivText), (char) => char.charCodeAt(0));
   const cipher = Uint8Array.from(atob(cipherText), (char) => char.charCodeAt(0));
   const clear = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await encryptionKey(env.TOKEN_ENCRYPTION_KEY), cipher);
-  return JSON.parse(new TextDecoder().decode(clear)) as OAuthTokenSet;
+  return JSON.parse(new TextDecoder().decode(clear)) as T;
 }

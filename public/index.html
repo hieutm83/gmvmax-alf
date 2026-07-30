@@ -167,6 +167,8 @@
       .revenue-auth span { margin-top: 2px; color: var(--text-muted); font-size: 11px; }
       .revenue-auth .button { min-height: 38px; flex: 0 0 auto; color: var(--primary); background: var(--surface); border-color: var(--border); font-size: 12px; }
       .revenue-auth .button:hover { color: #fff; background: var(--primary); border-color: var(--primary); }
+      .revenue-auth .button.disabled { pointer-events: none; color: var(--text-muted); background: var(--surface-muted); opacity: .7; }
+      .seller-required { min-height: 220px; margin-top: 16px; }
       .analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
       .analytics-panel { min-width: 0; min-height: 340px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
       .analytics-panel h2 { margin: 0 0 14px; color: var(--text-secondary); font-size: 13px; font-weight: 800; text-align: center; }
@@ -245,28 +247,31 @@
       </section>
       <section id="revenueReport" class="hidden">
         <div class="revenue-auth">
-          <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">Đã kết nối TikTok qua OAuth</strong><span id="revenueAuthMeta">Access token được mã hóa và lưu trong D1.</span></div></div>
-          <a class="button" href="/auth/connect" target="_top">Ủy quyền lại</a>
+          <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">TikTok Shop Seller OAuth</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Seller.</span></div></div>
+          <a id="sellerConnectButton" class="button" href="/seller/auth/connect" target="_top">Kết nối Seller</a>
         </div>
-        <div id="revenueSummary" class="summary revenue-summary"></div>
-        <p class="analytics-note">Dữ liệu doanh thu được quy đổi từ báo cáo GMV Max Ads trong khoảng ngày đã chọn.</p>
-        <div class="analytics-grid">
-          <section class="analytics-panel">
-            <h2>Số lượng đơn và GMV theo ngày</h2>
-            <div class="analytics-canvas"><canvas id="revenueOrdersChart"></canvas></div>
-          </section>
-          <section class="analytics-panel">
-            <h2>AOV theo thời gian</h2>
-            <div class="analytics-canvas"><canvas id="revenueAovChart"></canvas></div>
-          </section>
-          <section class="analytics-panel">
-            <h2>Khách cũ và khách mới</h2>
-            <div class="analytics-unavailable"><div><strong>Chưa có dữ liệu khách hàng</strong>TikTok Ads MCP không cung cấp định danh khách mua để xác định khách mới, khách cũ hoặc tỷ lệ mua lại.</div></div>
-          </section>
-          <section class="analytics-panel">
-            <h2>Doanh thu theo Tỉnh/Thành phố</h2>
-            <div class="analytics-unavailable"><div><strong>Chưa có dữ liệu địa lý đơn hàng</strong>Cần kết nối TikTok Shop Order API để tổng hợp doanh thu theo tỉnh/thành và đơn hủy.</div></div>
-          </section>
+        <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong>Cần kết nối TikTok Shop Seller</strong>Tab doanh thu sử dụng Seller Order API và token riêng, không dùng OAuth của TikTok Ads.</div></div>
+        <div id="revenueContent" class="hidden">
+          <div id="revenueSummary" class="summary revenue-summary"></div>
+          <p class="analytics-note">Nguồn dữ liệu: TikTok Shop Seller Order API trong khoảng ngày đã chọn.</p>
+          <div class="analytics-grid">
+            <section class="analytics-panel">
+              <h2>Số lượng đơn, đơn hủy và GMV theo ngày</h2>
+              <div class="analytics-canvas"><canvas id="revenueOrdersChart"></canvas></div>
+            </section>
+            <section class="analytics-panel">
+              <h2>AOV theo thời gian</h2>
+              <div class="analytics-canvas"><canvas id="revenueAovChart"></canvas></div>
+            </section>
+            <section class="analytics-panel">
+              <h2>Khách cũ và khách mới</h2>
+              <div class="analytics-canvas"><canvas id="revenueCustomersChart"></canvas></div>
+            </section>
+            <section class="analytics-panel">
+              <h2>Doanh thu theo Tỉnh/Thành phố (Top 10)</h2>
+              <div class="analytics-canvas"><canvas id="revenueProvinceChart"></canvas></div>
+            </section>
+          </div>
         </div>
       </section>
     </main>
@@ -348,7 +353,11 @@
       var videoStatsChart = null;
       var revenueOrdersChart = null;
       var revenueAovChart = null;
-      var activeReportView = 'ads';
+      var revenueCustomersChart = null;
+      var revenueProvinceChart = null;
+      var sellerOAuthConnected = false;
+      var sellerOAuthConfigured = false;
+      var activeReportView = new URLSearchParams(window.location.search).has('seller_connected') ? 'revenue' : 'ads';
       var loadedRevenueScope = '';
       var videoHoverLinePlugin = {
         id: 'videoHoverLine',
@@ -376,7 +385,7 @@
         document.getElementById('endDate').value = state.endDate;
         defaultAdvertiserId = state.defaultAdvertiserId || defaultAdvertiserId;
         defaultStoreCode = state.defaultStoreCode || defaultStoreCode;
-        renderRevenueOAuthState(state.oauth || { connected: state.connected });
+        renderRevenueOAuthState(state.sellerOAuth || {});
         document.getElementById('connectPanel').classList.toggle('hidden', state.connected);
         form.classList.toggle('hidden', !state.connected);
         if (state.connectionError) document.getElementById('connectMessage').textContent = state.connectionError;
@@ -391,13 +400,24 @@
       }).getInitialState();
 
       function renderRevenueOAuthState(oauth) {
-        var connected = Boolean(oauth && oauth.connected);
-        document.getElementById('revenueAuthTitle').textContent = connected ? 'Đã kết nối TikTok qua OAuth' : 'Chưa kết nối TikTok OAuth';
-        var detail = connected ? 'Access token được mã hóa và lưu trong D1' : 'Cần ủy quyền để tải dữ liệu doanh thu';
-        if (connected && oauth.expiresAt) {
-          detail += ' · tự làm mới trước ' + new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(oauth.expiresAt));
+        sellerOAuthConfigured = Boolean(oauth && oauth.configured);
+        sellerOAuthConnected = Boolean(oauth && oauth.connected);
+        var title = sellerOAuthConnected ? 'Đã kết nối TikTok Shop Seller' :
+          (sellerOAuthConfigured ? 'Chưa kết nối TikTok Shop Seller' : 'Chưa cấu hình TikTok Shop Seller OAuth');
+        document.getElementById('revenueAuthTitle').textContent = title;
+        var detail = sellerOAuthConnected ? 'Seller access token được mã hóa và lưu riêng trong D1' :
+          (sellerOAuthConfigured ? 'Ủy quyền Seller để đọc dữ liệu đơn hàng' : 'Thiếu App Key, App Secret hoặc Service ID trong Cloudflare');
+        if (sellerOAuthConnected && oauth.sellerName) detail += ' · ' + oauth.sellerName;
+        if (sellerOAuthConnected && oauth.expiresAt) {
+          detail += ' · token hết hạn ' + new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(oauth.expiresAt));
         }
         document.getElementById('revenueAuthMeta').textContent = detail + '.';
+        var connect = document.getElementById('sellerConnectButton');
+        connect.textContent = sellerOAuthConnected ? 'Ủy quyền lại' : 'Kết nối Seller';
+        connect.classList.toggle('disabled', !sellerOAuthConfigured);
+        connect.setAttribute('aria-disabled', String(!sellerOAuthConfigured));
+        document.getElementById('sellerConnectRequired').classList.toggle('hidden', sellerOAuthConnected);
+        document.getElementById('revenueContent').classList.toggle('hidden', !sellerOAuthConnected);
       }
 
       form.addEventListener('submit', function (event) {
@@ -568,12 +588,12 @@
         document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
         if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
-          if (loadedRevenueScope !== key) requestRevenueAnalysis(false);
+          if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
         }
       }
 
       function requestRevenueAnalysis(force) {
-        if (button.disabled) return;
+        if (button.disabled || !sellerOAuthConnected) return;
         var scope = reportScope();
         var key = JSON.stringify(scope);
         if (!force && loadedRevenueScope === key) return;
@@ -618,14 +638,16 @@
           revenueMetric('Tổng GMV', compactMoney(totals.grossRevenue), 'revenueGmv', changeValue(totals.grossRevenue, previous.grossRevenue)),
           revenueMetric('Tổng đơn hàng', integer(totals.orders), 'revenueOrders', changeValue(totals.orders, previous.orders)),
           revenueMetric('AOV', compactMoney(totals.aov), 'revenueAov', changeValue(totals.aov, previous.aov)),
-          revenueMetric('Tỉ lệ khách mua lại', 'Chưa có dữ liệu', 'repurchase', null)
+          revenueMetric('Tỉ lệ khách mua lại', totals.repurchaseRate == null ? '-' : percent(totals.repurchaseRate), 'repurchase', changeValue(totals.repurchaseRate, previous.repurchaseRate))
         );
-        renderRevenueCharts(data.daily || []);
+        renderRevenueCharts(data.daily || [], data.provinces || []);
       }
 
-      function renderRevenueCharts(daily) {
+      function renderRevenueCharts(daily, provinces) {
         if (revenueOrdersChart) revenueOrdersChart.destroy();
         if (revenueAovChart) revenueAovChart.destroy();
+        if (revenueCustomersChart) revenueCustomersChart.destroy();
+        if (revenueProvinceChart) revenueProvinceChart.destroy();
         var labels = daily.map(function (point) {
           var parts = String(point.date).split('-'); return parts[2] + '/' + parts[1];
         });
@@ -639,7 +661,8 @@
           type: 'bar',
           data: { labels: labels, datasets: [
             { type: 'bar', label: 'GMV (VND)', data: daily.map(function (point) { return point.grossRevenue; }), yAxisID: 'y', backgroundColor: 'rgba(245, 158, 11, .82)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 4 },
-            { type: 'line', label: 'Số lượng đơn', data: daily.map(function (point) { return point.orders; }), yAxisID: 'y1', borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .3 }
+            { type: 'line', label: 'Số lượng đơn', data: daily.map(function (point) { return point.orders; }), yAxisID: 'y1', borderColor: '#059669', backgroundColor: '#059669', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .3 },
+            { type: 'line', label: 'Đơn hủy', data: daily.map(function (point) { return point.cancelledOrders; }), yAxisID: 'y1', borderColor: '#dc2626', backgroundColor: '#dc2626', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .3 }
           ] },
           options: Object.assign({}, sharedOptions, { scales: {
             x: sharedOptions.scales.x,
@@ -652,6 +675,24 @@
           data: { labels: labels, datasets: [{ label: 'AOV (VND)', data: daily.map(function (point) { return point.aov; }), backgroundColor: 'rgba(37, 99, 235, .82)', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4 }] },
           options: Object.assign({}, sharedOptions, { scales: { x: sharedOptions.scales.x,
             y: { beginAtZero: true, ticks: { color: '#64748b', callback: function (value) { return compactMoney(value); } }, grid: { color: 'rgba(148,163,184,.22)' } } } })
+        });
+        revenueCustomersChart = new Chart(document.getElementById('revenueCustomersChart'), {
+          type: 'line',
+          data: { labels: labels, datasets: [
+            { label: 'Khách mới', data: daily.map(function (point) { return point.newCustomers; }), borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.14)', fill: true, borderWidth: 2, pointRadius: 2, tension: .3 },
+            { label: 'Khách quay lại', data: daily.map(function (point) { return point.returningCustomers; }), borderColor: '#059669', backgroundColor: 'rgba(5,150,105,.12)', fill: true, borderWidth: 2, pointRadius: 2, tension: .3 }
+          ] },
+          options: Object.assign({}, sharedOptions, { scales: { x: sharedOptions.scales.x,
+            y: { beginAtZero: true, ticks: { color: '#64748b', precision: 0 }, grid: { color: 'rgba(148,163,184,.22)' } } } })
+        });
+        var provinceColors = ['#2563eb','#059669','#f59e0b','#7c3aed','#0891b2','#e11d48','#4f46e5','#65a30d','#0284c7','#0d9488'];
+        revenueProvinceChart = new Chart(document.getElementById('revenueProvinceChart'), {
+          type: 'doughnut',
+          data: { labels: provinces.map(function (item) { return item.name; }), datasets: [{ data: provinces.map(function (item) { return item.revenue; }), backgroundColor: provinceColors, borderWidth: 2, borderColor: '#fff' }] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '56%', plugins: {
+            legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 10 } } },
+            tooltip: { callbacks: { label: function (context) { return context.label + ': ' + moneyWhole(context.raw); } } }
+          } }
         });
       }
 
@@ -751,6 +792,7 @@
         if (rememberedSummary) renderCreativeSummaries(rememberedSummary);
         requestCreativeSummaries(currentSummaryContexts.slice(), forceCreativeRefresh);
         requestYesterdayComparison(data);
+        if (activeReportView === 'revenue') setReportView('revenue');
       }
 
       function renderHourlyRows(hours) {

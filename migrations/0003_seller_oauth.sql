@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS seller_oauth_states (
+  state TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -18,6 +18,9 @@ export interface Env {
   ZALO_ADVERTISER_ID?: string;
   ZALO_STORE_CODE?: string;
   ZALO_STORE_ID?: string;
+  TIKTOK_SHOP_APP_KEY?: string;
+  TIKTOK_SHOP_APP_SECRET?: string;
+  TIKTOK_SHOP_SERVICE_ID?: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
   GOOGLE_BACKUP_SPREADSHEET_ID?: string;
@@ -41,6 +44,16 @@ export interface OAuthTokenSet {
   clientId?: string;
   tokenType?: string;
   scope?: string;
+}
+
+export interface SellerTokenSet {
+  accessToken: string;
+  refreshToken: string;
+  accessTokenExpiresAt: number;
+  refreshTokenExpiresAt: number;
+  openId?: string;
+  sellerName?: string;
+  grantedScopes?: string[];
 }
 
 export interface ProductContext {
