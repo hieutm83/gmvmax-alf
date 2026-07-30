@@ -9,6 +9,13 @@ const GREEN = 'c_15a85f';
 const RED = 'c_db342e';
 
 export interface OperationsTextStyle { start: number; len: number; st: string[]; }
+export interface OperationsBotUpdate {
+  id: string;
+  chatId: string;
+  text: string;
+  senderIsBot: boolean;
+  timestamp: number;
+}
 
 async function botApi(env: Env, method: string, payload: unknown): Promise<any> {
   if (!env.ZALO_OPERATIONS_BOT_TOKEN) throw new Error('Missing ZALO_OPERATIONS_BOT_TOKEN.');
@@ -119,6 +126,42 @@ export async function ensureOperationsBotWebhook(env: Env): Promise<void> {
   const url = `${env.PUBLIC_BASE_URL.replace(/\/$/, '')}/webhooks/zalo-operations`;
   const info = await botApi(env, 'getWebhookInfo', {}).catch(() => ({}));
   if (String(info?.url || '') !== url) await botApi(env, 'setWebhook', { url, secret_token: env.ZALO_OPERATIONS_WEBHOOK_SECRET });
+}
+
+function normalizeOperationsUpdate(value: any): OperationsBotUpdate {
+  const update = value?.result || value || {};
+  const message = update.message || update.edited_message || {};
+  const rawTimestamp = Number(message.date || message.timestamp || update.timestamp || update.date || 0);
+  return {
+    id: String(update.update_id || update.event_id || message.message_id || ''),
+    chatId: String(message.chat?.id || message.chat_id || update.chat_id || update.group_id || ''),
+    text: String(message.text || message.caption || update.text || update.message_text || update.content || ''),
+    senderIsBot: Boolean(message.from?.is_bot ?? update.is_bot ?? update.sender_is_bot),
+    timestamp: rawTimestamp > 0 && rawTimestamp < 100_000_000_000 ? rawTimestamp * 1000 : rawTimestamp
+  };
+}
+
+export async function pollOperationsBot(env: Env, timeoutSeconds = 25): Promise<OperationsBotUpdate[]> {
+  if (!env.ZALO_OPERATIONS_BOT_TOKEN) return [];
+  const mode = await env.DB.prepare("SELECT value FROM app_settings WHERE key='ZALO_OPERATIONS_INBOX_MODE'")
+    .first<{ value: string }>();
+  if (mode?.value !== 'POLLING') {
+    const info = await botApi(env, 'getWebhookInfo', {}).catch(() => ({}));
+    if (String(info?.url || '')) await botApi(env, 'deleteWebhook', {});
+    await env.DB.prepare(`INSERT INTO app_settings(key,value) VALUES('ZALO_OPERATIONS_INBOX_MODE','POLLING')
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP`).run();
+  }
+  const response = await fetch(`${API}${encodeURIComponent(env.ZALO_OPERATIONS_BOT_TOKEN)}/getUpdates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({ timeout: String(Math.max(1, Math.min(30, timeoutSeconds))) })
+  });
+  const data = await response.json<any>().catch(() => ({}));
+  if (response.status === 408 || /request timeout/i.test(String(data?.description || data?.message || ''))) return [];
+  if (!response.ok || data.ok !== true) throw new Error(`Zalo Bot API ${data.error_code || response.status}: ${data.description || 'getUpdates failed'}`);
+  const result = data.result || [];
+  const items = Array.isArray(result) ? result : Array.isArray(result.updates) ? result.updates : [];
+  return items.map(normalizeOperationsUpdate).filter((update: OperationsBotUpdate) => update.id);
 }
 
 export async function sendOperationsReport(env: Env, reportDate: string, mode: 'DAILY' | 'REALTIME', chatId?: string): Promise<void> {

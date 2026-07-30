@@ -6,7 +6,7 @@ import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
 import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
-import { ensureOperationsBotWebhook, sendOperationsReport } from './operations-bot';
+import { pollOperationsBot, sendOperationsReport } from './operations-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
@@ -110,6 +110,17 @@ async function resolveDefaultStore(env:Env):Promise<string>{
   return stores.find((s:any)=>s.storeCode===env.DEFAULT_STORE_CODE||s.storeId===env.DEFAULT_STORE_CODE)?.storeId||env.DEFAULT_STORE_CODE;
 }
 
+async function pollOperationsInbox(env:Env):Promise<void>{
+  if(!env.ZALO_OPERATIONS_BOT_TOKEN||!env.ZALO_OPERATIONS_GROUP_CHAT_ID)return;
+  const updates=await pollOperationsBot(env,25);
+  const candidates=updates.filter((update)=>!update.senderIsBot&&update.chatId===env.ZALO_OPERATIONS_GROUP_CHAT_ID&&/\bcheck\b/i.test(update.text));
+  const latest=candidates.sort((a,b)=>(a.timestamp-b.timestamp)||a.id.localeCompare(b.id)).at(-1);
+  if(!latest)return;
+  const inserted=await env.DB.prepare(`INSERT OR IGNORE INTO operations_bot_events(external_id,chat_id,received_at,status)
+    VALUES(?,?,?,'QUEUED')`).bind(latest.id,latest.chatId,Date.now()).run();
+  if(inserted.meta.changes)await env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:dateInTimezone(new Date(),env.TIMEZONE),mode:'REALTIME',chatId:latest.chatId,eventId:latest.id});
+}
+
 async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
   if(message.type==='tracking-sync')return syncTrackingOrder(env,message.orderId,message.shopCipher);
@@ -119,7 +130,6 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     try{await getAccessToken(runtime);}catch(error){console.error('TikTok OAuth refresh failed',error instanceof Error?error.message:String(error));return;}
     const tasks:Promise<unknown>[]=[];
     if(env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
-      tasks.push(ensureOperationsBotWebhook(env).catch((error)=>console.error('Operations bot webhook setup failed',error instanceof Error?error.message:String(error))));
       if(message.reportHour===8)await env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:shiftDate(message.reportDate,-1),mode:'DAILY'});
     }
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
@@ -206,6 +216,7 @@ export default {
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
+    ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
     if(now.getUTCMinutes()!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
