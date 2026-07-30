@@ -167,6 +167,29 @@ async function ordersForPeriod(env: Env, startDate: string, endDate: string, sho
   return orders;
 }
 
+async function hydrateMissingOrderAddresses(env: Env, orders: any[], shopCipher: string): Promise<any[]> {
+  const missingIds = orders
+    .filter((order) => {
+      const status = String(order.status || '').toUpperCase();
+      const address = order.recipient_address || {};
+      return order.id && !/UNPAID|ON_HOLD/.test(status) &&
+        (!Array.isArray(address.district_info) || !address.district_info.length) && !address.state && !address.province;
+    })
+    .map((order) => String(order.id));
+  if (!missingIds.length) return orders;
+
+  const details = new Map<string, any>();
+  for (let offset = 0; offset < missingIds.length; offset += 50) {
+    const ids = missingIds.slice(offset, offset + 50);
+    const data = await shopRequest(env, '/order/202507/orders', 'GET', {
+      shop_cipher: shopCipher,
+      ids: ids.join(',')
+    });
+    for (const order of data.orders || []) details.set(String(order.id), order);
+  }
+  return orders.map((order) => details.has(String(order.id)) ? { ...order, ...details.get(String(order.id)) } : order);
+}
+
 async function shopPerformance(env: Env, startDate: string, endDate: string, shopCipher: string): Promise<any | null> {
   try {
     return await shopRequest(env, '/analytics/202509/shop/performance', 'GET', {
@@ -185,8 +208,10 @@ async function shopPerformance(env: Env, startDate: string, endDate: string, sho
 
 function province(order: any): string {
   const address = order.recipient_address || {};
-  const list = address.district_info_list || address.district_infos || [];
-  const region = list.find((item: any) => /LEVEL_1|PROVINCE|STATE/i.test(String(item.address_level || item.level || item.address_type || ''))) || list[0];
+  const list = address.district_info || address.district_info_list || address.district_infos || [];
+  const region = list.find((item: any) => /^(L1|LEVEL_1)$/i.test(String(item.address_level || item.level || ''))) ||
+    list.find((item: any) => /PROVINCE|STATE|TỈNH|THÀNH PHỐ/i.test(String(item.address_level_name || item.address_type || ''))) ||
+    list.find((item: any) => !/^L0$/i.test(String(item.address_level || item.level || ''))) || list[0];
   return String(region?.address_name || region?.name || address.state || address.province || 'Không xác định');
 }
 
@@ -219,8 +244,10 @@ function summarizeOrders(env: Env, orders: any[], startDate: string, endDate: st
 function applyShopPerformance(summary: any, data: any): any {
   const intervals = data?.performance?.intervals;
   if (!Array.isArray(intervals) || !intervals.length) return summary;
+  const latestAvailableDate = String(data.latest_available_date || '');
   const byDate = new Map(intervals.map((interval: any) => [String(interval.start_date || ''), interval]));
   for (const point of summary.daily) {
+    if (latestAvailableDate && point.date > latestAvailableDate) continue;
     const interval: any = byDate.get(point.date);
     if (!interval) continue;
     const sales = interval.sales || {};
@@ -239,12 +266,12 @@ function applyShopPerformance(summary: any, data: any): any {
     aov: totals.orders ? totals.grossRevenue / totals.orders : null
   };
   summary.analyticsAvailable = true;
-  summary.latestAvailableDate = data.latest_available_date || null;
+  summary.latestAvailableDate = latestAvailableDate || null;
   return summary;
 }
 
 export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-revenue-v2', input); const cached = await cacheGet<any>(env, key); if (cached) return cached;
+  const key = stableKey('seller-revenue-v4', input); const cached = await cacheGet<any>(env, key); if (cached) return cached;
   const shop = await authorizedShop(env); if (!shop) throw new Error('Seller OAuth chưa trả về TikTok Shop được ủy quyền.');
   const cipher = String(shop.cipher || shop.shop_cipher || shop.id || ''); if (!cipher) throw new Error('Không tìm thấy shop_cipher.');
   const days = Math.floor((Date.parse(`${input.endDate}T00:00:00Z`) - Date.parse(`${input.startDate}T00:00:00Z`)) / 86400000) + 1;
@@ -255,7 +282,8 @@ export async function loadSellerRevenueAnalysis(env: Env, input: any): Promise<a
     shopPerformance(env, input.startDate, input.endDate, cipher),
     shopPerformance(env, previousStartDate, previousEndDate, cipher)
   ]);
-  const current = applyShopPerformance(summarizeOrders(env, currentOrders, input.startDate, input.endDate), currentPerformance);
+  const currentOrdersWithAddresses = await hydrateMissingOrderAddresses(env, currentOrders, cipher);
+  const current = applyShopPerformance(summarizeOrders(env, currentOrdersWithAddresses, input.startDate, input.endDate), currentPerformance);
   const previous = applyShopPerformance(summarizeOrders(env, previousOrders, previousStartDate, previousEndDate), previousPerformance);
   const result = { startDate: input.startDate, endDate: input.endDate, previousStartDate, previousEndDate,
     generatedAt: new Date().toISOString(), source: 'TIKTOK_SHOP_SELLER', shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },

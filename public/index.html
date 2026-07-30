@@ -362,6 +362,7 @@
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
       var activeReportView = new URLSearchParams(window.location.search).has('seller_connected') ? 'revenue' : 'ads';
+      var loadedReportScope = '';
       var loadedRevenueScope = '';
       var videoHoverLinePlugin = {
         id: 'videoHoverLine',
@@ -457,6 +458,8 @@
 
       form.addEventListener('submit', function (event) {
         event.preventDefault();
+        loadedReportScope = '';
+        loadedRevenueScope = '';
         if (activeReportView === 'revenue') requestRevenueAnalysis(true);
         else requestReport(true);
       });
@@ -588,19 +591,17 @@
 
       function requestReport(forceCreativeRefresh) {
         if (button.disabled) return;
+        var scope = reportScope();
+        var key = JSON.stringify(scope);
         setLoading(true);
         hideError();
         google.script.run
           .withSuccessHandler(function (data) {
+            loadedReportScope = key;
             renderReport(data, forceCreativeRefresh === true);
           })
           .withFailureHandler(showError)
-          .loadReport({
-            advertiserId: document.getElementById('advertiserId').value,
-            storeId: document.getElementById('storeId').value,
-            startDate: document.getElementById('startDate').value,
-            endDate: document.getElementById('endDate').value
-          });
+          .loadReport(scope);
       }
 
       function reportScope() {
@@ -624,6 +625,9 @@
         if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
+        } else {
+          var adsKey = JSON.stringify(reportScope());
+          if (loadedReportScope !== adsKey) requestReport(false);
         }
       }
 
