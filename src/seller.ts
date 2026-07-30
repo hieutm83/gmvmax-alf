@@ -7,12 +7,12 @@ const SHOP_API = 'https://open-api.tiktokglobalshop.com';
 const SHOP_AUTH_API = 'https://auth.tiktok-shops.com/api/v2';
 
 function configured(env: Env): boolean {
-  return Boolean(env.TIKTOK_SHOP_APP_KEY && env.TIKTOK_SHOP_APP_SECRET && env.TIKTOK_SHOP_SERVICE_ID);
+  return Boolean(env.TIKTOK_SHOP_APP_KEY && env.TIKTOK_SHOP_APP_SECRET);
 }
 
 function requireConfig(env: Env): void {
   if (!configured(env)) throw new HttpError(503,
-    'Chưa cấu hình TikTok Shop Seller OAuth. Cần TIKTOK_SHOP_APP_KEY, TIKTOK_SHOP_APP_SECRET và TIKTOK_SHOP_SERVICE_ID.');
+    'Chưa cấu hình TikTok Shop Seller OAuth. Cần TIKTOK_SHOP_APP_KEY và TIKTOK_SHOP_APP_SECRET.');
 }
 
 async function setting(env: Env, key: string): Promise<string | null> {
@@ -63,6 +63,8 @@ async function tokenRequest(env: Env, path: 'get' | 'refresh', params: Record<st
 
 export async function createSellerAuthorizationUrl(env: Env): Promise<string> {
   requireConfig(env);
+  if (!env.TIKTOK_SHOP_SERVICE_ID) throw new HttpError(503,
+    'Chưa có TIKTOK_SHOP_SERVICE_ID. Hãy mở Partner Center để cấp quyền hoặc bổ sung Service ID.');
   const state = randomBase64Url(32);
   await env.DB.prepare('INSERT INTO seller_oauth_states(state,expires_at) VALUES(?,?)')
     .bind(state, Date.now() + 30 * 60_000).run();
@@ -73,16 +75,19 @@ export async function createSellerAuthorizationUrl(env: Env): Promise<string> {
 export async function handleSellerOAuthCallback(env: Env, url: URL): Promise<Response> {
   try {
     requireConfig(env);
+    const callbackAppKey = url.searchParams.get('app_key');
+    if (callbackAppKey && callbackAppKey !== env.TIKTOK_SHOP_APP_KEY) throw new Error('App Key trong callback không khớp ứng dụng đã cấu hình.');
     const state = url.searchParams.get('state') || '';
-    const row = await env.DB.prepare('SELECT expires_at FROM seller_oauth_states WHERE state=?')
-      .bind(state).first<{ expires_at: number }>();
+    const row = state ? await env.DB.prepare('SELECT expires_at FROM seller_oauth_states WHERE state=?')
+      .bind(state).first<{ expires_at: number }>() : null;
     if (url.searchParams.get('error')) throw new Error(url.searchParams.get('error_description') || url.searchParams.get('error')!);
-    if (!row || row.expires_at < Date.now()) throw new Error('Phiên TikTok Shop OAuth không hợp lệ hoặc đã hết hạn.');
+    if (state && (!row || row.expires_at < Date.now())) throw new Error('Phiên TikTok Shop OAuth không hợp lệ hoặc đã hết hạn.');
+    if (!state && callbackAppKey !== env.TIKTOK_SHOP_APP_KEY) throw new Error('Callback Seller thiếu state hoặc app_key hợp lệ.');
     const code = url.searchParams.get('code'); if (!code) throw new Error('TikTok Shop không trả authorization code.');
     const data = await tokenRequest(env, 'get', { auth_code: code, grant_type: 'authorized_code' });
     if (data.user_type != null && Number(data.user_type) !== 0) throw new Error('Token nhận được không phải Seller token.');
     await saveSellerTokens(env, tokenFrom(data));
-    await env.DB.prepare('DELETE FROM seller_oauth_states WHERE state=?').bind(state).run();
+    if (state) await env.DB.prepare('DELETE FROM seller_oauth_states WHERE state=?').bind(state).run();
     return Response.redirect(`${url.origin}/?seller_connected=1`, 302);
   } catch (error) {
     return new Response(`TikTok Shop OAuth: ${error instanceof Error ? error.message : String(error)}`,
@@ -102,7 +107,7 @@ async function sellerAccessToken(env: Env): Promise<string> {
 
 export async function sellerOAuthState(env: Env): Promise<any> {
   const tokens = configured(env) ? await readSellerTokens(env) : null;
-  return { configured: configured(env), connected: Boolean(tokens), expiresAt: tokens?.accessTokenExpiresAt || null,
+  return { configured: configured(env), canAuthorize: Boolean(configured(env) && env.TIKTOK_SHOP_SERVICE_ID), connected: Boolean(tokens), expiresAt: tokens?.accessTokenExpiresAt || null,
     refreshExpiresAt: tokens?.refreshTokenExpiresAt || null, sellerName: tokens?.sellerName || '',
     grantedScopes: tokens?.grantedScopes || [], storage: 'Encrypted D1' };
 }

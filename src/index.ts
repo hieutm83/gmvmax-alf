@@ -86,6 +86,18 @@ async function webhook(request: Request, env: Env, url: URL, ctx:ExecutionContex
   return json({ok:true});
 }
 
+async function tiktokShopWebhook(request: Request, env: Env): Promise<Response> {
+  if(request.method==='GET'||request.method==='HEAD'||request.method==='OPTIONS')return new Response(request.method==='HEAD'?null:'OK',{status:200});
+  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
+  const payload=await request.json<any>().catch(()=>null);
+  if(!payload)return new Response('OK',{status:200});
+  if(payload.challenge)return json({challenge:payload.challenge});
+  const externalId=String(payload.event_id||payload.id||payload.request_id||'').trim()||null;
+  await env.DB.prepare(`INSERT OR IGNORE INTO webhook_events(provider,external_id,received_at,payload,status)
+    VALUES('tiktok-shop',?,?,?,'RECEIVED')`).bind(externalId,Date.now(),JSON.stringify(payload)).run();
+  return json({ok:true});
+}
+
 async function resolveDefaultStore(env:Env):Promise<string>{
   const stores=await listStores(env,await createSession(env),env.DEFAULT_ADVERTISER_ID);
   return stores.find((s:any)=>s.storeCode===env.DEFAULT_STORE_CODE||s.storeId===env.DEFAULT_STORE_CODE)?.storeId||env.DEFAULT_STORE_CODE;
@@ -143,9 +155,14 @@ export default {
     const url=new URL(request.url);
     try{
       if(url.pathname==='/auth/connect'&&request.method==='GET')return Response.redirect(await createAuthorizationUrl(env,url.origin),302);
-      if(url.pathname==='/auth/callback'||url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
+      if(url.pathname==='/auth/callback'){
+        if(url.searchParams.has('app_key'))return handleSellerOAuthCallback(env,url);
+        return handleOAuthCallback(env,url);
+      }
+      if(url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
       if(url.pathname==='/seller/auth/connect'&&request.method==='GET')return Response.redirect(await createSellerAuthorizationUrl(env),302);
       if(url.pathname==='/seller/auth/callback'&&request.method==='GET')return handleSellerOAuthCallback(env,url);
+      if(url.pathname==='/tiktok/webhook')return await tiktokShopWebhook(request,env);
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
       const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
       if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);

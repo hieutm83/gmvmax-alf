@@ -357,6 +357,7 @@
       var revenueProvinceChart = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
+      var sellerOAuthCanAuthorize = false;
       var activeReportView = new URLSearchParams(window.location.search).has('seller_connected') ? 'revenue' : 'ads';
       var loadedRevenueScope = '';
       var videoHoverLinePlugin = {
@@ -402,11 +403,12 @@
       function renderRevenueOAuthState(oauth) {
         sellerOAuthConfigured = Boolean(oauth && oauth.configured);
         sellerOAuthConnected = Boolean(oauth && oauth.connected);
+        sellerOAuthCanAuthorize = Boolean(oauth && oauth.canAuthorize);
         var title = sellerOAuthConnected ? 'Đã kết nối TikTok Shop Seller' :
           (sellerOAuthConfigured ? 'Chưa kết nối TikTok Shop Seller' : 'Chưa cấu hình TikTok Shop Seller OAuth');
         document.getElementById('revenueAuthTitle').textContent = title;
         var detail = sellerOAuthConnected ? 'Seller access token được mã hóa và lưu riêng trong D1' :
-          (sellerOAuthConfigured ? 'Ủy quyền Seller để đọc dữ liệu đơn hàng' : 'Thiếu App Key, App Secret hoặc Service ID trong Cloudflare');
+          (sellerOAuthConfigured ? (sellerOAuthCanAuthorize ? 'Ủy quyền Seller để đọc dữ liệu đơn hàng' : 'App Key và App Secret đã cấu hình · cấp quyền trực tiếp trong Partner Center hoặc bổ sung Service ID') : 'Thiếu App Key hoặc App Secret trong Cloudflare');
         if (sellerOAuthConnected && oauth.sellerName) detail += ' · ' + oauth.sellerName;
         if (sellerOAuthConnected && oauth.expiresAt) {
           detail += ' · token hết hạn ' + new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(oauth.expiresAt));
@@ -422,6 +424,13 @@
           connect.rel = 'noopener noreferrer';
           requiredTitle.textContent = 'Cần tạo ứng dụng TikTok Shop';
           requiredMeta.textContent = 'Seller Admin chỉ phê duyệt quyền. Hãy tạo Custom App trong Partner Center, bật Seller Order API và đặt callback: ' + location.origin + '/seller/auth/callback';
+        } else if (!sellerOAuthCanAuthorize && !sellerOAuthConnected) {
+          connect.textContent = 'Mở Partner Center';
+          connect.href = 'https://partner.tiktokshop.com/';
+          connect.target = '_blank';
+          connect.rel = 'noopener noreferrer';
+          requiredTitle.textContent = 'Cấp quyền ứng dụng trong Partner Center';
+          requiredMeta.textContent = 'Redirect URL đã hỗ trợ: ' + location.origin + '/auth/callback. Sau khi cấp quyền, tab sẽ tự nhận Seller token.';
         } else {
           connect.textContent = sellerOAuthConnected ? 'Ủy quyền lại' : 'Kết nối Seller';
           connect.href = '/seller/auth/connect';
