@@ -63,8 +63,11 @@ Ung dung Seller can quyen doc thong tin shop, analytics va don hang (`seller.aut
 Webhook URL:
 
 ```text
-https://anlanhfarm.indevs.in/tiktok/webhook
+https://tiktok-gmv-max-report.tolahatdoxanh.workers.dev/tiktok/webhook
 ```
+
+TikTok Partner Center có thể khóa URL webhook sau khi ứng dụng đã tạo. Giữ URL
+`workers.dev` ở trên; Worker vẫn phục vụ URL này song song với custom domain.
 - Spreadsheet backup can co tab ten `GMV_MAX_BACKUP` va duoc share quyen Editor cho service-account email.
 
 ## Deploy va ket noi TikTok
