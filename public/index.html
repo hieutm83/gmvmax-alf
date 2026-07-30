@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <base target="_top">
+    <title>Dashboard TikTok Report by MH</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -216,9 +217,12 @@
       .risk-item strong { color: var(--text); }
       .risk-item span { margin-top: 3px; color: var(--text-muted); }
       .risk-item em { color: var(--danger); font-style: normal; font-weight: 700; }
-      .operations-table th:first-child, .operations-table td:first-child { min-width: 160px; }
+      .operations-table th:first-child, .operations-table td:first-child { min-width: 180px; }
       .operations-table th:nth-child(4), .operations-table td:nth-child(4) { min-width: 270px; }
       .operations-table th:nth-child(5), .operations-table td:nth-child(5) { min-width: 220px; }
+      .operations-table th:nth-child(n+6), .operations-table td:nth-child(n+6) { min-width: 150px; }
+      .order-detail-link { color: var(--primary); font-weight: 700; text-decoration: none; }
+      .order-detail-link:hover { text-decoration: underline; }
       .admin-modal { width: min(720px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
       .admin-auth-modal { width: min(460px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
       .admin-body { display: grid; gap: 14px; padding: 20px; }
@@ -233,7 +237,7 @@
     </style>
   </head>
   <body>
-    <header><h1>TikTok GMV Max Report</h1></header>
+    <header><h1>TikTok Report</h1></header>
     <main>
       <div id="connectPanel" class="notice hidden">
         <span id="connectMessage">Kết nối tài khoản TikTok for Business để đọc báo cáo.</span>
@@ -347,7 +351,7 @@
         <h2 class="section-title">Giám sát chi tiết</h2>
         <div class="table-wrap">
           <table class="operations-table">
-            <thead><tr><th>Mã đơn / Mã RMA</th><th>Loại sự cố</th><th>Nhóm / Khởi tạo</th><th>Lý do chi tiết</th><th>Trạng thái hiện tại</th><th>Thời gian cập nhật</th></tr></thead>
+            <thead><tr><th>Mã đơn / Mã RMA</th><th>Loại sự cố</th><th>Nhóm / Khởi tạo</th><th>Lý do chi tiết</th><th>Trạng thái hiện tại</th><th>Thời gian vận chuyển</th><th>Thời gian hủy</th><th>Thời gian cập nhật</th></tr></thead>
             <tbody id="operationsRows"></tbody>
           </table>
           <div id="operationsEmpty" class="empty hidden">Không có sự cố trong khoảng ngày đã chọn.</div>
@@ -809,13 +813,13 @@
         var summary = document.getElementById('operationsSummary'); summary.replaceChildren();
         summary.append(
           operationsMetric('Tỷ lệ hủy đơn', percent(totals.cancellationRate), 'cancelRate',
-            integer(totals.cancellations) + ' đơn · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
+            integer(totals.cancellations) + ' đơn hủy / ' + integer(totals.openOrders) + ' đơn đang mở trong 30 ngày · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
           operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate',
-            integer(totals.returns) + ' yêu cầu · REFUND ' + integer(types.REFUND || 0) + ' · RETURN & REFUND ' + integer(types.RETURN_AND_REFUND || 0)),
+            integer(totals.returns) + ' yêu cầu / ' + integer(totals.returnEligibleOrders) + ' đơn DELIVERED · REFUND ' + integer(types.REFUND || 0) + ' · RETURN & REFUND ' + integer(types.RETURN_AND_REFUND || 0)),
           operationsMetric('Tỷ lệ giao hàng thất bại', percent(totals.failedDeliveryRate), 'failedRate',
-            integer(totals.failedDeliveries) + ' / ' + integer(totals.dispatchedOrders) + ' đơn phát hàng'),
+            integer(totals.failedDeliveries) + ' / ' + integer(totals.deliveryPopulationOrders) + ' đơn AWAITING_COLLECTION hoặc IN_TRANSIT'),
           operationsMetric('Giá trị tiền hàng rủi ro', moneyWhole(totals.atRiskValue) + ' VND', 'riskValue',
-            'Giá trị duy nhất theo mã đơn hủy, hoàn hoặc giao thất bại')
+            'Không trùng mã đơn · ưu tiên tiền hoàn, sau đó mới dùng tổng thanh toán')
         );
         var warning = document.getElementById('operationsWarnings');
         warning.textContent = (data.warnings || []).join(' · ');
@@ -879,7 +883,9 @@
         }
         items.forEach(function (item) {
           var row = document.createElement('div'); row.className = 'risk-item';
-          var copy = document.createElement('div'); var title = document.createElement('strong'); title.textContent = item.orderId;
+          var copy = document.createElement('div'); var title = document.createElement('a'); title.className = 'order-detail-link'; title.textContent = item.orderId;
+          title.href = 'https://seller-vn.tiktok.com/order/detail?order_no=' + encodeURIComponent(item.orderId || '') + '&shop_region=VN';
+          title.target = '_blank'; title.rel = 'noopener noreferrer';
           var detail = document.createElement('span'); detail.textContent = item.reason || item.status || '-'; copy.append(title, detail);
           var marker = document.createElement('em'); marker.textContent = showAge ? integer(item.ageDays) + ' ngày' : '70301';
           row.append(copy, marker); container.appendChild(row);
@@ -891,15 +897,22 @@
         items.forEach(function (item) {
           var row = document.createElement('tr');
           var idCell = document.createElement('td');
-          var orderId = document.createElement('strong'); orderId.textContent = item.orderId || item.id || '-'; idCell.appendChild(orderId);
+          var orderId = document.createElement('a'); orderId.className = 'order-detail-link';
+          orderId.textContent = item.orderId || item.id || '-';
+          orderId.href = 'https://seller-vn.tiktok.com/order/detail?order_no=' + encodeURIComponent(item.orderId || item.id || '') + '&shop_region=VN';
+          orderId.target = '_blank'; orderId.rel = 'noopener noreferrer'; idCell.appendChild(orderId);
           if (item.rmaId && item.rmaId !== item.orderId) { var rma = document.createElement('span'); rma.className = 'campaign-meta'; rma.textContent = 'RMA: ' + item.rmaId; idCell.appendChild(rma); }
           row.appendChild(idCell);
           [item.type, item.group, item.reason, (item.actionCode ? item.actionCode + ' · ' : '') + (item.status || '-'),
-            item.updatedAt ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.updatedAt)) : '-']
+            operationDate(item.shippingReadyAt), operationDate(item.cancelledAt), operationDate(item.updatedAt)]
             .forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value || '-'; row.appendChild(cell); });
           rows.appendChild(row);
         });
         document.getElementById('operationsEmpty').classList.toggle('hidden', items.length > 0);
+      }
+
+      function operationDate(value) {
+        return value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '-';
       }
 
       function changeValue(current, previous) {
