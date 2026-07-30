@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAdsStyles, extractZaloUpdates, normalizeZaloEvent, zaloUpdateTimestamp } from '../src/zalo';
-import { buildOperationsReportStyles } from '../src/operations-bot';
+import { buildOperationsReportStyles, formatOperationsUpdatedAt } from '../src/operations-bot';
 
 describe('normalizeZaloEvent', () => {
   it('reads the current Zalo webhook message shape', () => {
@@ -65,5 +65,11 @@ describe('buildOperationsReportStyles',()=>{
     expect(styles.some(style=>style.st.includes('c_db342e'))).toBe(true);
     const productGmvStart=text.lastIndexOf('GMV:');
     expect(styles.some(style=>style.start===productGmvStart&&style.len===4&&style.st.includes('b'))).toBe(true);
+  });
+});
+
+describe('formatOperationsUpdatedAt',()=>{
+  it('formats realtime updates in the configured timezone',()=>{
+    expect(formatOperationsUpdatedAt(new Date('2026-07-30T10:02:30Z'),'Asia/Bangkok')).toBe('17:02:30 30/7/26');
   });
 });

@@ -60,6 +60,20 @@ function shortProductName(value: unknown): string {
   return name.length > 46 ? `${name.slice(0, 43).trimEnd()}...` : name;
 }
 
+export function formatOperationsUpdatedAt(date: Date, timezone: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.hour}:${parts.minute}:${parts.second} ${Number(parts.day)}/${Number(parts.month)}/${parts.year}`;
+}
+
 export function buildOperationsReportStyles(text: string): OperationsTextStyle[] {
   const styles: OperationsTextStyle[] = [];
   const add = (start: number, len: number, ...st: string[]) => { if (start >= 0 && len > 0) styles.push({ start, len, st }); };
@@ -135,9 +149,12 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
   ];
   const products = (revenue.gmvAttribution?.products || []).filter((product: any) => Number(product.gmv) > 0);
   const displayDate = reportDate.split('-').reverse().join('/');
-  const title = `${mode === 'REALTIME' ? 'Báo cáo realtime chỉ số vận hành' : 'Báo cáo chỉ số vận hành'} Tiktok shop ngày ${displayDate}`;
+  const title = mode === 'REALTIME'
+    ? 'Báo cáo realtime chỉ số vận hành Tiktok shop'
+    : `Báo cáo chỉ số vận hành Tiktok shop ngày ${displayDate}`;
   const lines = [
     title,
+    ...(mode === 'REALTIME' ? [`Cập nhật: ${formatOperationsUpdatedAt(new Date(), env.TIMEZONE || 'Asia/Bangkok')}`] : []),
     '',
     ...values.map((item) => `${item.label} ${item.value} ${item.label === '6. Tỷ lệ hủy:' ? item.change.text : `(${item.change.text})`}`),
     '',
