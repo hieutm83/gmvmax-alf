@@ -1,5 +1,7 @@
 import type { Env } from './types';
 import { authorizedShop, shopRequest } from './seller';
+import { loadOperationsAnalysis } from './operations';
+import { hourInTimezone } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 const GREEN = 'c_15a85f';
@@ -183,16 +185,104 @@ async function currentOrders(env: Env, shopCipher: string, status: string): Prom
   return rows.map((order) => detailsById.get(String(order.id || order.order_id || '')) || order);
 }
 
-async function sendOrderBotMessage(env: Env, text: string): Promise<string> {
+async function sendOrderBotMessage(env: Env, text: string, styles = buildOrderBotStyles(text)): Promise<string> {
   if (!env.ZALO_ORDER_BOT_TOKEN) throw new Error('Missing ZALO_ORDER_BOT_TOKEN.');
   if (!env.ZALO_ORDER_GROUP_CHAT_ID) throw new Error('Missing ZALO_ORDER_GROUP_CHAT_ID.');
   const response = await fetch(`${API}${encodeURIComponent(env.ZALO_ORDER_BOT_TOKEN)}/sendMessage`, {
     method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ chat_id: env.ZALO_ORDER_GROUP_CHAT_ID, text, text_styles: buildOrderBotStyles(text) })
+    body: JSON.stringify({ chat_id: env.ZALO_ORDER_GROUP_CHAT_ID, text, text_styles: styles })
   });
   const data = await response.json<any>().catch(() => ({}));
   if (!response.ok || data.ok !== true) throw new Error(`Zalo Bot API ${data.error_code || response.status}: ${data.description || 'Invalid response'}`);
   return String(data.result?.message_id || '');
+}
+
+export function formatCancellationAlert(incident: any, timezone: string): { text: string; styles: OrderTextStyle[] } {
+  const cancelledAt = timestampMillis(incident?.cancelledAt || incident?.updatedAt);
+  const time = cancelledAt ? new Intl.DateTimeFormat('vi-VN', {
+    timeZone: timezone, hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric', year: '2-digit', hour12: false
+  }).format(new Date(cancelledAt)).replace(',', '') : 'Không xác định';
+  const text = [
+    'Đơn hủy',
+    `Mã đơn: ${String(incident?.orderId || '')}`,
+    `Loại sự cố: ${String(incident?.type || 'Hủy đơn')}`,
+    `Nhóm / Khởi tạo: ${String(incident?.group || 'Không xác định')}`,
+    `Lý do chi tiết: ${String(incident?.reason || 'Không xác định')}`,
+    `Thời gian hủy: ${time}`
+  ].join('\n');
+  const styles: OrderTextStyle[] = [{ start: 0, len: 'Đơn hủy'.length, st: ['u', 'i', RED] }];
+  let offset = 0;
+  for (const line of text.split('\n')) {
+    const separator = line.indexOf(':');
+    if (separator > 0) styles.push({ start: offset, len: separator + 1, st: ['b'] });
+    offset += line.length + 1;
+  }
+  return { text, styles };
+}
+
+function cancellationId(incident: any): string {
+  return String(incident?.rmaId || incident?.id || incident?.orderId || '');
+}
+
+async function sendCancellationIncident(env: Env, incident: any): Promise<string> {
+  const formatted = formatCancellationAlert(incident, env.TIMEZONE || 'Asia/Bangkok');
+  return sendOrderBotMessage(env, formatted.text, formatted.styles);
+}
+
+export async function monitorOrderBot(env: Env, reportDate: string): Promise<void> {
+  if (!env.ZALO_ORDER_BOT_TOKEN || !env.ZALO_ORDER_GROUP_CHAT_ID) return;
+  const analysis = await loadOperationsAnalysis(env, {
+    startDate: reportDate, endDate: reportDate, forceRefresh: true, skipComparison: true
+  });
+  const counts = Object.fromEntries((analysis.funnel || []).map((item: any) => [String(item.code), Number(item.count) || 0]));
+  const stateKey = `lifecycle:${reportDate}`;
+  const previousRow = await env.DB.prepare('SELECT payload FROM order_bot_monitor_state WHERE state_key=?')
+    .bind(stateKey).first<{ payload: string }>();
+  const previous = previousRow ? JSON.parse(previousRow.payload) : null;
+  const cancellations = (analysis.incidents || []).filter((incident: any) => String(incident.type).toLowerCase() === 'hủy đơn');
+
+  if (!previous) {
+    for (const incident of cancellations) {
+      const id = cancellationId(incident); if (!id) continue;
+      await env.DB.prepare(`INSERT OR IGNORE INTO order_bot_cancellation_events(cancellation_id,order_id,status,payload)
+        VALUES(?,?,?,?)`).bind(id, String(incident.orderId || ''), 'SEEN', JSON.stringify(incident)).run();
+    }
+  } else {
+    const movedToTransit = Number(counts.AWAITING_COLLECTION) < Number(previous.AWAITING_COLLECTION || 0) &&
+      Number(counts.IN_TRANSIT) > Number(previous.IN_TRANSIT || 0);
+    if (movedToTransit) {
+      const hour = hourInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
+      await sendOrderBotReport(env, reportDate, hour < 15 ? '10:30' : '16:30', true);
+    }
+    for (const incident of cancellations.slice().sort((a: any, b: any) => timestampMillis(a.cancelledAt) - timestampMillis(b.cancelledAt))) {
+      const id = cancellationId(incident); if (!id) continue;
+      const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO order_bot_cancellation_events(cancellation_id,order_id,status,payload)
+        VALUES(?,?,?,?)`).bind(id, String(incident.orderId || ''), 'PENDING', JSON.stringify(incident)).run();
+      if (!inserted.meta.changes) continue;
+      const messageId = await sendCancellationIncident(env, incident);
+      await env.DB.prepare(`UPDATE order_bot_cancellation_events SET status='SENT',message_id=?,updated_at=CURRENT_TIMESTAMP
+        WHERE cancellation_id=?`).bind(messageId, id).run();
+    }
+  }
+  await env.DB.prepare(`INSERT INTO order_bot_monitor_state(state_key,payload) VALUES(?,?)
+    ON CONFLICT(state_key) DO UPDATE SET payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
+    .bind(stateKey, JSON.stringify(counts)).run();
+}
+
+export async function sendLatestCancellationTest(env: Env, reportDate: string): Promise<{ id: string; messageId: string }> {
+  const analysis = await loadOperationsAnalysis(env, {
+    startDate: reportDate, endDate: reportDate, forceRefresh: true, skipComparison: true
+  });
+  const latest = (analysis.incidents || []).filter((incident: any) => String(incident.type).toLowerCase() === 'hủy đơn')
+    .sort((a: any, b: any) => timestampMillis(b.cancelledAt) - timestampMillis(a.cancelledAt))[0];
+  if (!latest) throw new Error(`Không có đơn hủy trong ngày ${reportDate}.`);
+  const id = cancellationId(latest);
+  const messageId = await sendCancellationIncident(env, latest);
+  await env.DB.prepare(`INSERT INTO order_bot_cancellation_events(cancellation_id,order_id,status,message_id,payload)
+    VALUES(?,?,?,?,?) ON CONFLICT(cancellation_id) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
+    payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
+    .bind(id, String(latest.orderId || ''), 'SENT', messageId, JSON.stringify(latest)).run();
+  return { id, messageId };
 }
 
 export async function sendOrderBotReport(env: Env, localDate: string, slotTime: string, force = false): Promise<void> {

@@ -39,6 +39,7 @@ export type TaskMessage =
   | { type: 'scheduled-report'; reportDate: string; reportHour: number }
   | { type: 'operations-daily-report'; reportDate: string; operationsDate?: string; mode: 'DAILY' | 'REALTIME'; chatId?: string; eventId?: string }
   | { type: 'order-bot-report'; reportDate: string; reportTime: string; force?: boolean }
+  | { type: 'order-bot-monitor'; reportDate: string }
   | { type: 'zalo-poll' }
   | { type: 'zalo-webhook-ensure' }
   | { type: 'zalo-video'; eventId: number }

@@ -9,7 +9,7 @@ import { loadFinanceAnalysis, loadSkuUnitCosts, saveSkuUnitCost } from './financ
 import { loadContentKocAnalysis } from './content-koc';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, sendOperationsReport } from './operations-bot';
-import { ORDER_BOT_SLOTS, sendOrderBotReport } from './order-bot';
+import { monitorOrderBot, ORDER_BOT_SLOTS, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
@@ -153,6 +153,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     return;
   }
   if(message.type==='order-bot-report')return sendOrderBotReport(env,message.reportDate,message.reportTime,message.force===true);
+  if(message.type==='order-bot-monitor')return monitorOrderBot(env,message.reportDate);
   if(message.type==='sheet-backup'){
     const storeId=await resolveDefaultStore(runtime);const report=await loadMainReport(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
     const summary=await loadCreativeSummaries(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate,products:report.products,allContexts:report.creativeContexts,availableProducts:report.availableProductCount,forceRefresh:true});
@@ -234,6 +235,8 @@ export default {
     ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&ORDER_BOT_SLOTS[slotTime])
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',reportDate:localDate,reportTime:slotTime}));
+    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
     if(localHour===8&&localMinute===5&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
       const yesterday=shiftDate(localDate,-1);
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
