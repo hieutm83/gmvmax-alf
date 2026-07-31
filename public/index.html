@@ -411,7 +411,7 @@
         </div>
       </section>
       <section id="contentKocReport" class="hidden">
-        <div id="contentKocSellerNotice" class="analytics-unavailable hidden"><div><strong>Cần kết nối TikTok Shop Seller</strong><span>Đang hiển thị dữ liệu Ads; kết nối Seller để bổ sung GMV, lượt xem và click organic.</span></div></div>
+        <div id="contentKocSellerNotice" class="analytics-unavailable hidden"><div><strong id="contentKocSellerNoticeTitle">Cần kết nối TikTok Shop Seller</strong><span id="contentKocSellerNoticeMeta">Đang hiển thị dữ liệu Ads; kết nối Seller để bổ sung GMV, lượt xem và click organic.</span></div></div>
         <div class="content-koc-summaries">
           <div><h3 class="content-koc-group-label seller">Nhà bán hàng</h3><div id="contentKocSummarySeller" class="summary"></div></div>
           <div><h3 class="content-koc-group-label koc">KOC</h3><div id="contentKocSummaryKoc" class="summary"></div></div>
@@ -1075,7 +1075,10 @@
       function renderContentKocAnalysis(data) {
         currentContentKocData = data || {}; document.getElementById('reportTabs').classList.remove('hidden');
         document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
-        document.getElementById('contentKocSellerNotice').classList.toggle('hidden', data.shopAnalyticsAvailable !== false);
+        var sellerNotice=document.getElementById('contentKocSellerNotice');var shopDelayed=data.shopLatestAvailableDate&&data.shopLatestAvailableDate<data.endDate;
+        sellerNotice.classList.toggle('hidden',data.shopAnalyticsAvailable!==false&&!shopDelayed);
+        if(shopDelayed){document.getElementById('contentKocSellerNoticeTitle').textContent='Dữ liệu TikTok Shop đang cập nhật';document.getElementById('contentKocSellerNoticeMeta').textContent='TikTok Shop mới có dữ liệu đến '+data.shopLatestAvailableDate+'. Chi phí Ads vẫn theo đúng kỳ đã chọn; GMV, views và click organic sẽ xuất hiện khi Shop hoàn tất dữ liệu.';}
+        else{document.getElementById('contentKocSellerNoticeTitle').textContent='Cần kết nối TikTok Shop Seller';document.getElementById('contentKocSellerNoticeMeta').textContent='Đang hiển thị dữ liệu Ads; kết nối Seller để bổ sung GMV, lượt xem và click organic.';}
         renderContentKocSummary('contentKocSummarySeller', data.totals && data.totals.seller);
         renderContentKocSummary('contentKocSummaryKoc', data.totals && data.totals.koc);
         var seller = data.totals && data.totals.seller || {}; var koc = data.totals && data.totals.koc || {};

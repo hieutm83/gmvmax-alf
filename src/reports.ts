@@ -225,7 +225,7 @@ export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,end
       const itemId=rowId(row,'item_id');if(!itemId||itemId==='-1')continue;
       const video=normalizeVideo(row);const product=products.get(String(context.itemGroupId));
       const current=byId.get(itemId)||{itemId,title:video.name,accountName:video.accountName,accountUsername:video.accountUserName,
-        cost:0,orders:0,grossRevenue:0,productClicks:0,productImpressions:0,campaigns:[],products:[]};
+        authorizationType:video.authorizationType,cost:0,orders:0,grossRevenue:0,productClicks:0,productImpressions:0,campaigns:[],products:[]};
       current.cost+=numberValue(video.cost);current.orders+=numberValue(video.orders);current.grossRevenue+=numberValue(video.grossRevenue);
       current.productClicks+=numberValue(video.productClicks);current.productImpressions+=numberValue(video.productImpressions);
       if(!current.campaigns.some((item:any)=>item.campaignId===context.campaignId))current.campaigns.push({campaignId:context.campaignId,campaignName:product?.campaignName||`GMV Max ${context.campaignId}`});
@@ -233,7 +233,8 @@ export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,end
       byId.set(itemId,current);
     }
   }
-  return Array.from(byId.values());
+  return Array.from(byId.values()).filter(video=>numberValue(video.cost)||numberValue(video.orders)||numberValue(video.grossRevenue)||
+    numberValue(video.productClicks)||numberValue(video.productImpressions));
 }
 
 export async function loadVideoDayStats(env:Env,input:any,contexts:ProductContext[],reportDate:string):Promise<any>{

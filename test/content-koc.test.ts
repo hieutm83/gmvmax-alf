@@ -6,6 +6,8 @@ describe('Content & KOC analysis', () => {
     expect(classifyCreatorType('OFFICIAL')).toBe('SELLER');
     expect(classifyCreatorType('channel')).toBe('SELLER');
     expect(classifyCreatorType('AFFILIATE')).toBe('KOC');
+    expect(classifyCreatorType('MARKETING_ACCOUNTS')).toBe('SELLER');
+    expect(classifyCreatorType('AFFILIATE_ACCOUNTS')).toBe('KOC');
     expect(classifyCreatorType(undefined)).toBe('UNKNOWN');
   });
 

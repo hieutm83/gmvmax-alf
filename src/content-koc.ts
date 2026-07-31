@@ -10,9 +10,13 @@ function emptyTotals():GroupTotals{return{videoCount:0,gmv:0,adsSpend:0,views:0,
 function money(value:any):number{return numberValue(value?.amount??value);}
 export function classifyCreatorType(value:any):CreatorType{
   const type=String(value||'').toUpperCase();
-  if(type==='OFFICIAL'||type==='CHANNEL')return'SELLER';
-  if(type==='AFFILIATE')return'KOC';
+  if(type==='OFFICIAL'||type==='CHANNEL'||type==='OFFICIAL_ACCOUNTS'||type==='MARKETING_ACCOUNTS')return'SELLER';
+  if(type==='AFFILIATE'||type==='AFFILIATE_ACCOUNTS')return'KOC';
   return'UNKNOWN';
+}
+function shopVideoCreatorType(video:any):CreatorType{
+  const declared=classifyCreatorType(video?.creator?.author_type);
+  return declared==='UNKNOWN'?classifyCreatorType(video?._accountType):declared;
 }
 function addTotals(target:GroupTotals,video:any):void{
   target.videoCount+=1;target.gmv+=numberValue(video.shop?.gmv);target.adsSpend+=numberValue(video.ads?.cost);
@@ -25,41 +29,60 @@ export function calculateContentKocTotals(videos:any[]):{all:GroupTotals;seller:
   return totals;
 }
 
-async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<{available:boolean;videos:any[]} >{
+async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<{available:boolean;videos:any[];latestAvailableDate:string|null} >{
   const shop=await authorizedShop(env);const cipher=String(shop?.cipher||shop?.shop_cipher||shop?.id||'');
-  if(!cipher)return{available:false,videos:[]};
-  const videos:any[]=[];let pageToken='';let pages=0;
-  do{
-    const data=await shopRequest(env,'/analytics/202605/shop_videos/performance','GET',{shop_cipher:cipher,start_date_ge:startDate,
-      end_date_lt:shiftDate(endDate,1),page_size:100,sort_field:'gmv',sort_order:'DESC',currency:'LOCAL',account_type:'ALL',page_token:pageToken||undefined});
-    videos.push(...(Array.isArray(data.videos)?data.videos:[]));pageToken=String(data.next_page_token||'');pages+=1;
-  }while(pageToken&&pages<100);
-  return{available:true,videos};
+  if(!cipher)return{available:false,videos:[],latestAvailableDate:null};
+  const videoMap=new Map<string,any>();let latestAvailableDate:string|null=null;
+  // Although the API reference documents ALL, this shop currently returns an empty
+  // list for it. Explicit account types return the expected records.
+  for(const accountType of ['OFFICIAL_ACCOUNTS','MARKETING_ACCOUNTS','AFFILIATE_ACCOUNTS']){
+    let pageToken='';let pages=0;
+    do{
+      const data=await shopRequest(env,'/analytics/202605/shop_videos/performance','GET',{shop_cipher:cipher,start_date_ge:startDate,
+        end_date_lt:shiftDate(endDate,1),page_size:100,sort_field:'gmv',sort_order:'DESC',currency:'LOCAL',account_type:accountType,page_token:pageToken||undefined});
+      for(const video of Array.isArray(data.videos)?data.videos:[])if(video?.id)videoMap.set(String(video.id),{...video,_accountType:accountType});
+      latestAvailableDate=String(data.latest_available_date||latestAvailableDate||'')||null;
+      pageToken=String(data.next_page_token||'');pages+=1;
+    }while(pageToken&&pages<100);
+  }
+  return{available:true,videos:Array.from(videoMap.values()),latestAvailableDate};
 }
 
 export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;storeId:string;startDate:string;endDate:string;forceRefresh?:boolean}):Promise<any>{
-  const key=stableKey('content-koc-v1',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  const key=stableKey('content-koc-v5',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return{...cached,cacheStatus:'HIT'};}
   const [shopResult,adsVideos]=await Promise.all([
-    fetchShopVideos(env,input.startDate,input.endDate).catch(()=>({available:false,videos:[]})),
+    fetchShopVideos(env,input.startDate,input.endDate).catch(()=>({available:false,videos:[],latestAvailableDate:null})),
     loadAdsVideoMetrics(env,input,input.startDate,input.endDate)
   ]);
+  // Shop Analytics is commonly delayed for the current day. Use a wider window only
+  // as creator/product metadata so current-period Ads videos can still be classified;
+  // never copy GMV/views from that historical window into the selected period.
+  let metadataVideos:any[]=shopResult.videos;
+  if(adsVideos.length&&input.startDate>shiftDate(input.endDate,-29)){
+    const metadata=await fetchShopVideos(env,shiftDate(input.endDate,-29),input.endDate).catch(()=>null);
+    if(metadata?.videos?.length)metadataVideos=metadata.videos;
+  }
+  const shopMetadataById=new Map(metadataVideos.map((video:any)=>[String(video.id||''),video]));
+  const metadataMatchedAdsCount=adsVideos.filter((video:any)=>shopMetadataById.has(String(video.itemId))).length;
   const adsById=new Map(adsVideos.map((video:any)=>[String(video.itemId),video]));const videos:any[]=[];
   for(const raw of shopResult.videos){
     const itemId=String(raw.id||'');if(!itemId)continue;const ads:any=adsById.get(itemId);adsById.delete(itemId);
     const ctr=raw.click_through_rate==null?null:numberValue(raw.click_through_rate);const views=numberValue(raw.views);
     const products=(raw.products||[]).map((product:any)=>({id:String(product.id),name:String(product.name||product.id),imageUrl:''}));
     for(const product of ads?.products||[])if(!products.some((item:any)=>item.id===product.id))products.push(product);
-    const type=classifyCreatorType(raw.creator?.author_type);
+    const type=shopVideoCreatorType(raw);
     videos.push({itemId,title:String(raw.title||ads?.title||`Video ${itemId}`),videoUrl:`https://www.tiktok.com/@${encodeURIComponent(String(raw.username||raw.creator?.user_name||ads?.accountUsername||''))}/video/${itemId}`,
       accountName:String(raw.creator?.nick_name||raw.username||ads?.accountName||''),accountUsername:String(raw.creator?.user_name||raw.username||ads?.accountUsername||''),creatorType:type,
       postTime:raw.video_post_time||null,products,shop:{gmv:money(raw.gmv),views,clicks:Math.round(views*(ctr||0)),ctr,skuOrders:numberValue(raw.sku_orders),itemsSold:numberValue(raw.items_sold)},
       ads:ads?{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''}:null,
       roi:numberValue(ads?.cost)?money(raw.gmv)/numberValue(ads.cost):null});
   }
-  for(const ads of adsById.values() as Iterable<any>)videos.push({itemId:String(ads.itemId),title:ads.title,videoUrl:`https://www.tiktok.com/player/v1/${ads.itemId}`,
-    accountName:ads.accountName||ads.accountUsername||'',accountUsername:ads.accountUsername||'',creatorType:'UNKNOWN',postTime:null,products:ads.products||[],shop:null,
+  for(const ads of adsById.values() as Iterable<any>){const metadata:any=shopMetadataById.get(String(ads.itemId));const metadataProducts=(metadata?.products||[]).map((product:any)=>({id:String(product.id),name:String(product.name||product.id),imageUrl:''}));
+    const products=metadataProducts.length?metadataProducts:ads.products||[];videos.push({itemId:String(ads.itemId),title:ads.title||metadata?.title,videoUrl:`https://www.tiktok.com/player/v1/${ads.itemId}`,
+    accountName:metadata?.creator?.nick_name||metadata?.username||ads.accountName||ads.accountUsername||'',accountUsername:metadata?.creator?.user_name||metadata?.username||ads.accountUsername||'',creatorType:metadata?shopVideoCreatorType(metadata):'UNKNOWN',postTime:metadata?.video_post_time||null,products,shop:null,
     ads:{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''},roi:null});
+  }
 
   const totals=calculateContentKocTotals(videos);
   const productMap=new Map<string,any>();
@@ -69,6 +92,10 @@ export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;
   }
   const byProduct=Array.from(productMap.values()).sort((a,b)=>(b.seller.gmv+b.koc.gmv)-(a.seller.gmv+a.koc.gmv));
   const result={advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate,generatedAt:new Date().toISOString(),
-    totals,byProduct,videos,shopAnalyticsAvailable:shopResult.available,cacheStatus:'REFRESHED'};
+    totals,byProduct,videos,shopAnalyticsAvailable:shopResult.available,shopLatestAvailableDate:shopResult.latestAvailableDate,
+    diagnostics:{shopPeriodVideos:shopResult.videos.length,shopMetadataVideos:metadataVideos.length,metadataMatchedAdsCount,
+      adsAuthorizationTypes:Array.from(new Set(adsVideos.map((video:any)=>String(video.authorizationType||'')).filter(Boolean))),
+      shopAuthorTypes:Array.from(new Set(metadataVideos.map((video:any)=>String(video.creator?.author_type||'')).filter(Boolean))),
+      shopAccountTypes:Array.from(new Set(metadataVideos.map((video:any)=>String(video._accountType||'')).filter(Boolean)))},cacheStatus:'REFRESHED'};
   await cachePut(env,key,result,300).catch(()=>undefined);return result;
 }
