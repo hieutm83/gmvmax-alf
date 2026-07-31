@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateStatementTransactions, calculateFinanceSummary, parseSkuProductFactor, unsettledReasonLabel } from '../src/finance';
+import { aggregateStatementTransactions, calculateFinanceSummary, estimatedVoucherXtraFee, parseSkuProductFactor, unsettledReasonLabel } from '../src/finance';
 
 describe('finance aggregation', () => {
   it('aggregates statement fields and removes zero fee fields', () => {
@@ -61,5 +61,11 @@ describe('SKU product factor', () => {
   ];
   it.each(examples)('parses %s as %i products per order', (name, expected) => {
     expect(parseSkuProductFactor(name)).toBe(expected);
+  });
+});
+
+describe('finance estimates', () => {
+  it('calculates Voucher Xtra as 5% of the discounted order value', () => {
+    expect(estimatedVoucherXtraFee(3_414_700)).toBe(-170_735);
   });
 });

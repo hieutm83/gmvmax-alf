@@ -57,6 +57,8 @@
       .metric-roi { --metric-color: #7c3aed; } .metric-totalCreatives { --metric-color: #0891b2; }
       .metric-impressions { --metric-color: #db2777; } .metric-traffic { --metric-color: #ea580c; }
       .section-title { margin: 28px 0 12px; font-size: 15px; font-weight: 800; letter-spacing: 0; }
+      .section-title-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:28px 0 12px; }
+      .section-title-row .section-title { margin:0; }
       .hourly-wrap, .table-wrap { overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); scrollbar-color: #94a3b8 transparent; }
       .hourly-wrap { max-height: 420px; }
       .hourly-chart-panel { min-height: 390px; }
@@ -110,7 +112,7 @@
       .recommendation-video:hover { color: var(--primary-hover); background: transparent; text-decoration: underline; }
       .recommendation-reason { color: var(--text-secondary); line-height: 1.4; }
       .recommendation-table td.recommendation-reason { white-space: pre-line; }
-      .recommendation-more { display: flex; min-width: 120px; margin: 12px auto; color: var(--primary); background: var(--surface); border-color: var(--border); }
+      .recommendation-more { min-width:0; min-height:30px; padding:0 11px; color:var(--primary); background:var(--surface); border-color:var(--border); font-size:11px; }
       .recommendation-more:hover { color: #fff; background: var(--primary); border-color: var(--primary); }
       .live-toggle { display: flex; align-items: center; min-height: var(--touch); padding: 0 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); text-transform: none; }
       .live-toggle input { min-height: 0; margin: 0 8px 0 0; padding: 0; accent-color: var(--primary); }
@@ -194,6 +196,8 @@
       .finance-breakdown .finance-children { padding:0 14px 8px 48px; }
       .finance-breakdown .finance-children .finance-line { padding:6px 0; }
       .finance-breakdown .finance-amount { min-width:120px; text-align:right; }
+      .finance-breakdown .finance-children .finance-amount { font-size:11px; font-weight:500; }
+      .finance-breakdown .finance-children .finance-line { font-size:11px; }
       .finance-breakdown .negative { color:#dc2626; }
       .finance-breakdown .positive { color:#059669; }
       .finance-badge { display:inline-flex; max-width:210px; margin-left:7px; padding:2px 7px; overflow:hidden; color:#047857; background:#d1fae5; border-radius:999px; font-size:9px; font-weight:700; line-height:1.4; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; }
@@ -204,18 +208,21 @@
       .finance-charts { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:16px; margin-top:20px; }
       .finance-chart-card { min-width:0; padding:18px; border:1px solid var(--border); background:#fff; border-radius:8px; }
       .finance-chart-card h2 { margin:0 0 4px; font-size:14px; }
+      .finance-chart-card:first-child h2 { text-align:center; }
       .finance-chart-card p { margin:0 0 12px; color:var(--text-muted); font-size:11px; }
       .finance-chart-canvas { position:relative; height:300px; }
       .finance-chart-canvas canvas { width:100% !important; height:100% !important; }
       .finance-sku-name { display:flex; align-items:center; gap:8px; }
       .finance-sku-badge { display:inline-flex; padding:3px 7px; color:var(--sku-color); background:var(--sku-bg); border:1px solid var(--sku-border); border-radius:5px; font-size:10px; font-weight:800; }
-      .finance-sku-info { display:inline-grid; place-items:center; width:24px; min-width:24px; height:24px; padding:0; color:#475569; background:#f8fafc; border:1px solid #cbd5e1; border-radius:50%; font-size:12px; font-weight:800; }
-      .finance-sku-info:hover { color:var(--primary); border-color:var(--primary); }
-      .finance-cost-modal { width:min(480px,calc(100vw - 32px)); height:auto; }
-      .finance-cost-form { display:grid; gap:14px; }
-      .finance-cost-form label { display:grid; gap:7px; color:var(--text); font-size:12px; font-weight:700; }
-      .finance-cost-form input { min-height:44px; padding:0 12px; border:1px solid var(--border); border-radius:6px; font:inherit; }
-      .finance-cost-actions { display:flex; justify-content:flex-end; gap:8px; }
+      .admin-sku-costs { padding-top:14px; border-top:1px solid var(--border); }
+      .admin-sku-costs h3 { margin:0 0 5px; font-size:13px; }
+      .admin-sku-costs > p { margin:0 0 10px; color:var(--text-muted); font-size:11px; }
+      .admin-sku-cost-list { display:grid; max-height:280px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
+      .admin-sku-cost-row { display:grid; grid-template-columns:minmax(0,1fr) 150px 58px; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--border); }
+      .admin-sku-cost-row:last-child { border-bottom:0; }
+      .admin-sku-cost-row span { overflow:hidden; font-size:11px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+      .admin-sku-cost-row input { width:100%; min-height:34px; padding:0 8px; }
+      .admin-sku-cost-row button { min-height:34px; padding:0 9px; font-size:10px; }
       .finance-amount.expense { color:#dc2626 !important; }
       .finance-table tfoot td { padding:12px; border-top:2px solid var(--border); background:#f8fafc; font-weight:800; }
       .finance-tree-group { padding:8px 0; border-top:1px solid #eef2f7; }
@@ -368,23 +375,21 @@
           </table>
           <div id="empty" class="empty hidden">Không có dữ liệu trong khoảng ngày này.</div>
         </div>
-        <h2 class="section-title">Video nên boost thêm ngân sách</h2>
+        <div class="section-title-row"><h2 class="section-title">Video nên boost thêm ngân sách</h2><button id="boostVideoMore" class="recommendation-more hidden" type="button">Thêm</button></div>
         <div class="table-wrap">
           <table class="recommendation-table">
             <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
             <tbody id="boostVideoRows"></tbody>
           </table>
           <div id="boostVideoEmpty" class="empty">Đang đánh giá video...</div>
-          <button id="boostVideoMore" class="recommendation-more hidden" type="button">Thêm</button>
         </div>
-        <h2 class="section-title">Video nên tắt</h2>
+        <div class="section-title-row"><h2 class="section-title">Video nên tắt</h2><button id="stopVideoMore" class="recommendation-more hidden" type="button">Thêm</button></div>
         <div class="table-wrap">
           <table class="recommendation-table">
             <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
             <tbody id="stopVideoRows"></tbody>
           </table>
           <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
-          <button id="stopVideoMore" class="recommendation-more hidden" type="button">Thêm</button>
         </div>
       </section>
       <section id="revenueReport" class="hidden">
@@ -445,7 +450,6 @@
         <div class="finance-head"><h2>Tổng quan tài chính</h2><span id="financeUpdatedAt" class="finance-updated"></span></div>
         <div id="financeWarnings" class="operations-warning hidden"></div>
         <div id="financeSummary" class="summary finance-summary"></div>
-        <p id="financeDateScopeNote" class="finance-source-note"></p>
 
         <div class="finance-charts">
           <section class="finance-chart-card"><h2>Cơ cấu GMV tổng</h2><p>Chi phí và lợi nhuận gộp ước tính trong kỳ</p><div class="finance-chart-canvas"><canvas id="financeDonutChart"></canvas></div></section>
@@ -453,7 +457,7 @@
         </div>
 
         <section class="finance-tree" aria-label="Cây phân tích tài chính">
-          <details open><summary><span>PHÂN TÍCH TÀI CHÍNH ĐƠN HÀNG</span><small class="finance-source">TikTok Shop Finance API · TikTok Ads MCP</small></summary><div id="financeSettlementTree" class="finance-tree-body finance-breakdown"></div></details>
+          <details open><summary><span>PHÂN TÍCH TÀI CHÍNH ĐƠN HÀNG</span></summary><div id="financeSettlementTree" class="finance-tree-body finance-breakdown"></div></details>
         </section>
 
         <section class="finance-card finance-sku-card">
@@ -462,11 +466,6 @@
         </section>
       </section>
 
-    <div id="financeCostModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="financeCostTitle">
-      <section class="modal finance-cost-modal"><header class="modal-header"><div class="modal-title"><h2 id="financeCostTitle">Giá vốn SKU</h2><span id="financeCostSkuName"></span></div><button id="financeCostClose" class="modal-close" type="button" aria-label="Đóng">&times;</button></header>
-        <div class="modal-body"><form id="financeCostForm" class="finance-cost-form"><label>Giá vốn đơn vị (đ/sản phẩm)<input id="financeUnitCost" type="number" min="0" max="1000000000" step="1000" required></label><p id="financeCostError" class="form-error"></p><div class="finance-cost-actions"><button id="financeCostCancel" type="button" class="secondary">Hủy</button><button id="financeCostSave" type="submit">Lưu giá vốn</button></div></form></div>
-      </section>
-    </div>
     </main>
     <div id="creativeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="creativeModalTitle">
       <section class="modal">
@@ -522,6 +521,7 @@
             <a id="sellerConnectButton" class="button" href="/seller/auth/connect" target="_top">Kết nối Seller</a>
           </div>
           <div id="sellerConnectRequired" class="analytics-unavailable seller-required"><div><strong id="sellerRequiredTitle">Cần kết nối TikTok Shop Seller</strong><span id="sellerRequiredMeta">Tab doanh thu sử dụng Shop Analytics và Seller Order API với token riêng, không dùng OAuth của TikTok Ads.</span></div></div>
+          <section class="admin-sku-costs"><h3>Giá vốn theo SKU</h3><p>Giá mặc định 40.000đ/sản phẩm. Thay đổi được lưu riêng cho từng SKU.</p><div id="adminSkuCostList" class="admin-sku-cost-list"><div class="empty">Mở tab Tài chính để tải danh sách SKU.</div></div></section>
         </div>
       </section>
     </div>
@@ -563,13 +563,14 @@
       var deliveryFunnelChart = null;
       var financeDonutChart = null;
       var financeTrendChart = null;
-      var selectedFinanceSku = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
       var currentFinanceData = null;
       var initialParams = new URLSearchParams(window.location.search);
-      var requestedView = initialParams.get('view');
+      var viewPaths = { revenue:'/doanh-thu', ads:'/quang-cao', operations:'/hoan-huy-logistics', finance:'/tai-chinh' };
+      var pathViews = Object.keys(viewPaths).reduce(function(map,key){map[viewPaths[key]]=key;return map;},{});
+      var requestedView = pathViews[window.location.pathname] || initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
         (['ads', 'revenue', 'operations', 'finance'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
@@ -681,8 +682,9 @@
       });
 
       document.querySelectorAll('[data-report-view]').forEach(function (tab) {
-        tab.addEventListener('click', function () { setReportView(tab.dataset.reportView); });
+        tab.addEventListener('click', function () { setReportView(tab.dataset.reportView, true); });
       });
+      window.addEventListener('popstate', function(){setReportView(pathViews[window.location.pathname] || 'revenue', false);});
       document.getElementById('disconnectButton').addEventListener('click', function () {
         google.script.run.withSuccessHandler(function () { window.top.location.reload(); }).disconnectTikTok();
       });
@@ -716,6 +718,7 @@
             document.getElementById('adminPassword').value = '';
             document.getElementById('adminAuthModal').classList.add('hidden');
             document.getElementById('adminModal').classList.remove('hidden');
+            renderAdminSkuCosts();
           })
           .withFailureHandler(function (error) {
             submit.disabled = false;
@@ -845,8 +848,9 @@
         };
       }
 
-      function setReportView(view) {
+      function setReportView(view, updateUrl) {
         activeReportView = ['revenue', 'operations', 'finance'].indexOf(view) !== -1 ? view : 'ads';
+        if (updateUrl && window.location.pathname !== viewPaths[activeReportView]) history.pushState({ view:activeReportView }, '', viewPaths[activeReportView] + window.location.search);
         document.querySelectorAll('[data-report-view]').forEach(function (tab) {
           var selected = tab.dataset.reportView === activeReportView;
           tab.classList.toggle('active', selected);
@@ -1079,7 +1083,7 @@
         var processing = -Math.abs(Number(detail.processingFee || 0));
         feeChildren.push(financeStaticLine('Phí xử lý đơn hàng ước tính', processing));
         var excludedPlatform = ['transaction_fee_amount','transaction_fee_before_discount_amount','transaction_fee_discount_amount','gmv_max_transaction_fee_saving_amount','gmv_max_transaction_fee_savings_amount','platform_commission_amount'];
-        var excludedOther = ['voucher_xtra_service_fee_amount','order_processing_fee_amount','order_processing_fee'];
+        var excludedOther = ['voucher_xtra_service_fee_amount','order_processing_fee_amount','order_processing_fee','order_processing_fee_estimated'];
         feeChildren = feeChildren.concat(financeNamedLines(platform, excludedPlatform), financeNamedLines(fees.promotion, ['gmv_max_ad_fee_amount']), financeNamedLines(other, excludedOther), financeNamedLines(fees.tax, []));
         root.appendChild(financeDetails('Phí ước tính', -(Number(summaryData.feeTax || 0) + Number(summaryData.affiliate || 0)), feeChildren));
 
@@ -1100,7 +1104,7 @@
         var summary = current.summary || {}; var totalGmv = Math.max(0, Number(summary.sellerSubtotal || 0));
         var values = [summary.feeTax, summary.affiliate, summary.adsCost, summary.refunds, summary.grossProfit].map(function (value) { return Math.max(0, Number(value || 0)); });
         values[4] = Math.max(0, totalGmv - values.slice(0,4).reduce(function (total,value) { return total + value; }, 0));
-        financeDonutChart = new Chart(document.getElementById('financeDonutChart'), { type:'doughnut', data:{ labels:['Tổng phí & thuế','Hoa hồng KOC / Affiliate','Chi phí Ads','Hoàn tiền','Còn lại (Lợi nhuận gộp ước tính)'], datasets:[{ data:values, backgroundColor:['#2563eb','#7c3aed','#f59e0b','#ec4899','#22c55e'], borderColor:'#fff', borderWidth:2 }] }, options:{ maintainAspectRatio:false, cutout:'62%', plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true } }, tooltip:{ callbacks:{ label:function (context) { var percent = totalGmv ? Number(context.raw) / totalGmv * 100 : 0; return context.label + ': ' + moneyWhole(context.raw) + 'đ (' + number(percent) + '%)'; } } } } } });
+        financeDonutChart = new Chart(document.getElementById('financeDonutChart'), { type:'doughnut', data:{ labels:['Tổng phí & thuế','Hoa hồng KOC / Affiliate','Chi phí Ads','Hoàn tiền','Còn lại (Lợi nhuận gộp ước tính)'], datasets:[{ data:values, backgroundColor:['#2563eb','#7c3aed','#f59e0b','#ec4899','#22c55e'], borderColor:'#fff', borderWidth:2 }] }, options:{ maintainAspectRatio:false, cutout:'56%', plugins:{ legend:{ position:'right', labels:{ boxWidth:8, usePointStyle:true, color:'#475569', font:{family:'Inter',size:10} } }, tooltip:{ callbacks:{ label:function (context) { var percent = totalGmv ? Number(context.raw) / totalGmv * 100 : 0; return context.label + ': ' + moneyWhole(context.raw) + 'đ (' + number(percent) + '%)'; } } } } } });
         var trend = current.trend || [];
         document.getElementById('financeTrendNote').textContent = startDate === endDate ? 'Dữ liệu theo giờ trong ngày đã chọn' : 'Dữ liệu theo ngày trong khoảng đã chọn';
         financeTrendChart = new Chart(document.getElementById('financeTrendChart'), { data:{ labels:trend.map(function(point){return point.label;}), datasets:[
@@ -1110,33 +1114,17 @@
         ] }, options:{ maintainAspectRatio:false, interaction:{ mode:'index', intersect:false }, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true } }, tooltip:{ callbacks:{ label:function(context){return context.dataset.label + ': ' + moneyWhole(context.raw) + 'đ';} } } }, scales:{ x:{ stacked:false, ticks:{ maxRotation:0, autoSkip:true } }, y:{ beginAtZero:true, ticks:{ callback:function(value){return compactMoney(value);} } } } } });
       }
 
-      function openFinanceCostModal(sku) {
-        selectedFinanceSku = sku;
-        document.getElementById('financeCostSkuName').textContent = sku.skuName || sku.skuId;
-        document.getElementById('financeUnitCost').value = Math.round(Number(sku.unitCost || 40000));
-        document.getElementById('financeCostError').textContent = '';
-        document.getElementById('financeCostModal').classList.remove('hidden');
-        document.body.classList.add('modal-open');
-        setTimeout(function(){document.getElementById('financeUnitCost').select();},0);
+      function renderAdminSkuCosts() {
+        var list=document.getElementById('adminSkuCostList'); list.replaceChildren();
+        var flat=[]; (((currentFinanceData||{}).current||{}).sku||{products:[]}).products.forEach(function(product){(product.skus||[]).forEach(function(sku){flat.push(sku);});});
+        if(!flat.length){var empty=document.createElement('div');empty.className='empty';empty.textContent='Mở tab Tài chính để tải danh sách SKU.';list.appendChild(empty);return;}
+        flat.sort(function(a,b){return String(a.skuName).localeCompare(String(b.skuName),'vi');}).forEach(function(sku){
+          var row=document.createElement('div');row.className='admin-sku-cost-row';var name=document.createElement('span');name.textContent=sku.skuName;name.title=sku.skuName;
+          var input=document.createElement('input');input.type='number';input.min='0';input.max='1000000000';input.step='1000';input.value=Math.round(Number(sku.unitCost||40000));input.setAttribute('aria-label','Giá vốn '+sku.skuName);
+          var save=document.createElement('button');save.type='button';save.textContent='Lưu';save.addEventListener('click',function(){var value=Math.round(Number(input.value));if(!Number.isFinite(value)||value<0)return;save.disabled=true;google.script.run.withSuccessHandler(function(){save.disabled=false;save.textContent='Đã lưu';sku.unitCost=value;sku.costOfGoods=Number(sku.productQuantity||0)*value;renderFinanceSku((((currentFinanceData||{}).current||{}).sku));setTimeout(function(){save.textContent='Lưu';},1200);loadedFinanceScope='';}).withFailureHandler(function(){save.disabled=false;save.textContent='Thử lại';}).saveFinanceSkuCost({skuKey:String(sku.skuId||sku.skuName),unitCost:value});});
+          row.append(name,input,save);list.appendChild(row);
+        });
       }
-
-      function closeFinanceCostModal() {
-        document.getElementById('financeCostModal').classList.add('hidden');
-        selectedFinanceSku = null; syncModalOpenState();
-      }
-
-      document.getElementById('financeCostClose').addEventListener('click', closeFinanceCostModal);
-      document.getElementById('financeCostCancel').addEventListener('click', closeFinanceCostModal);
-      document.getElementById('financeCostModal').addEventListener('click', function(event){if(event.target===event.currentTarget)closeFinanceCostModal();});
-      document.getElementById('financeCostForm').addEventListener('submit', function(event){
-        event.preventDefault(); if(!selectedFinanceSku)return;
-        var value = Math.round(Number(document.getElementById('financeUnitCost').value));
-        if(!Number.isFinite(value)||value<0){document.getElementById('financeCostError').textContent='Giá vốn không hợp lệ.';return;}
-        var save=document.getElementById('financeCostSave'); save.disabled=true;
-        google.script.run.withSuccessHandler(function(){save.disabled=false;closeFinanceCostModal();loadedFinanceScope='';requestFinanceAnalysis(true);})
-          .withFailureHandler(function(error){save.disabled=false;document.getElementById('financeCostError').textContent=error.message||String(error);})
-          .saveFinanceSkuCost({skuKey:String(selectedFinanceSku.skuId||selectedFinanceSku.skuName),unitCost:value});
-      });
 
       function renderFinanceSku(skuData) {
         skuData = skuData || { products: [] };
@@ -1149,8 +1137,7 @@
           var color = palette[hash % palette.length]; var row = document.createElement('tr'); row.className = 'finance-sku-row';
           var nameCell = document.createElement('td'); var nameWrap = document.createElement('div'); nameWrap.className = 'finance-sku-name';
           var badge = document.createElement('span'); badge.className = 'finance-sku-badge'; badge.textContent = sku.skuName; badge.style.setProperty('--sku-bg',color.bg); badge.style.setProperty('--sku-color',color.color); badge.style.setProperty('--sku-border',color.border);
-          var info = document.createElement('button'); info.type='button'; info.className='finance-sku-info'; info.textContent='i'; info.setAttribute('aria-label','Cấu hình giá vốn ' + sku.skuName); info.addEventListener('click',function(){openFinanceCostModal(sku);});
-          nameWrap.append(badge,info); nameCell.appendChild(nameWrap); row.appendChild(nameCell);
+          nameWrap.append(badge); nameCell.appendChild(nameWrap); row.appendChild(nameCell);
           [integer(sku.unitsSold), integer(sku.productQuantity), moneyWhole(sku.costOfGoods)].forEach(function (text) { var cell = document.createElement('td'); cell.textContent = text; row.appendChild(cell); });
           rows.appendChild(row);
         });
@@ -1166,7 +1153,6 @@
         var generated = new Date(data.generatedAt);
         document.getElementById('financeUpdatedAt').textContent = 'Cập nhật lúc ' + new Intl.DateTimeFormat('vi-VN', { hour:'2-digit', minute:'2-digit' }).format(generated);
         document.getElementById('updatedAt').textContent = 'Cập nhật: ' + new Intl.DateTimeFormat('vi-VN', { dateStyle:'short', timeStyle:'medium' }).format(generated);
-        document.getElementById('financeDateScopeNote').textContent = data.dateScopeNote || '';
         var warning = document.getElementById('financeWarnings'); warning.textContent = (data.warnings || []).join(' · '); warning.classList.toggle('hidden', !(data.warnings || []).length);
         var current = data.current || {};
         renderFinanceSummary(data);
@@ -1188,11 +1174,14 @@
         showError(error);
       }
 
-      function operationsMetric(labelText, valueText, className) {
+      function operationsMetric(labelText, valueText, className, current, previous) {
         var box = document.createElement('div'); box.className = 'metric metric-' + className;
         var label = document.createElement('span'); label.textContent = labelText;
         var value = document.createElement('strong'); value.textContent = valueText;
-        box.append(label, value); return box;
+        var comparison=document.createElement('span');var change=changeValue(current,previous);
+        comparison.className='metric-change '+(change==null?'neutral':(change<=0?'good':'bad'));
+        comparison.textContent=change==null?'Không có dữ liệu kỳ trước':((change>=0?'↑ ':'↓ ')+number(Math.abs(change))+'% so với kỳ trước');
+        box.append(label, value, comparison); return box;
       }
 
       function renderOperationsAnalysis(data) {
@@ -1201,14 +1190,15 @@
         document.getElementById('updatedAt').textContent = 'Cập nhật: ' +
           new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(data.generatedAt));
         var totals = data.totals || {};
+        var previous = data.previous || {};
         var roles = totals.cancellationRoles || {};
         var types = totals.returnTypes || {};
         var summary = document.getElementById('operationsSummary'); summary.replaceChildren();
         summary.append(
-          operationsMetric('Tỷ lệ hủy đơn', percent(totals.cancellationRate), 'cancelRate'),
-          operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate'),
-          operationsMetric('Tỷ lệ đơn huỷ do sự cố logistics', percent(totals.logisticsCancellationRate), 'failedRate'),
-          operationsMetric('Giá trị tiền hàng rủi ro', moneyWhole(totals.atRiskValue) + ' VND', 'riskValue')
+          operationsMetric('Tỷ lệ hủy đơn', percent(totals.cancellationRate), 'cancelRate', totals.cancellationRate, previous.cancellationRate),
+          operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate', totals.returnRate, previous.returnRate),
+          operationsMetric('Tỷ lệ đơn huỷ do sự cố logistics', percent(totals.logisticsCancellationRate), 'failedRate', totals.logisticsCancellationRate, previous.logisticsCancellationRate),
+          operationsMetric('Giá trị tiền hàng rủi ro', moneyWhole(totals.atRiskValue) + ' VND', 'riskValue', totals.atRiskValue, previous.atRiskValue)
         );
         var warning = document.getElementById('operationsWarnings');
         warning.textContent = (data.warnings || []).join(' · ');

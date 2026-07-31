@@ -163,6 +163,8 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
 
 async function assetResponse(request:Request,env:Env):Promise<Response>{
   const assetUrl=new URL(request.url);
+  const reportPaths=new Set(['/doanh-thu','/quang-cao','/hoan-huy-logistics','/tai-chinh']);
+  if(reportPaths.has(assetUrl.pathname))assetUrl.pathname='/';
   const isHtml=assetUrl.pathname==='/'||assetUrl.pathname.endsWith('.html');
   if(isHtml)assetUrl.searchParams.set('__asset_version','20260729-utf8');
   const response=await env.ASSETS.fetch(new Request(assetUrl.toString(),request));

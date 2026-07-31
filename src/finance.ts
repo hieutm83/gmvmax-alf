@@ -17,6 +17,10 @@ export function parseSkuProductFactor(skuName: unknown): number {
   return total > 0 ? total : 1;
 }
 
+export function estimatedVoucherXtraFee(discountedOrderValue: unknown): number {
+  return -Math.abs(numberValue(discountedOrderValue) * 0.05);
+}
+
 const PLATFORM_FEES = new Set([
   'platform_commission_amount', 'transaction_fee_amount', 'referral_fee_amount',
   'refund_administration_fee_amount', 'credit_card_handling_fee_amount',
@@ -451,6 +455,9 @@ function financeTrend(input: Scope, combined: any, adsReport: any): any[] {
     const detail = grouped.get(point.key);
     delete detail.fees.otherPrograms.order_processing_fee_amount;
     delete detail.fees.otherPrograms.order_processing_fee;
+    delete detail.fees.otherPrograms.voucher_xtra_service_fee_amount;
+    const discountedOrderValue = numberValue(detail.revenue.subtotalBeforeDiscount) + numberValue(detail.revenue.sellerDiscount);
+    detail.fees.otherPrograms.voucher_xtra_service_fee_amount = estimatedVoucherXtraFee(discountedOrderValue);
     const processingFee = Math.max(0, Math.round(numberValue(detail.orderCount))) * 3000;
     if (processingFee) detail.fees.otherPrograms.order_processing_fee_estimated = -processingFee;
     const summary = calculateFinanceSummary(detail, adsCost);
@@ -487,6 +494,9 @@ async function period(env: Env, cipher: string, input: Scope, includeSku: boolea
   combined.shipping.breakdown = nonZero(combined.shipping.breakdown);
   delete combined.fees.otherPrograms.order_processing_fee_amount;
   delete combined.fees.otherPrograms.order_processing_fee;
+  delete combined.fees.otherPrograms.voucher_xtra_service_fee_amount;
+  const discountedOrderValue = numberValue(combined.revenue.subtotalBeforeDiscount) + numberValue(combined.revenue.sellerDiscount);
+  combined.fees.otherPrograms.voucher_xtra_service_fee_amount = estimatedVoucherXtraFee(discountedOrderValue);
   combined.processingFee = Math.max(0, Math.round(numberValue(combined.orderCount))) * 3000;
   if (combined.processingFee) combined.fees.otherPrograms.order_processing_fee_estimated = -combined.processingFee;
   const summary = calculateFinanceSummary(combined, ads.cost);
@@ -541,8 +551,7 @@ export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> 
     schemaVersion: 'finance-v2', generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
     previousStartDate, previousEndDate, shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },
     warnings, current, previous: { ...previous.summary },
-    todaySettlementNotice: false,
-    dateScopeNote: 'Dữ liệu tài chính được tổng hợp theo ngày tạo đơn hàng trong khoảng thời gian đã chọn.'
+    todaySettlementNotice: false
   };
   const ttl = input.endDate >= today ? 300 : 86400;
   await cachePut(env, key, result, ttl);

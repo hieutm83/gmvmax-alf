@@ -182,7 +182,7 @@ function packageStatus(order: any): string {
 }
 
 export async function loadOperationsAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-operations-v8-return-reasons-funnel', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('seller-operations-v9-comparison', { startDate: input.startDate, endDate: input.endDate, skipComparison: input.skipComparison === true });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
 
@@ -296,8 +296,14 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
   incidents.sort((left, right) => numberValue(right.updatedAt) - numberValue(left.updatedAt));
 
   const totalOrders = populationOrders.length;
+  const days = Math.max(1, Math.floor((Date.parse(`${input.endDate}T00:00:00Z`) - Date.parse(`${input.startDate}T00:00:00Z`)) / 86400000) + 1);
+  const previousEndDate = shiftDate(input.startDate, -1);
+  const previousStartDate = shiftDate(previousEndDate, -(days - 1));
+  const previous = input.skipComparison === true ? null : await loadOperationsAnalysis(env, {
+    startDate: previousStartDate, endDate: previousEndDate, forceRefresh: input.forceRefresh === true, skipComparison: true
+  }).catch((error) => { warnings.push(`Kỳ trước: ${errorMessage(error)}`); return null; });
   const result = {
-    schemaVersion: 'operations-v8-return-reasons-funnel',
+    schemaVersion: 'operations-v9-comparison',
     generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
     shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code }, warnings,
     totals: {
@@ -319,7 +325,10 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     returnReasons: breakdown(returnReasons),
     failedReasons: breakdown(systemCancelReasons),
     funnel,
-    incidents
+    incidents,
+    previous: previous ? previous.totals : null,
+    previousStartDate,
+    previousEndDate
   };
   await cachePut(env, key, result, 300);
   return result;
