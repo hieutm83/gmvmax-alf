@@ -47,7 +47,7 @@ async function contextsRows(env: Env, session: McpSession, advertiserId: string,
 }
 
 export async function loadMainReport(env: Env, input: any, force = false): Promise<any> {
-  const key = stableKey('main-v5', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
+  const key = stableKey('main-v6', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
   const { advertiserId, storeId, startDate, endDate } = input;
   const multiDay = startDate !== endDate;
   const session = await createSession(env);
@@ -94,8 +94,55 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
     const match = value.match(/(?:T|\s)(\d{1,2})(?::|$)/) || value.match(/^(\d{1,2})(?::|$)/); if (!match) continue;
     const index = Number(match[1]); if (index >= 0 && index < 24) add(hourly[index].metrics, metric(row.metrics || {}));
   }
-  let hourlyMode: 'hourly' | 'cumulative' = 'hourly';
-  if (!multiDay && !hourly.some((point) => point.metrics.cost || point.metrics.grossRevenue) && (totals.cost || totals.grossRevenue)) {
+  let hourlyMode: 'hourly' | 'snapshots' | 'cumulative' = 'hourly';
+  if (!multiDay) {
+    const stored = await env.DB.prepare(`SELECT report_hour,metrics_json FROM hourly_metrics
+      WHERE advertiser_id=? AND store_id=? AND report_date=? ORDER BY report_hour`)
+      .bind(advertiserId, storeId, startDate).all<{ report_hour: number; metrics_json: string }>();
+    let baseline = { cost: 0, orders: 0, grossRevenue: 0 };
+    let restored = 0;
+    for (const row of stored.results || []) {
+      const value = JSON.parse(row.metrics_json || '{}');
+      const index = Number(row.report_hour) - 1;
+      if (index < 0 || index >= 24) continue;
+      let metrics = value;
+      if (value.snapshotMode === 'cumulative') {
+        metrics = {
+          ...value,
+          cost: Math.max(0, numberValue(value.cost) - baseline.cost),
+          orders: Math.max(0, numberValue(value.orders) - baseline.orders),
+          grossRevenue: Math.max(0, numberValue(value.grossRevenue) - baseline.grossRevenue)
+        };
+        metrics.costPerOrder = metrics.orders ? metrics.cost / metrics.orders : null;
+        metrics.roi = metrics.cost ? metrics.grossRevenue / metrics.cost : null;
+        baseline = { cost: numberValue(value.cost), orders: numberValue(value.orders), grossRevenue: numberValue(value.grossRevenue) };
+      } else {
+        baseline.cost += numberValue(value.cost); baseline.orders += numberValue(value.orders);
+        baseline.grossRevenue += numberValue(value.grossRevenue);
+      }
+      if (numberValue(metrics.cost) || numberValue(metrics.grossRevenue) || numberValue(metrics.orders)) {
+        hourly[index].metrics = { ...empty(), ...metrics };
+        restored += 1;
+      }
+    }
+    if (restored) {
+      hourlyMode = 'snapshots';
+      const now = new Date();
+      if (endDate === dateInTimezone(now, env.TIMEZONE)) {
+        const index = Math.max(0, Math.min(23, hourInTimezone(now, env.TIMEZONE) - 1));
+        const remainder = {
+          cost: Math.max(0, totals.cost - baseline.cost), orders: Math.max(0, totals.orders - baseline.orders),
+          grossRevenue: Math.max(0, totals.grossRevenue - baseline.grossRevenue)
+        };
+        if (remainder.cost || remainder.orders || remainder.grossRevenue) hourly[index].metrics = {
+          ...empty(), ...remainder,
+          costPerOrder: remainder.orders ? remainder.cost / remainder.orders : null,
+          roi: remainder.cost ? remainder.grossRevenue / remainder.cost : null
+        };
+      }
+    }
+  }
+  if (!multiDay && hourlyMode === 'hourly' && !hourly.some((point) => point.metrics.cost || point.metrics.grossRevenue) && (totals.cost || totals.grossRevenue)) {
     const now = new Date();
     const isToday = endDate === dateInTimezone(now, env.TIMEZONE);
     const fallbackIndex = isToday ? Math.max(0, Math.min(23, hourInTimezone(now, env.TIMEZONE) - 1)) : 23;

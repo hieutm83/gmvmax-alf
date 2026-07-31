@@ -608,9 +608,7 @@
       var sellerOAuthCanAuthorize = false;
       var currentFinanceData = null;
       var initialParams = new URLSearchParams(window.location.search);
-      var viewPaths = { revenue:'/doanh-thu', ads:'/quang-cao', operations:'/hoan-huy-logistics', finance:'/tai-chinh', 'content-koc':'/content-koc' };
-      var pathViews = Object.keys(viewPaths).reduce(function(map,key){map[viewPaths[key]]=key;return map;},{});
-      var requestedView = pathViews[window.location.pathname] || initialParams.get('view');
+      var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
         (['ads', 'revenue', 'operations', 'finance', 'content-koc'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
@@ -727,7 +725,6 @@
       document.querySelectorAll('[data-report-view]').forEach(function (tab) {
         tab.addEventListener('click', function () { setReportView(tab.dataset.reportView, true); });
       });
-      window.addEventListener('popstate', function(){setReportView(pathViews[window.location.pathname] || 'revenue', false);});
       document.getElementById('disconnectButton').addEventListener('click', function () {
         google.script.run.withSuccessHandler(function () { window.top.location.reload(); }).disconnectTikTok();
       });
@@ -899,7 +896,7 @@
 
       function setReportView(view, updateUrl) {
         activeReportView = ['ads', 'revenue', 'operations', 'finance', 'content-koc'].indexOf(view) !== -1 ? view : 'revenue';
-        if (updateUrl && window.location.pathname !== viewPaths[activeReportView]) history.pushState({ view:activeReportView }, '', viewPaths[activeReportView] + window.location.search);
+        if (updateUrl && window.location.pathname !== '/') history.replaceState({ view:activeReportView }, '', '/' + window.location.search);
         document.querySelectorAll('[data-report-view]').forEach(function (tab) {
           var selected = tab.dataset.reportView === activeReportView;
           tab.classList.toggle('active', selected);

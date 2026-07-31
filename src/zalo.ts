@@ -110,7 +110,7 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     .bind(reportDate, reportHour, 'SENT', messageId, JSON.stringify({ totals:t })).run();
   await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
     ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)
-    .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(t)).run();
+    .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : t)).run();
 }
 
 function deepFind(input: any, keys: string[]): any {
