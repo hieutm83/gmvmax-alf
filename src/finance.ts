@@ -187,7 +187,6 @@ async function settledBlock(env: Env, cipher: string, startDate: string, endDate
   const list = await statements(env, cipher, startDate, horizonEnd);
   const total = aggregateStatementTransactions([]);
   const statementRows: any[] = [];
-  const scopedTransactions: any[] = [];
   const start = epoch(startDate);
   const end = epoch(shiftDate(endDate, 1));
   for (const statement of list) {
@@ -197,7 +196,6 @@ async function settledBlock(env: Env, cipher: string, startDate: string, endDate
         return created >= start && created < end;
       });
     if (!transactions.length) continue;
-    scopedTransactions.push(...transactions);
     const detail = aggregateStatementTransactions(transactions);
     mergeBreakdown(total, detail);
     statementRows.push({
@@ -220,7 +218,6 @@ async function settledBlock(env: Env, cipher: string, startDate: string, endDate
   total.fees.tax = nonZero(total.fees.tax);
   total.shipping.breakdown = nonZero(total.shipping.breakdown);
   total.statements = statementRows;
-  total.transactions = scopedTransactions;
   return total;
 }
 
@@ -281,7 +278,6 @@ async function unsettledBlock(env: Env, cipher: string, startDate: string, endDa
     sumEstAdjustmentAmount: numberValue(sums?.sum_est_adjustment_amount),
     transactionCount: transactions.length,
     detail: aggregateStatementTransactions(normalized),
-    transactions: normalized,
     reasons: Array.from(reasonCounts, ([label, item]) => ({ label, count: item.count, amount: item.amount, rawValues: Array.from(item.raw) })),
     observedOrderCreateTime: orderTimes.length ? { min: Math.min(...orderTimes) * 1000, max: Math.max(...orderTimes) * 1000,
       allWithinSelectedRange: orderTimes.every((value) => value >= start && value < end) } : null
@@ -435,36 +431,6 @@ export function calculateFinanceSummary(detail: any, adsCost: number): any {
   };
 }
 
-function financeTrend(input: Scope, combined: any, adsReport: any): any[] {
-  const hourly = input.startDate === input.endDate;
-  const points = hourly
-    ? Array.from({ length: 24 }, (_, hour) => ({ key: String(hour).padStart(2, '0'), label: `${String(hour).padStart(2, '0')}:00` }))
-    : (() => { const rows: any[] = []; for (let date = input.startDate; date <= input.endDate; date = shiftDate(date, 1)) rows.push({ key: date, label: `${date.slice(8)}/${date.slice(5, 7)}` }); return rows; })();
-  const grouped = new Map(points.map((point) => [point.key, aggregateStatementTransactions([])]));
-  for (const transaction of combined.transactions || []) {
-    const created = numberValue(transaction.order_create_time);
-    if (!created) continue;
-    const date = new Date(created * 1000);
-    const key = hourly
-      ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }).format(date).slice(0, 2)
-      : dateInTimezone(date, 'Asia/Bangkok');
-    const bucket = grouped.get(key); if (bucket) mergeBreakdown(bucket, aggregateStatementTransactions([transaction]));
-  }
-  return points.map((point, index) => {
-    const adsCost = hourly ? numberValue(adsReport.hourly?.[index]?.metrics?.cost) : numberValue(adsReport.daily?.[index]?.metrics?.cost);
-    const detail = grouped.get(point.key);
-    delete detail.fees.otherPrograms.order_processing_fee_amount;
-    delete detail.fees.otherPrograms.order_processing_fee;
-    delete detail.fees.otherPrograms.voucher_xtra_service_fee_amount;
-    const discountedOrderValue = numberValue(detail.revenue.subtotalBeforeDiscount) + numberValue(detail.revenue.sellerDiscount);
-    detail.fees.otherPrograms.voucher_xtra_service_fee_amount = estimatedVoucherXtraFee(discountedOrderValue);
-    const processingFee = Math.max(0, Math.round(numberValue(detail.orderCount))) * 3000;
-    if (processingFee) detail.fees.otherPrograms.order_processing_fee_estimated = -processingFee;
-    const summary = calculateFinanceSummary(detail, adsCost);
-    return { ...point, gmv: summary.sellerSubtotal, totalCost: summary.feeTax + summary.affiliate + summary.adsCost + summary.refunds, grossProfit: summary.grossProfit };
-  });
-}
-
 async function period(env: Env, cipher: string, input: Scope, includeSku: boolean, warnings: string[]): Promise<any> {
   const storeIdPromise = resolveDefaultStoreId(env);
   const settledPromise = settledBlock(env, cipher, input.startDate, input.endDate)
@@ -485,7 +451,6 @@ async function period(env: Env, cipher: string, input: Scope, includeSku: boolea
   const combined = aggregateStatementTransactions([]);
   mergeBreakdown(combined, settled);
   mergeBreakdown(combined, unsettled.detail || aggregateStatementTransactions([]));
-  combined.transactions = [...(settled.transactions || []), ...(unsettled.transactions || [])];
   combined.fees.platform = nonZero(combined.fees.platform);
   combined.fees.koc = nonZero(combined.fees.koc);
   combined.fees.promotion = nonZero(combined.fees.promotion);
@@ -500,8 +465,7 @@ async function period(env: Env, cipher: string, input: Scope, includeSku: boolea
   combined.processingFee = Math.max(0, Math.round(numberValue(combined.orderCount))) * 3000;
   if (combined.processingFee) combined.fees.otherPrograms.order_processing_fee_estimated = -combined.processingFee;
   const summary = calculateFinanceSummary(combined, ads.cost);
-  const trend = financeTrend(input, combined, adsReport);
-  return { settled, unsettled, combined, summary, sku, ads, trend,
+  return { settled, unsettled, combined, summary, sku, ads,
     netProfitSettledOnly: summary.grossProfit, netProfitWithEstimate: summary.grossProfit,
     totalGmv: summary.sellerSubtotal };
 }
@@ -530,7 +494,7 @@ export async function loadSkuUnitCosts(env: Env): Promise<any> {
 }
 
 export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> {
-  const key = stableKey('seller-finance-v2-order-created', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('seller-finance-v3-compact', { startDate: input.startDate, endDate: input.endDate });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
   const shop = await authorizedShop(env);
@@ -554,6 +518,8 @@ export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> 
     todaySettlementNotice: false
   };
   const ttl = input.endDate >= today ? 300 : 86400;
-  await cachePut(env, key, result, ttl);
+  // A long finance range must still render even when its optional cache entry
+  // exceeds D1's row/value limit.
+  await cachePut(env, key, result, ttl).catch(() => undefined);
   return result;
 }

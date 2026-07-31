@@ -205,7 +205,7 @@
       .finance-sku-card { margin-top:20px; }
       .finance-table tbody tr.finance-sku-row td { background:#fff; }
       .finance-table tbody tr.finance-sku-row:hover td { background:#f8fafc; }
-      .finance-charts { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:16px; margin-top:20px; }
+      .finance-charts { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; margin-top:20px; }
       .finance-chart-card { min-width:0; padding:18px; border:1px solid var(--border); background:#fff; border-radius:8px; }
       .finance-chart-card h2 { margin:0 0 4px; font-size:14px; }
       .finance-chart-card:first-child h2 { text-align:center; }
@@ -274,9 +274,8 @@
       .gmv-analysis-grid.hidden, .analytics-unavailable.hidden { display: none; }
       .gmv-attribution-chart { position: relative; height: 300px; }
       .gmv-source-table { table-layout: fixed; }
-      .gmv-source-table th:first-child, .gmv-source-table td:first-child { width: 52%; min-width: 0; }
-      .gmv-source-table th:nth-child(2), .gmv-source-table td:nth-child(2) { width: 27%; }
-      .gmv-source-table th:nth-child(3), .gmv-source-table td:nth-child(3) { width: 21%; }
+      .gmv-source-table th:first-child, .gmv-source-table td:first-child { width:32%; min-width:170px; }
+      .gmv-source-table th:not(:first-child), .gmv-source-table td:not(:first-child) { width:auto; min-width:105px; }
       .gmv-source-table td { height: 46px; }
       .gmv-source-row td { color: var(--text); font-weight: 800; background: #f8fafc; }
       .gmv-source-label { display: inline-flex; align-items: center; gap: 8px; }
@@ -356,7 +355,7 @@
             <div class="gmv-attribution-chart"><canvas id="costAttributionChart"></canvas></div>
             <div class="table-wrap">
               <table class="gmv-source-table">
-                <thead><tr><th>Nguồn</th><th>COST</th><th>So với kỳ trước</th></tr></thead>
+                <thead><tr><th>Nguồn</th><th>COST</th><th>Gross revenue</th><th>ROI</th><th>Impressions</th><th>Click</th><th>So với kỳ trước</th></tr></thead>
                 <tbody id="costAttributionRows"></tbody>
               </table>
             </div>
@@ -453,7 +452,6 @@
 
         <div class="finance-charts">
           <section class="finance-chart-card"><h2>Cơ cấu GMV tổng</h2><p>Chi phí và lợi nhuận gộp ước tính trong kỳ</p><div class="finance-chart-canvas"><canvas id="financeDonutChart"></canvas></div></section>
-          <section class="finance-chart-card"><h2>GMV, tổng chi phí &amp; lợi nhuận</h2><p id="financeTrendNote"></p><div class="finance-chart-canvas"><canvas id="financeTrendChart"></canvas></div></section>
         </div>
 
         <section class="finance-tree" aria-label="Cây phân tích tài chính">
@@ -562,7 +560,6 @@
       var failedReasonsChart = null;
       var deliveryFunnelChart = null;
       var financeDonutChart = null;
-      var financeTrendChart = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
@@ -1100,18 +1097,10 @@
 
       function renderFinanceCharts(current, startDate, endDate) {
         if (financeDonutChart) financeDonutChart.destroy();
-        if (financeTrendChart) financeTrendChart.destroy();
         var summary = current.summary || {}; var totalGmv = Math.max(0, Number(summary.sellerSubtotal || 0));
         var values = [summary.feeTax, summary.affiliate, summary.adsCost, summary.refunds, summary.grossProfit].map(function (value) { return Math.max(0, Number(value || 0)); });
         values[4] = Math.max(0, totalGmv - values.slice(0,4).reduce(function (total,value) { return total + value; }, 0));
         financeDonutChart = new Chart(document.getElementById('financeDonutChart'), { type:'doughnut', data:{ labels:['Tổng phí & thuế','Hoa hồng KOC / Affiliate','Chi phí Ads','Hoàn tiền','Còn lại (Lợi nhuận gộp ước tính)'], datasets:[{ data:values, backgroundColor:['#2563eb','#7c3aed','#f59e0b','#ec4899','#22c55e'], borderColor:'#fff', borderWidth:2 }] }, options:{ maintainAspectRatio:false, cutout:'56%', plugins:{ legend:{ position:'right', labels:{ boxWidth:8, usePointStyle:true, color:'#475569', font:{family:'Inter',size:10} } }, tooltip:{ callbacks:{ label:function (context) { var percent = totalGmv ? Number(context.raw) / totalGmv * 100 : 0; return context.label + ': ' + moneyWhole(context.raw) + 'đ (' + number(percent) + '%)'; } } } } } });
-        var trend = current.trend || [];
-        document.getElementById('financeTrendNote').textContent = startDate === endDate ? 'Dữ liệu theo giờ trong ngày đã chọn' : 'Dữ liệu theo ngày trong khoảng đã chọn';
-        financeTrendChart = new Chart(document.getElementById('financeTrendChart'), { data:{ labels:trend.map(function(point){return point.label;}), datasets:[
-          { type:'bar', label:'GMV Tổng', data:trend.map(function(point){return point.gmv;}), backgroundColor:'#2563eb', borderRadius:4 },
-          { type:'bar', label:'Tổng chi phí', data:trend.map(function(point){return point.totalCost;}), backgroundColor:'#f59e0b', borderRadius:4 },
-          { type:'line', label:'Lợi nhuận gộp ước tính', data:trend.map(function(point){return point.grossProfit;}), borderColor:'#16a34a', backgroundColor:'#16a34a', pointRadius:2, tension:.25 }
-        ] }, options:{ maintainAspectRatio:false, interaction:{ mode:'index', intersect:false }, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true } }, tooltip:{ callbacks:{ label:function(context){return context.dataset.label + ': ' + moneyWhole(context.raw) + 'đ';} } } }, scales:{ x:{ stacked:false, ticks:{ maxRotation:0, autoSkip:true } }, y:{ beginAtZero:true, ticks:{ callback:function(value){return compactMoney(value);} } } } } });
       }
 
       function renderAdminSkuCosts() {
@@ -1133,12 +1122,16 @@
         var flat = [];
         (skuData.products || []).forEach(function (product) { (product.skus || []).forEach(function (sku) { flat.push(sku); }); });
         flat.sort(function (left, right) { return Number(right.unitsSold) - Number(left.unitsSold); }).forEach(function (sku) {
+          var productFactor=String(sku.skuName||'').split('+').reduce(function(sum,part){var match=part.trim().match(/^(\d+)\s+\S/);return sum+(match?Number(match[1]):0);},0)||1;
+          var productQuantity=sku.productQuantity==null?Number(sku.unitsSold||0)*productFactor:Number(sku.productQuantity);
+          var costOfGoods=sku.costOfGoods==null?productQuantity*Number(sku.unitCost||40000):Number(sku.costOfGoods);
           var hash = Array.from(String(sku.skuName || '')).reduce(function (total, char) { return ((total * 31) + char.charCodeAt(0)) >>> 0; }, 0);
           var color = palette[hash % palette.length]; var row = document.createElement('tr'); row.className = 'finance-sku-row';
           var nameCell = document.createElement('td'); var nameWrap = document.createElement('div'); nameWrap.className = 'finance-sku-name';
           var badge = document.createElement('span'); badge.className = 'finance-sku-badge'; badge.textContent = sku.skuName; badge.style.setProperty('--sku-bg',color.bg); badge.style.setProperty('--sku-color',color.color); badge.style.setProperty('--sku-border',color.border);
           nameWrap.append(badge); nameCell.appendChild(nameWrap); row.appendChild(nameCell);
-          [integer(sku.unitsSold), integer(sku.productQuantity), moneyWhole(sku.costOfGoods)].forEach(function (text) { var cell = document.createElement('td'); cell.textContent = text; row.appendChild(cell); });
+          [integer(sku.unitsSold), integer(productQuantity), moneyWhole(costOfGoods)].forEach(function (text) { var cell = document.createElement('td'); cell.textContent = text; row.appendChild(cell); });
+          sku.productQuantity=productQuantity;sku.costOfGoods=costOfGoods;
           rows.appendChild(row);
         });
         var total = document.getElementById('financeSkuTotal'); total.replaceChildren();
@@ -1423,6 +1416,7 @@
         sources.forEach(function (source) {
           var value = Number(data[source.key]) || 0;
           var previousValue = Number(previous && previous[source.key]) || 0;
+          var sourceMetrics = data.metrics && data.metrics[source.key] || {};
           var row = document.createElement('tr'); row.className = 'gmv-source-row';
           var labelCell = document.createElement('td'); var labelWrap = document.createElement('span'); labelWrap.className = 'gmv-source-label';
           var dot = document.createElement('span'); dot.className = 'gmv-source-dot'; dot.style.background = source.color; labelWrap.appendChild(dot);
@@ -1430,10 +1424,14 @@
           var contribution = document.createElement('span'); contribution.className = 'gmv-contribution'; contribution.textContent = ' (Đóng góp ' + number(value / total * 100) + '%)';
           labelWrap.appendChild(contribution); labelCell.appendChild(labelWrap);
           var valueCell = document.createElement('td'); valueCell.textContent = moneyWhole(value);
+          var grossRevenueCell=document.createElement('td');grossRevenueCell.textContent=compactMoney(sourceMetrics.grossRevenue||0);
+          var roiCell=document.createElement('td');roiCell.textContent=number(sourceMetrics.roi||0);
+          var impressionsCell=document.createElement('td');impressionsCell.textContent=compactNumber(sourceMetrics.impressions||0);
+          var clicksCell=document.createElement('td');clicksCell.textContent=compactNumber(sourceMetrics.clicks||0);
           var changeCell = document.createElement('td'); var change = changeValue(value, previousValue);
           changeCell.className = 'gmv-change ' + (change == null ? 'neutral' : (change <= 0 ? 'good' : 'bad'));
           changeCell.textContent = change == null ? '—' : ((change >= 0 ? '↑ ' : '↓ ') + number(Math.abs(change)) + '%');
-          row.append(labelCell, valueCell, changeCell); rows.appendChild(row);
+          row.append(labelCell, valueCell, grossRevenueCell, roiCell, impressionsCell, clicksCell, changeCell); rows.appendChild(row);
         });
       }
 
@@ -1502,10 +1500,10 @@
         renderVideoRecommendations(null);
         var totals = data.totals;
         var items = [
-          ['Cost', moneyWhole(totals.cost), 'cost'],
+          ['Cost', compactMoney(totals.cost), 'cost'],
           ['SKU orders', integer(totals.orders), 'orders'],
-          ['Cost per order', moneyWhole(totals.costPerOrder), 'costPerOrder'],
-          ['Gross revenue', moneyWhole(totals.grossRevenue), 'grossRevenue'],
+          ['Cost per order', compactMoney(totals.costPerOrder), 'costPerOrder'],
+          ['Gross revenue', compactMoney(totals.grossRevenue), 'grossRevenue'],
           ['ROI', number(totals.roi), 'roi'],
           ['Total creatives', 'Đang tải', 'totalCreatives'],
           ['Impressions', 'Đang tải', 'impressions'],
@@ -1714,9 +1712,9 @@
         var impressionsElement = document.getElementById('metric-impressions');
         var trafficElement = document.getElementById('metric-traffic');
         if (!creativeElement || !impressionsElement || !trafficElement) return;
-        creativeElement.textContent = integer(data.totalCreatives);
-        impressionsElement.textContent = integer(data.impressions);
-        trafficElement.textContent = integer(data.traffic);
+        creativeElement.textContent = compactNumber(data.totalCreatives);
+        impressionsElement.textContent = compactNumber(data.impressions);
+        trafficElement.textContent = compactNumber(data.traffic);
         currentCreativeSummary = data;
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
