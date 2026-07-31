@@ -165,7 +165,7 @@
       .finance-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
       .finance-head h2 { margin:0; font-size:16px; }
       .finance-updated { color:var(--text-muted); font-size:12px; font-weight:600; }
-      .finance-summary { grid-template-columns:repeat(6,minmax(0,1fr)); }
+      .finance-summary { grid-template-columns:repeat(5,minmax(0,1fr)); }
       .finance-summary .metric { min-width:0; }
       .finance-notice { margin:0 0 14px; padding:11px 14px; border:1px solid #fed7aa; border-left:3px solid #f59e0b; background:#fff7ed; color:#9a3412; border-radius:6px; font-size:12px; }
       .finance-source-note { margin:8px 0 0; color:var(--text-muted); font-size:11px; }
@@ -205,6 +205,9 @@
       .finance-sku-card { margin-top:20px; }
       .finance-table tbody tr.finance-sku-row td { background:#fff; }
       .finance-table tbody tr.finance-sku-row:hover td { background:#f8fafc; }
+      .finance-table { table-layout:fixed; }
+      .finance-table th:first-child,.finance-table td:first-child { width:55%; }
+      .finance-table th:nth-child(n+2),.finance-table td:nth-child(n+2) { width:15%; min-width:0; text-align:right; }
       .finance-charts { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; margin-top:20px; }
       .finance-chart-card { min-width:0; padding:18px; border:1px solid var(--border); background:#fff; border-radius:8px; }
       .finance-chart-card h2 { margin:0 0 4px; font-size:14px; }
@@ -277,6 +280,11 @@
       .gmv-source-table th:first-child, .gmv-source-table td:first-child { width:32%; min-width:170px; }
       .gmv-source-table th:not(:first-child), .gmv-source-table td:not(:first-child) { width:auto; min-width:105px; }
       .gmv-source-table td { height: 46px; }
+      .cost-source-table th:first-child,.cost-source-table td:first-child { width:28%; min-width:0; }
+      .cost-source-table th:nth-child(2),.cost-source-table td:nth-child(2),.cost-source-table th:nth-child(3),.cost-source-table td:nth-child(3) { width:18%; min-width:0; }
+      .cost-source-table th:nth-child(n+4),.cost-source-table td:nth-child(n+4) { width:12%; min-width:0; }
+      .cost-source-table th,.cost-source-table td { padding-right:7px; padding-left:7px; overflow:hidden; text-overflow:ellipsis; }
+      .cost-source-table td:not(:first-child) { font-weight:500; }
       .gmv-source-row td { color: var(--text); font-weight: 800; background: #f8fafc; }
       .gmv-source-label { display: inline-flex; align-items: center; gap: 8px; }
       .gmv-source-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; }
@@ -284,6 +292,7 @@
       .gmv-contribution { color: var(--text-muted); font-size: 11px; font-weight: 500; }
       .gmv-change { font-size: 11px; font-weight: 700; }
       .gmv-change.good { color: #059669; } .gmv-change.bad { color: #dc2626; } .gmv-change.neutral { color: var(--text-muted); }
+      .products-collapsed tr.inactive-product { display:none; }
       .operations-summary { margin-bottom: 18px; }
       .operations-summary .metric { min-height: 100px; }
       .metric-cancelRate { --metric-color: #dc2626; }
@@ -354,14 +363,14 @@
           <div id="costAttributionContent" class="gmv-analysis-grid hidden">
             <div class="gmv-attribution-chart"><canvas id="costAttributionChart"></canvas></div>
             <div class="table-wrap">
-              <table class="gmv-source-table">
-                <thead><tr><th>Nguồn</th><th>COST</th><th>Gross revenue</th><th>ROI</th><th>Impressions</th><th>Click</th><th>So với kỳ trước</th></tr></thead>
+              <table class="gmv-source-table cost-source-table">
+                <thead><tr><th>Nguồn</th><th>COST</th><th>Gross revenue</th><th>ROI</th><th>Impressions</th><th>Click</th></tr></thead>
                 <tbody id="costAttributionRows"></tbody>
               </table>
             </div>
           </div>
         </section>
-        <h2 class="section-title">Sản phẩm Available</h2>
+        <div class="section-title-row"><h2 class="section-title">Sản phẩm Available</h2><button id="productMore" class="recommendation-more hidden" type="button">Thêm</button></div>
         <form id="videoLookupForm" class="video-search">
           <input id="videoLookupInput" type="text" inputmode="url" autocomplete="off" placeholder="Dán link video TikTok hoặc Post ID" aria-label="Link video TikTok">
           <button id="videoLookupButton" type="submit">Tra cứu video</button>
@@ -437,7 +446,7 @@
           <section class="analytics-panel"><h2>Phễu vòng đời đơn hàng</h2><div class="analytics-canvas"><canvas id="deliveryFunnelChart"></canvas></div></section>
         </div>
         <h2 class="section-title">Giám sát chi tiết</h2>
-        <div class="table-wrap">
+        <div id="productTableWrap" class="table-wrap">
           <table class="operations-table">
             <thead><tr><th>Mã đơn / Mã RMA</th><th>Loại sự cố</th><th>Nhóm / Khởi tạo</th><th>Lý do chi tiết</th><th>Thời gian vận chuyển</th><th>Thời gian hủy</th></tr></thead>
             <tbody id="operationsRows"></tbody>
@@ -446,7 +455,7 @@
         </div>
       </section>
       <section id="financeReport" class="hidden">
-        <div class="finance-head"><h2>Tổng quan tài chính</h2><span id="financeUpdatedAt" class="finance-updated"></span></div>
+        <div class="finance-head"><h2>Tổng quan tài chính</h2></div>
         <div id="financeWarnings" class="operations-warning hidden"></div>
         <div id="financeSummary" class="summary finance-summary"></div>
 
@@ -534,6 +543,7 @@
       var prefetchGeneration = 0;
       var currentReportProducts = [];
       var currentAvailableProductCount = 0;
+      var productsExpanded = false;
       var currentSummaryContexts = [];
       var currentReportTotals = null;
       var currentReportHourly = [];
@@ -934,8 +944,7 @@
           financeMetric('Tổng phí & thuế', compactMoney(summaryData.feeTax), 'revenueOrders', summaryData.feeTax, previous.feeTax, true),
           financeMetric('Hoa hồng KOC / Affiliate', compactMoney(summaryData.affiliate), 'revenueAov', summaryData.affiliate, previous.affiliate, true),
           financeMetric('Chi phí Ads', compactMoney(summaryData.adsCost), 'costPerOrder', summaryData.adsCost, previous.adsCost, true),
-          financeMetric('Hoàn tiền', compactMoney(summaryData.refunds), 'impressions', summaryData.refunds, previous.refunds, true),
-          financeMetric('Lợi nhuận gộp ước tính', compactMoney(summaryData.grossProfit), 'grossRevenue', summaryData.grossProfit, previous.grossProfit, false)
+          financeMetric('Hoàn tiền', compactMoney(summaryData.refunds), 'impressions', summaryData.refunds, previous.refunds, true)
         );
       }
 
@@ -1144,7 +1153,6 @@
         document.getElementById('reportTabs').classList.remove('hidden');
         document.getElementById('financeReport').classList.toggle('hidden', activeReportView !== 'finance');
         var generated = new Date(data.generatedAt);
-        document.getElementById('financeUpdatedAt').textContent = 'Cập nhật lúc ' + new Intl.DateTimeFormat('vi-VN', { hour:'2-digit', minute:'2-digit' }).format(generated);
         document.getElementById('updatedAt').textContent = 'Cập nhật: ' + new Intl.DateTimeFormat('vi-VN', { dateStyle:'short', timeStyle:'medium' }).format(generated);
         var warning = document.getElementById('financeWarnings'); warning.textContent = (data.warnings || []).join(' · '); warning.classList.toggle('hidden', !(data.warnings || []).length);
         var current = data.current || {};
@@ -1415,7 +1423,6 @@
         var rows = document.getElementById('costAttributionRows'); rows.replaceChildren();
         sources.forEach(function (source) {
           var value = Number(data[source.key]) || 0;
-          var previousValue = Number(previous && previous[source.key]) || 0;
           var sourceMetrics = data.metrics && data.metrics[source.key] || {};
           var row = document.createElement('tr'); row.className = 'gmv-source-row';
           var labelCell = document.createElement('td'); var labelWrap = document.createElement('span'); labelWrap.className = 'gmv-source-label';
@@ -1423,15 +1430,12 @@
           labelWrap.appendChild(document.createTextNode(source.label));
           var contribution = document.createElement('span'); contribution.className = 'gmv-contribution'; contribution.textContent = ' (Đóng góp ' + number(value / total * 100) + '%)';
           labelWrap.appendChild(contribution); labelCell.appendChild(labelWrap);
-          var valueCell = document.createElement('td'); valueCell.textContent = moneyWhole(value);
+          var valueCell = document.createElement('td'); valueCell.textContent = compactMoney(value);
           var grossRevenueCell=document.createElement('td');grossRevenueCell.textContent=compactMoney(sourceMetrics.grossRevenue||0);
           var roiCell=document.createElement('td');roiCell.textContent=number(sourceMetrics.roi||0);
           var impressionsCell=document.createElement('td');impressionsCell.textContent=compactNumber(sourceMetrics.impressions||0);
           var clicksCell=document.createElement('td');clicksCell.textContent=compactNumber(sourceMetrics.clicks||0);
-          var changeCell = document.createElement('td'); var change = changeValue(value, previousValue);
-          changeCell.className = 'gmv-change ' + (change == null ? 'neutral' : (change <= 0 ? 'good' : 'bad'));
-          changeCell.textContent = change == null ? '—' : ((change >= 0 ? '↑ ' : '↓ ') + number(Math.abs(change)) + '%');
-          row.append(labelCell, valueCell, grossRevenueCell, roiCell, impressionsCell, clicksCell, changeCell); rows.appendChild(row);
+          row.append(labelCell, valueCell, grossRevenueCell, roiCell, impressionsCell, clicksCell); rows.appendChild(row);
         });
       }
 
@@ -1533,6 +1537,7 @@
 
         var rows = document.getElementById('productRows');
         rows.replaceChildren();
+        productsExpanded = false;
         data.products.forEach(function (product) {
           var metric = product.metrics;
           var row = document.createElement('tr');
@@ -1562,6 +1567,7 @@
           var statusCell = document.createElement('td');
           var statusBadge = document.createElement('span');
           var displayStatus = String(product.displayStatus || product.status || 'AVAILABLE').toUpperCase();
+          row.classList.toggle('inactive-product', displayStatus !== 'AVAILABLE');
           statusBadge.className = 'status-badge' + (displayStatus === 'AVAILABLE' ? '' : ' inactive');
           statusBadge.textContent = displayStatus === 'AVAILABLE' ? 'Available' :
             (displayStatus === 'INACTIVE' ? 'Inactive' : displayStatus);
@@ -1611,6 +1617,10 @@
             }
           }
         });
+        var productWrap=document.getElementById('productTableWrap');var productMore=document.getElementById('productMore');
+        var hasHiddenProducts=data.products.length>3&&data.products.some(function(product){return String(product.displayStatus||product.status||'AVAILABLE').toUpperCase()!=='AVAILABLE';});
+        productWrap.classList.toggle('products-collapsed',hasHiddenProducts);productMore.classList.toggle('hidden',!hasHiddenProducts);productMore.textContent='Thêm';
+        productMore.onclick=function(){productsExpanded=!productsExpanded;productWrap.classList.toggle('products-collapsed',!productsExpanded);productMore.textContent=productsExpanded?'Thu gọn':'Thêm';};
       }
 
       function openProductVideos(product) {
@@ -1712,9 +1722,9 @@
         var impressionsElement = document.getElementById('metric-impressions');
         var trafficElement = document.getElementById('metric-traffic');
         if (!creativeElement || !impressionsElement || !trafficElement) return;
-        creativeElement.textContent = compactNumber(data.totalCreatives);
-        impressionsElement.textContent = compactNumber(data.impressions);
-        trafficElement.textContent = compactNumber(data.traffic);
+        creativeElement.textContent = integer(data.totalCreatives);
+        impressionsElement.textContent = integer(data.impressions);
+        trafficElement.textContent = integer(data.traffic);
         currentCreativeSummary = data;
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
@@ -1761,8 +1771,8 @@
         }
         empty.textContent = emptyMessage;
         empty.classList.toggle('hidden', recommendations.length > 0);
-        var visibleRecommendations = recommendationExpanded[kind] ? recommendations : recommendations.slice(0, 5);
-        more.classList.toggle('hidden', recommendations.length <= 5);
+        var visibleRecommendations = recommendationExpanded[kind] ? recommendations : recommendations.slice(0, 3);
+        more.classList.toggle('hidden', recommendations.length <= 3);
         more.textContent = recommendationExpanded[kind] ? 'Thu gọn' : 'Thêm';
         more.onclick = function () {
           recommendationExpanded[kind] = !recommendationExpanded[kind];
