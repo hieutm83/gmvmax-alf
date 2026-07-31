@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateStatementTransactions, calculateFinanceSummary, unsettledReasonLabel } from '../src/finance';
+import { aggregateStatementTransactions, calculateFinanceSummary, parseSkuProductFactor, unsettledReasonLabel } from '../src/finance';
 
 describe('finance aggregation', () => {
   it('aggregates statement fields and removes zero fee fields', () => {
@@ -50,5 +50,16 @@ describe('finance aggregation', () => {
     expect(summary.affiliate).toBe(13);
     expect(summary.refunds).toBe(20);
     expect(summary.grossProfit).toBe(68);
+  });
+});
+
+describe('SKU product factor', () => {
+  const examples: Array<[string, number]> = [
+    ['1 TTD',1],['2 TTD',2],['3 TTD',3],['1 TAH',1],['2 TAH',2],['3 TAH',3],
+    ['1 TKA',1],['2 TKA',2],['3 TKA',3],['4 TKA',4],['1 TKA + 1 TTD',2],
+    ['1 TKA + 1 TAH',2],['1 TTD + 1 TAH',2],['1 TTD + 1 TKA + 1 TAH',3],['1 TAH + 1 TKA',2]
+  ];
+  it.each(examples)('parses %s as %i products per order', (name, expected) => {
+    expect(parseSkuProductFactor(name)).toBe(expected);
   });
 });

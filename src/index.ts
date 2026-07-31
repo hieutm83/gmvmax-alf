@@ -5,7 +5,7 @@ import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideo
 import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
 import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
-import { loadFinanceAnalysis } from './finance';
+import { loadFinanceAnalysis, loadSkuUnitCosts, saveSkuUnitCost } from './finance';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, sendOperationsReport } from './operations-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
@@ -35,6 +35,7 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
       defaultAdvertiserId:env.DEFAULT_ADVERTISER_ID,defaultStoreCode:env.DEFAULT_STORE_CODE,advertisers,connectionError});
   }
   if(request.method==='GET'&&url.pathname==='/api/oauth/connect')return ok(await createAuthorizationUrl(env,url.origin));
+  if(request.method==='GET'&&url.pathname==='/api/finance-sku-cost')return ok(await loadSkuUnitCosts(env));
   if(request.method==='POST'&&url.pathname==='/api/oauth/disconnect'){await disconnect(env);return ok(true);}
   if(request.method==='POST'&&url.pathname==='/api/seller/disconnect'){await disconnectSeller(env);return ok(true);}
   if(request.method==='POST'&&url.pathname==='/api/admin/verify'){const value=await readJson<any>(request);return ok(String(value||'')===env.ADMIN_PASSWORD);}
@@ -61,6 +62,7 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadFinanceAnalysis(env,scope));
   }
+  if(url.pathname==='/api/finance-sku-cost')return ok(await saveSkuUnitCost(env,input));
   if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
   if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));
   if(url.pathname==='/api/comparison')return ok(await loadComparison(env,{advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),startDate:validateDate(input.startDate||input.endDate,'startDate'),endDate:validateDate(input.endDate,'endDate')}));

@@ -11,6 +11,7 @@
     loadRevenueAnalysis: ['POST', '/api/revenue-analysis'],
     loadOperationsAnalysis: ['POST', '/api/operations-analysis'],
     loadFinanceAnalysis: ['POST', '/api/finance-analysis'],
+    saveFinanceSkuCost: ['POST', '/api/finance-sku-cost'],
     loadProductVideos: ['POST', '/api/product-videos'],
     loadCreativeSummaries: ['POST', '/api/creative-summaries'],
     loadYesterdayComparison: ['POST', '/api/comparison'],

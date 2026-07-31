@@ -6,6 +6,16 @@ import { cacheGet, cachePut, dateInTimezone, numberValue, shiftDate, stableKey }
 
 type Scope = { startDate: string; endDate: string; forceRefresh?: boolean };
 type NumberMap = Record<string, number>;
+export const DEFAULT_SKU_UNIT_COST = 40_000;
+
+export function parseSkuProductFactor(skuName: unknown): number {
+  const factors = String(skuName || '').split('+').map((part) => {
+    const match = part.trim().match(/^(\d+)\s+\S/);
+    return match ? Number(match[1]) : 0;
+  });
+  const total = factors.reduce((sum, value) => sum + value, 0);
+  return total > 0 ? total : 1;
+}
 
 const PLATFORM_FEES = new Set([
   'platform_commission_amount', 'transaction_fee_amount', 'referral_fee_amount',
@@ -173,6 +183,7 @@ async function settledBlock(env: Env, cipher: string, startDate: string, endDate
   const list = await statements(env, cipher, startDate, horizonEnd);
   const total = aggregateStatementTransactions([]);
   const statementRows: any[] = [];
+  const scopedTransactions: any[] = [];
   const start = epoch(startDate);
   const end = epoch(shiftDate(endDate, 1));
   for (const statement of list) {
@@ -182,6 +193,7 @@ async function settledBlock(env: Env, cipher: string, startDate: string, endDate
         return created >= start && created < end;
       });
     if (!transactions.length) continue;
+    scopedTransactions.push(...transactions);
     const detail = aggregateStatementTransactions(transactions);
     mergeBreakdown(total, detail);
     statementRows.push({
@@ -204,6 +216,7 @@ async function settledBlock(env: Env, cipher: string, startDate: string, endDate
   total.fees.tax = nonZero(total.fees.tax);
   total.shipping.breakdown = nonZero(total.shipping.breakdown);
   total.statements = statementRows;
+  total.transactions = scopedTransactions;
   return total;
 }
 
@@ -264,6 +277,7 @@ async function unsettledBlock(env: Env, cipher: string, startDate: string, endDa
     sumEstAdjustmentAmount: numberValue(sums?.sum_est_adjustment_amount),
     transactionCount: transactions.length,
     detail: aggregateStatementTransactions(normalized),
+    transactions: normalized,
     reasons: Array.from(reasonCounts, ([label, item]) => ({ label, count: item.count, amount: item.amount, rawValues: Array.from(item.raw) })),
     observedOrderCreateTime: orderTimes.length ? { min: Math.min(...orderTimes) * 1000, max: Math.max(...orderTimes) * 1000,
       allWithinSelectedRange: orderTimes.every((value) => value >= start && value < end) } : null
@@ -333,6 +347,9 @@ async function skuBlock(env: Env, cipher: string, startDate: string, endDate: st
     })()
   ]);
   const products = new Map<string, any>();
+  const configuredCosts = await env.DB.prepare('SELECT sku_key, unit_cost FROM sku_unit_costs WHERE shop_cipher = ?')
+    .bind(cipher).all<{ sku_key: string; unit_cost: number }>();
+  const costs = new Map((configuredCosts.results || []).map((item) => [String(item.sku_key), numberValue(item.unit_cost)]));
   let totalUnitsSold = 0;
   let totalSkuOrders = 0;
   let totalGmv = 0;
@@ -341,8 +358,13 @@ async function skuBlock(env: Env, cipher: string, startDate: string, endDate: st
     const info = catalog[analyticsSkuId] || catalog[`numeric:${Number(analyticsSkuId)}`] || {};
     const skuId = String(info.skuId || analyticsSkuId);
     const productId = String(info.productId || item.product_id || '');
-    const row = { skuId, skuName: info.skuName || `SKU ${skuId}`, unitsSold: numberValue(item.units_sold),
-      skuOrders: numberValue(item.sku_orders), gmv: amount(item.gmv) };
+    const skuName = info.skuName || `SKU ${skuId}`;
+    const productFactor = parseSkuProductFactor(skuName);
+    const unitsSold = numberValue(item.units_sold);
+    const productQuantity = unitsSold * productFactor;
+    const unitCost = costs.get(skuId) ?? costs.get(skuName) ?? DEFAULT_SKU_UNIT_COST;
+    const row = { skuId, skuName, unitsSold, skuOrders: numberValue(item.sku_orders), productFactor,
+      productQuantity, unitCost, costOfGoods: productQuantity * unitCost, gmv: amount(item.gmv) };
     if (!products.has(productId)) products.set(productId, { productId, productName: info.productName || `Sản phẩm ${productId}`, skus: [] });
     products.get(productId).skus.push(row);
     totalUnitsSold += row.unitsSold;
@@ -409,6 +431,33 @@ export function calculateFinanceSummary(detail: any, adsCost: number): any {
   };
 }
 
+function financeTrend(input: Scope, combined: any, adsReport: any): any[] {
+  const hourly = input.startDate === input.endDate;
+  const points = hourly
+    ? Array.from({ length: 24 }, (_, hour) => ({ key: String(hour).padStart(2, '0'), label: `${String(hour).padStart(2, '0')}:00` }))
+    : (() => { const rows: any[] = []; for (let date = input.startDate; date <= input.endDate; date = shiftDate(date, 1)) rows.push({ key: date, label: `${date.slice(8)}/${date.slice(5, 7)}` }); return rows; })();
+  const grouped = new Map(points.map((point) => [point.key, aggregateStatementTransactions([])]));
+  for (const transaction of combined.transactions || []) {
+    const created = numberValue(transaction.order_create_time);
+    if (!created) continue;
+    const date = new Date(created * 1000);
+    const key = hourly
+      ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' }).format(date).slice(0, 2)
+      : dateInTimezone(date, 'Asia/Bangkok');
+    const bucket = grouped.get(key); if (bucket) mergeBreakdown(bucket, aggregateStatementTransactions([transaction]));
+  }
+  return points.map((point, index) => {
+    const adsCost = hourly ? numberValue(adsReport.hourly?.[index]?.metrics?.cost) : numberValue(adsReport.daily?.[index]?.metrics?.cost);
+    const detail = grouped.get(point.key);
+    delete detail.fees.otherPrograms.order_processing_fee_amount;
+    delete detail.fees.otherPrograms.order_processing_fee;
+    const processingFee = Math.max(0, Math.round(numberValue(detail.orderCount))) * 3000;
+    if (processingFee) detail.fees.otherPrograms.order_processing_fee_estimated = -processingFee;
+    const summary = calculateFinanceSummary(detail, adsCost);
+    return { ...point, gmv: summary.sellerSubtotal, totalCost: summary.feeTax + summary.affiliate + summary.adsCost + summary.refunds, grossProfit: summary.grossProfit };
+  });
+}
+
 async function period(env: Env, cipher: string, input: Scope, includeSku: boolean, warnings: string[]): Promise<any> {
   const storeIdPromise = resolveDefaultStoreId(env);
   const settledPromise = settledBlock(env, cipher, input.startDate, input.endDate)
@@ -429,16 +478,45 @@ async function period(env: Env, cipher: string, input: Scope, includeSku: boolea
   const combined = aggregateStatementTransactions([]);
   mergeBreakdown(combined, settled);
   mergeBreakdown(combined, unsettled.detail || aggregateStatementTransactions([]));
+  combined.transactions = [...(settled.transactions || []), ...(unsettled.transactions || [])];
   combined.fees.platform = nonZero(combined.fees.platform);
   combined.fees.koc = nonZero(combined.fees.koc);
   combined.fees.promotion = nonZero(combined.fees.promotion);
   combined.fees.otherPrograms = nonZero(combined.fees.otherPrograms);
   combined.fees.tax = nonZero(combined.fees.tax);
   combined.shipping.breakdown = nonZero(combined.shipping.breakdown);
+  delete combined.fees.otherPrograms.order_processing_fee_amount;
+  delete combined.fees.otherPrograms.order_processing_fee;
+  combined.processingFee = Math.max(0, Math.round(numberValue(combined.orderCount))) * 3000;
+  if (combined.processingFee) combined.fees.otherPrograms.order_processing_fee_estimated = -combined.processingFee;
   const summary = calculateFinanceSummary(combined, ads.cost);
-  return { settled, unsettled, combined, summary, sku, ads,
+  const trend = financeTrend(input, combined, adsReport);
+  return { settled, unsettled, combined, summary, sku, ads, trend,
     netProfitSettledOnly: summary.grossProfit, netProfitWithEstimate: summary.grossProfit,
     totalGmv: summary.sellerSubtotal };
+}
+
+export async function saveSkuUnitCost(env: Env, input: { skuKey: string; unitCost: number }): Promise<any> {
+  const shop = await authorizedShop(env);
+  if (!shop) throw new Error('Seller OAuth chưa kết nối.');
+  const shopCipher = String(shop.cipher || shop.shop_cipher || shop.id || '');
+  const skuKey = String(input.skuKey || '').trim();
+  const unitCost = Math.round(numberValue(input.unitCost));
+  if (!skuKey) throw new Error('Thiếu mã SKU.');
+  if (unitCost < 0 || unitCost > 1_000_000_000) throw new Error('Giá vốn đơn vị không hợp lệ.');
+  await env.DB.prepare(`INSERT INTO sku_unit_costs(shop_cipher,sku_key,unit_cost,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(shop_cipher,sku_key) DO UPDATE SET unit_cost=excluded.unit_cost,updated_at=CURRENT_TIMESTAMP`)
+    .bind(shopCipher, skuKey, unitCost).run();
+  return { skuKey, unitCost };
+}
+
+export async function loadSkuUnitCosts(env: Env): Promise<any> {
+  const shop = await authorizedShop(env);
+  if (!shop) throw new Error('Seller OAuth chưa kết nối.');
+  const shopCipher = String(shop.cipher || shop.shop_cipher || shop.id || '');
+  const rows = await env.DB.prepare('SELECT sku_key, unit_cost, updated_at FROM sku_unit_costs WHERE shop_cipher = ? ORDER BY sku_key')
+    .bind(shopCipher).all();
+  return { defaultUnitCost: DEFAULT_SKU_UNIT_COST, items: rows.results || [] };
 }
 
 export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> {
