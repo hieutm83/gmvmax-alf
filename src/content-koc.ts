@@ -67,7 +67,7 @@ async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<
 }
 
 export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;storeId:string;startDate:string;endDate:string;forceRefresh?:boolean}):Promise<any>{
-  const key=stableKey('content-koc-v14',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  const key=stableKey('content-koc-v15',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return{...cached,cacheStatus:'HIT'};}
   const [shopResult,adsVideos]=await Promise.all([
     fetchShopVideos(env,input.startDate,input.endDate).catch(()=>({available:false,videos:[],latestAvailableDate:null})),
@@ -93,13 +93,17 @@ export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;
     const postedDate=postDate(raw.video_post_time)||postDateFromItemId(itemId,env.TIMEZONE);videos.push({itemId,title:String(raw.title||ads?.title||`Video ${itemId}`),videoUrl:`https://www.tiktok.com/@${encodeURIComponent(String(raw.username||raw.creator?.user_name||ads?.accountUsername||''))}/video/${itemId}`,
       accountName:String(raw.creator?.nick_name||raw.username||ads?.accountName||''),accountUsername:String(raw.creator?.user_name||raw.username||ads?.accountUsername||''),creatorType:type,
       postTime:raw.video_post_time||null,isPostedInRange:Boolean(postedDate&&postedDate>=input.startDate&&postedDate<=input.endDate),products,shop:{gmv:money(raw.gmv),views,clicks:Math.round(views*(ctr||0)),ctr,skuOrders:numberValue(raw.sku_orders),itemsSold:numberValue(raw.items_sold)},
-      ads:ads?{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''}:null,
+      ads:ads?{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,
+        viewRate2s:ads.viewRate2s,viewRate6s:ads.viewRate6s,viewRate25:ads.viewRate25,viewRate50:ads.viewRate50,viewRate75:ads.viewRate75,viewRate100:ads.viewRate100,
+        timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''}:null,
       roi:numberValue(ads?.cost)?numberValue(ads.grossRevenue)/numberValue(ads.cost):null});
   }
   for(const ads of adsById.values() as Iterable<any>){const metadata:any=shopMetadataById.get(String(ads.itemId));const adsProducts=ads.products||[];const metadataProducts=(metadata?.products||[]).map((product:any)=>{const adsProduct=adsProducts.find((item:any)=>String(item.id)===String(product.id));return{id:String(product.id),name:String(product.name||adsProduct?.name||product.id),imageUrl:adsProduct?.imageUrl||''};});
     const products=metadataProducts.length?metadataProducts:adsProducts;const postedDate=postDate(metadata?.video_post_time)||postDateFromItemId(ads.itemId,env.TIMEZONE);videos.push({itemId:String(ads.itemId),title:ads.title||metadata?.title,videoUrl:`https://www.tiktok.com/player/v1/${ads.itemId}`,
     accountName:metadata?.creator?.nick_name||metadata?.username||ads.accountName||ads.accountUsername||'',accountUsername:metadata?.creator?.user_name||metadata?.username||ads.accountUsername||'',creatorType:adsCreatorType(metadata,ads),postTime:metadata?.video_post_time||null,isPostedInRange:Boolean(postedDate&&postedDate>=input.startDate&&postedDate<=input.endDate),products,shop:null,
-    ads:{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''},roi:numberValue(ads.cost)?numberValue(ads.grossRevenue)/numberValue(ads.cost):null});
+    ads:{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,
+      viewRate2s:ads.viewRate2s,viewRate6s:ads.viewRate6s,viewRate25:ads.viewRate25,viewRate50:ads.viewRate50,viewRate75:ads.viewRate75,viewRate100:ads.viewRate100,
+      timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''},roi:numberValue(ads.cost)?numberValue(ads.grossRevenue)/numberValue(ads.cost):null});
   }
 
   const totals=calculateContentKocTotals(videos);
