@@ -234,6 +234,11 @@
       .content-koc-video-list { display:grid; gap:8px; padding:10px; background:#f8fafc; }
       .content-koc-video-item { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:10px; padding:8px; background:#fff; border:1px solid var(--border); border-radius:6px; }
       .content-koc-video-item > div { display:grid; gap:4px; min-width:0; } .content-koc-video-item > div span { color:var(--text-muted); font-size:11px; }
+      #contentKocProductTable { min-width:1180px; table-layout:auto; }
+      #contentKocProductTable th:first-child,#contentKocProductTable td:first-child { width:48px;min-width:48px;text-align:center; }
+      #contentKocProductTable th:nth-child(2),#contentKocProductTable td:nth-child(2) { min-width:340px;text-align:left;white-space:normal; }
+      #contentKocProductTable th:nth-child(3),#contentKocProductTable td:nth-child(3) { width:110px;min-width:110px;text-align:left; }
+      #contentKocProductTable th:nth-child(n+4),#contentKocProductTable td:nth-child(n+4) { width:105px;min-width:90px;text-align:right; }
       @media (max-width:960px) { .content-koc-summaries { grid-template-columns:1fr; } }
       .finance-amount.expense { color:#dc2626 !important; }
       .finance-table tfoot td { padding:12px; border-top:2px solid var(--border); background:#f8fafc; font-weight:800; }
@@ -411,7 +416,6 @@
         </div>
       </section>
       <section id="contentKocReport" class="hidden">
-        <div id="contentKocSellerNotice" class="analytics-unavailable hidden"><div><strong id="contentKocSellerNoticeTitle">Cần kết nối TikTok Shop Seller</strong><span id="contentKocSellerNoticeMeta">Đang hiển thị dữ liệu Ads; kết nối Seller để bổ sung GMV, lượt xem và click organic.</span></div></div>
         <div class="content-koc-summaries">
           <div><h3 class="content-koc-group-label seller">Nhà bán hàng</h3><div id="contentKocSummarySeller" class="summary"></div></div>
           <div><h3 class="content-koc-group-label koc">KOC</h3><div id="contentKocSummaryKoc" class="summary"></div></div>
@@ -420,8 +424,8 @@
           <div id="contentKocGroupEmpty" class="analytics-unavailable hidden"><div><strong>Chưa có dữ liệu GMV video</strong><span>Không có GMV hoặc chi phí Ads trong khoảng ngày đã chọn.</span></div></div>
           <div id="contentKocGroupContent" class="gmv-analysis-grid"><div class="gmv-attribution-chart"><canvas id="contentKocGroupChart"></canvas></div><div class="table-wrap"><table class="gmv-source-table"><thead><tr><th>Nhóm</th><th>GMV</th><th>Chi phí Ads</th><th>ROI</th></tr></thead><tbody id="contentKocGroupRows"></tbody></table></div></div>
         </section>
-        <div class="analytics-grid"><section class="analytics-panel"><h2>Top sản phẩm theo GMV video</h2><div class="analytics-canvas"><canvas id="contentKocProductChart"></canvas></div></section><section class="analytics-panel"><h2>Lượt xem &amp; lượt click</h2><div class="analytics-canvas"><canvas id="contentKocEngagementChart"></canvas></div></section></div>
-        <h2 class="section-title">Chi tiết theo sản phẩm</h2><div class="table-wrap"><table class="operations-table" id="contentKocProductTable"><thead><tr><th></th><th>Sản phẩm</th><th>Nhóm</th><th>Video</th><th>GMV</th><th>Chi phí Ads</th><th>ROI</th></tr></thead><tbody id="contentKocProductRows"></tbody></table><div id="contentKocEmpty" class="analytics-unavailable hidden"><div><strong>Chưa có video</strong><span>Không có video khớp khoảng ngày đã chọn.</span></div></div></div>
+        <section class="analytics-panel"><h2>Click và GMV theo sản phẩm</h2><div class="analytics-canvas"><canvas id="contentKocProductChart"></canvas></div></section>
+        <h2 class="section-title">Chi tiết theo sản phẩm</h2><div class="table-wrap"><table class="operations-table" id="contentKocProductTable"><thead><tr><th></th><th>Sản phẩm</th><th>Nhóm</th><th>Video</th><th>GMV</th><th>Chi phí Ads</th><th>Hiển thị</th><th>Click</th><th>ROI</th></tr></thead><tbody id="contentKocProductRows"></tbody></table><div id="contentKocEmpty" class="analytics-unavailable hidden"><div><strong>Chưa có video</strong><span>Không có video khớp khoảng ngày đã chọn.</span></div></div></div>
       </section>
       <section id="revenueReport" class="hidden">
         <div id="revenueContent" class="hidden">
@@ -595,7 +599,6 @@
       var financeDonutChart = null;
       var contentKocGroupChart = null;
       var contentKocProductChart = null;
-      var contentKocEngagementChart = null;
       var currentContentKocData = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
@@ -981,7 +984,7 @@
         var scope = reportScope();
         var key = JSON.stringify(scope);
         if (!force && loadedContentKocScope === key) return;
-        setLoading(true); hideError();
+        if(!currentContentKocData)renderContentKocSkeleton();setLoading(true); hideError();
         google.script.run
           .withSuccessHandler(function (data) {
             setLoading(false); loadedContentKocScope = key; renderContentKocAnalysis(data);
@@ -997,14 +1000,20 @@
         box.append(label, value); return box;
       }
 
-      function renderContentKocSummary(elementId, totals) {
+      function renderContentKocSkeleton(){
+        renderContentKocSummary('contentKocSummarySeller',null,true);renderContentKocSummary('contentKocSummaryKoc',null,true);
+        document.getElementById('contentKocGroupEmpty').classList.remove('hidden');document.getElementById('contentKocGroupEmpty').querySelector('strong').textContent='Đang tải dữ liệu';document.getElementById('contentKocGroupEmpty').querySelector('span').textContent='Khung báo cáo sẽ tự cập nhật khi dữ liệu sẵn sàng.';
+        document.getElementById('contentKocGroupContent').classList.add('hidden');document.getElementById('contentKocProductRows').replaceChildren();document.getElementById('contentKocEmpty').classList.remove('hidden');
+      }
+
+      function renderContentKocSummary(elementId, totals, loading) {
         totals = totals || {};
         var roi = Number(totals.adsSpend) ? Number(totals.gmv || 0) / Number(totals.adsSpend) : null;
         document.getElementById(elementId).replaceChildren(
-          contentKocMetric('Video', integer(totals.videoCount || 0), 'totalCreatives'),
-          contentKocMetric('GMV', compactMoney(totals.gmv || 0), 'grossRevenue'),
-          contentKocMetric('Chi phí Ads', compactMoney(totals.adsSpend || 0), 'cost'),
-          contentKocMetric('ROI', number(roi), 'roi')
+          contentKocMetric('Video', loading?'—':integer(totals.videoCount || 0), 'totalCreatives'),
+          contentKocMetric('GMV', loading?'—':compactMoney(totals.gmv || 0), 'grossRevenue'),
+          contentKocMetric('Chi phí Ads', loading?'—':compactMoney(totals.adsSpend || 0), 'cost'),
+          contentKocMetric('ROI', loading?'—':number(roi), 'roi')
         );
       }
 
@@ -1038,7 +1047,7 @@
       function toggleContentKocVideos(buttonElement, productId, type, anchorRow) {
         var existing = anchorRow.nextElementSibling;
         if (existing && existing.classList.contains('content-koc-video-detail')) { var opening=existing.classList.contains('hidden');existing.classList.toggle('hidden',!opening);buttonElement.textContent=opening?'−':'+';buttonElement.setAttribute('aria-expanded',String(opening));return; }
-        var detail = document.createElement('tr'); detail.className = 'content-koc-video-detail'; var cell = document.createElement('td'); cell.colSpan = 7;
+        var detail = document.createElement('tr'); detail.className = 'content-koc-video-detail'; var cell = document.createElement('td'); cell.colSpan = 9;
         var list = document.createElement('div'); list.className = 'content-koc-video-list'; var videos = contentKocVideosForProduct(productId, type);
         if (!videos.length) { var empty = document.createElement('span'); empty.textContent = 'Không có video trong nhóm này.'; list.appendChild(empty); }
         videos.forEach(function (video) {
@@ -1059,7 +1068,7 @@
           if (index === 0 && includeProduct) { var productCell = document.createElement('td'); productCell.rowSpan = 2; var wrap = document.createElement('div'); wrap.className = 'product-name'; if (product.productImageUrl) { var image = document.createElement('img'); image.className='product-image'; image.src = product.productImageUrl; image.alt = ''; wrap.appendChild(image); } var copy=document.createElement('div');var productName = document.createElement('button');productName.type='button';productName.className='campaign-button'; productName.textContent = product.productName || product.productId; var meta=document.createElement('span');meta.className='campaign-meta';meta.textContent='ID sản phẩm: '+product.productId;copy.append(productName,meta);wrap.appendChild(copy); productCell.appendChild(wrap); row.appendChild(productCell); }
           var group = document.createElement('td'); group.appendChild(contentKocGroupBadge(type)); row.appendChild(group);
           var roi = Number(totals.adsSpend) ? Number(totals.gmv || 0) / Number(totals.adsSpend) : null;
-          [integer(totals.videoCount || 0), moneyWhole(totals.gmv || 0) + 'đ', moneyWhole(totals.adsSpend || 0) + 'đ', number(roi)].forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell); }); parent.appendChild(row);productRows.push(row);
+          [integer(totals.videoCount || 0), moneyWhole(totals.gmv || 0) + 'đ', moneyWhole(totals.adsSpend || 0) + 'đ', integer(totals.impressions||0), integer(totals.adClicks||0), number(roi)].forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell); }); parent.appendChild(row);productRows.push(row);
         });
         var expandButton=productRows[0].querySelector('.content-koc-expand');expandButton.addEventListener('click',function(){toggleContentKocVideos(expandButton,product.productId,null,productRows[1]);});
       }
@@ -1069,16 +1078,12 @@
         var row=document.createElement('tr');var expandCell=document.createElement('td');var expand=document.createElement('button');expand.type='button';expand.className='content-koc-expand';expand.textContent='+';expand.setAttribute('aria-expanded','false');expandCell.appendChild(expand);row.appendChild(expandCell);
         var product=document.createElement('td');var wrap=document.createElement('div');wrap.className='product-name';var copy=document.createElement('div');var name=document.createElement('button');name.type='button';name.className='campaign-button';name.textContent='Chưa xác định nguồn / sản phẩm';var meta=document.createElement('span');meta.className='campaign-meta';meta.textContent='Video chỉ có dữ liệu Ads';copy.append(name,meta);wrap.appendChild(copy);product.appendChild(wrap);row.appendChild(product);
         var group=document.createElement('td');group.appendChild(contentKocGroupBadge('UNKNOWN'));row.appendChild(group);var roi=Number(totals.adsSpend)?Number(totals.gmv||0)/Number(totals.adsSpend):null;
-        [integer(totals.videoCount||0),moneyWhole(totals.gmv||0)+'đ',moneyWhole(totals.adsSpend||0)+'đ',number(roi)].forEach(function(value){var cell=document.createElement('td');cell.textContent=value;row.appendChild(cell);});parent.appendChild(row);expand.addEventListener('click',function(){toggleContentKocVideos(expand,null,'UNKNOWN',row);});
+        [integer(totals.videoCount||0),moneyWhole(totals.gmv||0)+'đ',moneyWhole(totals.adsSpend||0)+'đ',integer(totals.impressions||0),integer(totals.adClicks||0),number(roi)].forEach(function(value){var cell=document.createElement('td');cell.textContent=value;row.appendChild(cell);});parent.appendChild(row);expand.addEventListener('click',function(){toggleContentKocVideos(expand,null,'UNKNOWN',row);});
       }
 
       function renderContentKocAnalysis(data) {
         currentContentKocData = data || {}; document.getElementById('reportTabs').classList.remove('hidden');
         document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
-        var sellerNotice=document.getElementById('contentKocSellerNotice');var shopDelayed=data.shopLatestAvailableDate&&data.shopLatestAvailableDate<data.endDate;
-        sellerNotice.classList.toggle('hidden',data.shopAnalyticsAvailable!==false&&!shopDelayed);
-        if(shopDelayed){document.getElementById('contentKocSellerNoticeTitle').textContent='Dữ liệu TikTok Shop đang cập nhật';document.getElementById('contentKocSellerNoticeMeta').textContent='TikTok Shop mới có dữ liệu đến '+data.shopLatestAvailableDate+'. Chi phí Ads vẫn theo đúng kỳ đã chọn; GMV, views và click organic sẽ xuất hiện khi Shop hoàn tất dữ liệu.';}
-        else{document.getElementById('contentKocSellerNoticeTitle').textContent='Cần kết nối TikTok Shop Seller';document.getElementById('contentKocSellerNoticeMeta').textContent='Đang hiển thị dữ liệu Ads; kết nối Seller để bổ sung GMV, lượt xem và click organic.';}
         renderContentKocSummary('contentKocSummarySeller', data.totals && data.totals.seller);
         renderContentKocSummary('contentKocSummaryKoc', data.totals && data.totals.koc);
         var seller = data.totals && data.totals.seller || {}; var koc = data.totals && data.totals.koc || {};
@@ -1087,8 +1092,11 @@
         document.getElementById('contentKocGroupEmpty').classList.toggle('hidden',hasGroupData); document.getElementById('contentKocGroupContent').classList.toggle('hidden',!hasGroupData);
         if (contentKocGroupChart) contentKocGroupChart.destroy(); if (hasGroupData) contentKocGroupChart = new Chart(document.getElementById('contentKocGroupChart'),{type:'doughnut',data:{labels:['Nhà bán hàng','KOC'],datasets:[{data:groupValues,backgroundColor:['#f7b942','#0f9f9a'],borderColor:'#fff',borderWidth:2}]},options:{maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'right',labels:{usePointStyle:true,boxWidth:8}}}}});
         var products = data.byProduct || []; var top = products.slice(0,8); var labels = top.map(function(product){var name=product.productName||product.productId;return name.length>24?name.slice(0,23)+'…':name;});
-        if(contentKocProductChart)contentKocProductChart.destroy(); contentKocProductChart=new Chart(document.getElementById('contentKocProductChart'),{type:'bar',data:{labels:labels,datasets:[{label:'Nhà bán hàng',data:top.map(function(p){return p.seller.gmv;}),backgroundColor:'#f7b942'},{label:'KOC',data:top.map(function(p){return p.koc.gmv;}),backgroundColor:'#0f9f9a'}]},options:contentKocChartOptions()});
-        if(contentKocEngagementChart)contentKocEngagementChart.destroy(); contentKocEngagementChart=new Chart(document.getElementById('contentKocEngagementChart'),{type:'bar',data:{labels:['Lượt xem','Lượt click'],datasets:[{label:'Nhà bán hàng',data:[seller.views||0,seller.clicks||0],backgroundColor:'#f7b942'},{label:'KOC',data:[koc.views||0,koc.clicks||0],backgroundColor:'#0f9f9a'}]},options:contentKocChartOptions()});
+        if(contentKocProductChart)contentKocProductChart.destroy();contentKocProductChart=new Chart(document.getElementById('contentKocProductChart'),{data:{labels:labels,datasets:[
+          {type:'bar',label:'Click Nhà bán hàng',data:top.map(function(p){return p.seller.adClicks||0;}),backgroundColor:'#f7b942',yAxisID:'y'},
+          {type:'bar',label:'Click KOC',data:top.map(function(p){return p.koc.adClicks||0;}),backgroundColor:'#0f9f9a',yAxisID:'y'},
+          {type:'line',label:'GMV Nhà bán hàng',data:top.map(function(p){return p.seller.gmv||0;}),borderColor:'#d97706',backgroundColor:'#d97706',pointRadius:3,tension:.25,yAxisID:'y1'},
+          {type:'line',label:'GMV KOC',data:top.map(function(p){return p.koc.gmv||0;}),borderColor:'#0f766e',backgroundColor:'#0f766e',pointRadius:3,tension:.25,yAxisID:'y1'}]},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#64748b'}},y:{beginAtZero:true,position:'left',title:{display:true,text:'Product ad clicks'},grid:{color:'#e2e8f0'},ticks:{precision:0}},y1:{beginAtZero:true,position:'right',title:{display:true,text:'GMV (VND)'},grid:{drawOnChartArea:false},ticks:{callback:function(value){return compactMoney(value);}}}},plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,color:'#475569'}}}}});
         var rows=document.getElementById('contentKocProductRows');rows.replaceChildren();products.forEach(function(product){appendContentKocProductRows(rows,product,true);});appendUnknownContentKocRow(rows,data.totals&&data.totals.unknown);document.getElementById('contentKocEmpty').classList.toggle('hidden',((data.videos||[]).length)>0);
         var generated=new Date(data.generatedAt);document.getElementById('updatedAt').textContent='Cập nhật: '+new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'medium'}).format(generated);
       }

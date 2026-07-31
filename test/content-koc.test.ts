@@ -13,9 +13,9 @@ describe('Content & KOC analysis', () => {
 
   it('keeps seller, KOC and Ads-only totals separate', () => {
     const totals = calculateContentKocTotals([
-      { creatorType:'SELLER', shop:{gmv:1_000,views:100,clicks:5,skuOrders:2}, ads:{cost:200,productClicks:3} },
-      { creatorType:'KOC', shop:{gmv:2_000,views:300,clicks:12,skuOrders:4}, ads:null },
-      { creatorType:'UNKNOWN', shop:null, ads:{cost:50,orders:1,productClicks:2} }
+      { creatorType:'SELLER', isPostedInRange:true, shop:{gmv:1_000,views:100,clicks:5,skuOrders:2}, ads:{cost:200,productClicks:3,productImpressions:30} },
+      { creatorType:'KOC', isPostedInRange:true, shop:{gmv:2_000,views:300,clicks:12,skuOrders:4}, ads:null },
+      { creatorType:'UNKNOWN', isPostedInRange:true, shop:null, ads:{cost:50,orders:1,productClicks:2,productImpressions:20} }
     ]);
     expect(totals.seller).toMatchObject({videoCount:1,gmv:1_000,adsSpend:200,views:100,clicks:8,orders:2});
     expect(totals.koc).toMatchObject({videoCount:1,gmv:2_000,adsSpend:0,views:300,clicks:12,orders:4});
