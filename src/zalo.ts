@@ -88,8 +88,9 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
   const hourlyRow = report.hourly?.[reportHour - 1];
   if (!hourlyRow?.metrics) throw new Error(`Không tìm thấy dữ liệu khung giờ ${reportHour}:00.`);
   const display = reportDate.split('-').reverse().join('/');
-  const t = hourlyRow.metrics;
-  const text = [
+  const cumulative = report.hourlyMode === 'cumulative';
+  const t = cumulative ? report.totals : hourlyRow.metrics;
+  let text = [
     `Chỉ số ADS ${display} - ${String(reportHour).padStart(2,'0')}:00`,
     `Cost: ${integer(t.cost)}`,
     `SKU orders: ${integer(t.orders)}`,
@@ -102,6 +103,7 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     '- Tắt:',
     ...recommendation(summary.videoEvaluation?.stop)
   ].join('\n');
+  if (cumulative) text = text.replace(':00\n', ':00 (lũy kế)\n');
   const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text));
   await env.DB.prepare(`INSERT INTO scheduled_reports(report_date,report_hour,status,message_id,payload) VALUES(?,?,?,?,?)
     ON CONFLICT(report_date,report_hour) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)

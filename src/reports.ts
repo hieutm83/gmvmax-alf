@@ -98,7 +98,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
   if (!multiDay && !hourly.some((point) => point.metrics.cost || point.metrics.grossRevenue) && (totals.cost || totals.grossRevenue)) {
     const now = new Date();
     const isToday = endDate === dateInTimezone(now, env.TIMEZONE);
-    const fallbackIndex = isToday ? Math.max(0, Math.min(23, hourInTimezone(now, env.TIMEZONE))) : 23;
+    const fallbackIndex = isToday ? Math.max(0, Math.min(23, hourInTimezone(now, env.TIMEZONE) - 1)) : 23;
     hourly[fallbackIndex].metrics = { ...totals };
     hourlyMode = 'cumulative';
   }
