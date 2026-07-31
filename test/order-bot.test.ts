@@ -1,0 +1,39 @@
+import { describe, expect, it } from 'vitest';
+import { formatOrderBotReport, ORDER_BOT_SLOTS, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
+
+describe('order bot', () => {
+  it('uses the report date in env timezone for both cutoffs', () => {
+    expect(new Date(zonedDateTimeEpoch('2026-07-31', '00:01', 'Asia/Bangkok')).toISOString()).toBe('2026-07-30T17:01:00.000Z');
+    expect(new Date(zonedDateTimeEpoch('2026-07-31', '18:00', 'Asia/Bangkok')).toISOString()).toBe('2026-07-31T11:00:00.000Z');
+  });
+
+  it('splits every order into exactly old or new and sorts SKU then qty', () => {
+    const cutoff = zonedDateTimeEpoch('2026-07-31', '00:01', 'Asia/Bangkok');
+    const summary = summarizeOrderStatus('Số đơn chờ vận chuyển', [
+      { id: '1', create_time: cutoff / 1000 - 1, line_items: [{ seller_sku: 'TTD', quantity: 2 }] },
+      { id: '2', create_time: cutoff / 1000, line_items: [{ seller_sku: 'TKA', quantity: 1 }] },
+      { id: '3', create_time: cutoff / 1000 + 1, line_items: [{ seller_sku: 'TKA', quantity: 2 }] }
+    ], cutoff);
+    expect(summary.oldTotal + summary.newTotal).toBe(summary.total);
+    expect(summary.oldBreakdown).toEqual([{ sellerSku: 'TTD', qty: 2, orders: 1 }]);
+    expect(summary.newBreakdown.map((row) => [row.sellerSku, row.qty])).toEqual([['TKA', 1], ['TKA', 2]]);
+  });
+
+  it('always prints both fixed groups for a non-empty status', () => {
+    const text = formatOrderBotReport('2026-07-31', ORDER_BOT_SLOTS['10:30'], [{
+      label: 'Số đơn chờ vận chuyển', total: 1, oldTotal: 0, newTotal: 1,
+      oldBreakdown: [], newBreakdown: [{ sellerSku: 'TTD', qty: 1, orders: 1 }]
+    }], new Date('2026-07-31T03:30:00Z'), 'Asia/Bangkok');
+    expect(text).toContain('Đơn cần gửi trước 12h: 0');
+    expect(text).toContain('Đơn mới: 1\n1 TTD: 1 đơn');
+  });
+
+  it('summarizes overflow only when a Zalo-size fallback is requested', () => {
+    const rows = Array.from({ length: 22 }, (_, index) => ({ sellerSku: `SKU-${index}`, qty: 1, orders: 1 }));
+    const text = formatOrderBotReport('2026-07-31', ORDER_BOT_SLOTS['16:30'], [{
+      label: 'Số đơn chờ thu gom', total: 22, oldTotal: 22, newTotal: 0,
+      oldBreakdown: rows, newBreakdown: []
+    }], new Date('2026-07-31T09:30:00Z'), 'Asia/Bangkok', 20);
+    expect(text).toContain('... và 2 SKU khác');
+  });
+});

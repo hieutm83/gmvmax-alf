@@ -9,6 +9,7 @@ import { loadFinanceAnalysis, loadSkuUnitCosts, saveSkuUnitCost } from './financ
 import { loadContentKocAnalysis } from './content-koc';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, sendOperationsReport } from './operations-bot';
+import { ORDER_BOT_SLOTS, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
@@ -140,10 +141,6 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   if(message.type==='hourly-dispatch'){
     try{await getAccessToken(runtime);}catch(error){console.error('TikTok OAuth refresh failed',error instanceof Error?error.message:String(error));return;}
     const tasks:Promise<unknown>[]=[];
-    if(env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
-      if(message.reportHour===8){const yesterday=shiftDate(message.reportDate,-1);
-        await env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'});}
-    }
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
     if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},message.reportHour===8?{delaySeconds:30}:undefined));
     await Promise.all(tasks);return;
@@ -155,6 +152,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
       .bind(Date.now(),message.eventId).run();
     return;
   }
+  if(message.type==='order-bot-report')return sendOrderBotReport(env,message.reportDate,message.reportTime,message.force===true);
   if(message.type==='sheet-backup'){
     const storeId=await resolveDefaultStore(runtime);const report=await loadMainReport(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
     const summary=await loadCreativeSummaries(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate,products:report.products,allContexts:report.creativeContexts,availableProducts:report.availableProductCount,forceRefresh:true});
@@ -230,8 +228,17 @@ export default {
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
+    const localParts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:env.TIMEZONE,hour:'2-digit',minute:'2-digit',hour12:false})
+      .formatToParts(now).map((part)=>[part.type,part.value]));
+    const localMinute=Number(localParts.minute);const slotTime=`${String(localHour).padStart(2,'0')}:${String(localMinute).padStart(2,'0')}`;
     ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
-    if(now.getUTCMinutes()!==0)return;
+    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&ORDER_BOT_SLOTS[slotTime])
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',reportDate:localDate,reportTime:slotTime}));
+    if(localHour===8&&localMinute===5&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
+      const yesterday=shiftDate(localDate,-1);
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
+    }
+    if(localMinute!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
     ctx.waitUntil(env.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour,
