@@ -245,8 +245,7 @@ export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,end
       point.productClicks+=numberValue(metrics.product_clicks);point.productImpressions+=numberValue(metrics.product_impressions);current.timeline[timeKey]=point;
     }
   }
-  const result=Array.from(byId.values()).filter(video=>numberValue(video.cost)||numberValue(video.orders)||numberValue(video.grossRevenue)||
-    numberValue(video.productClicks)||numberValue(video.productImpressions));
+  const result=Array.from(byId.values());
   (result as any).overallTimeline=(startDate===endDate?main.hourly:main.daily).map((point:any)=>({key:startDate===endDate?String(Math.max(0,Number(point.hour||1)-1)).padStart(2,'0'):point.date,
     grossRevenue:numberValue(point.metrics?.grossRevenue),productClicks:numberValue(point.metrics?.traffic)}));
   return result;

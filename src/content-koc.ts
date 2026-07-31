@@ -1,7 +1,7 @@
 import type { Env } from './types';
 import { authorizedShop, shopRequest } from './seller';
 import { loadAdsVideoMetrics } from './reports';
-import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
+import { cacheGet, cachePut, dateInTimezone, numberValue, shiftDate, stableKey } from './utils';
 
 export type CreatorType = 'SELLER' | 'KOC' | 'UNKNOWN';
 type GroupTotals = { videoCount:number;gmv:number;adsSpend:number;views:number;clicks:number;impressions:number;adClicks:number;orders:number };
@@ -11,8 +11,8 @@ function emptyTotals():GroupTotals{return{videoCount:0,gmv:0,adsSpend:0,views:0,
 function money(value:any):number{return numberValue(value?.amount??value);}
 export function classifyCreatorType(value:any):CreatorType{
   const type=String(value||'').toUpperCase();
-  if(type==='OFFICIAL'||type==='CHANNEL'||type==='OFFICIAL_ACCOUNTS'||type==='MARKETING_ACCOUNTS')return'SELLER';
-  if(type==='AFFILIATE'||type==='AFFILIATE_ACCOUNTS')return'KOC';
+  if(type.includes('AFFILIATE'))return'KOC';
+  if(type.includes('OFFICIAL')||type.includes('CHANNEL')||type.includes('MARKETING')||type.includes('SHOP'))return'SELLER';
   return'UNKNOWN';
 }
 function shopVideoCreatorType(video:any):CreatorType{
@@ -26,6 +26,9 @@ function postDate(value:any):string|null{
   if(/^\d{10,13}$/.test(String(value))){const milliseconds=String(value).length===10?Number(value)*1000:Number(value);return new Date(milliseconds).toISOString().slice(0,10);}
   const match=String(value).match(/^(\d{4}-\d{2}-\d{2})/);return match?match[1]:null;
 }
+function postDateFromItemId(itemId:any,timezone:string):string|null{
+  try{const timestamp=Number(BigInt(String(itemId))>>32n);if(timestamp<1_500_000_000||timestamp>4_000_000_000)return null;return dateInTimezone(new Date(timestamp*1000),timezone);}catch{return null;}
+}
 function addTotals(target:GroupTotals,video:any):void{
   if(video.isPostedInRange)target.videoCount+=1;target.gmv+=numberValue(video.ads?.grossRevenue);target.adsSpend+=numberValue(video.ads?.cost);
   target.views+=numberValue(video.shop?.views);target.clicks+=numberValue(video.shop?.clicks)+numberValue(video.ads?.productClicks);
@@ -35,7 +38,8 @@ function addTotals(target:GroupTotals,video:any):void{
 function adsCreatorType(metadata:any,ads:any):CreatorType{
   const username=String(metadata?.creator?.user_name||metadata?.username||ads?.accountUsername||'').trim().toLowerCase().replace(/^@/,'');
   if(SELLER_USERNAMES.has(username))return'SELLER';
-  return metadata?shopVideoCreatorType(metadata):'UNKNOWN';
+  if(metadata)return shopVideoCreatorType(metadata);
+  return classifyCreatorType(ads?.authorizationType);
 }
 export function calculateContentKocTotals(videos:any[]):{all:GroupTotals;seller:GroupTotals;koc:GroupTotals;unknown:GroupTotals}{
   const totals={all:emptyTotals(),seller:emptyTotals(),koc:emptyTotals(),unknown:emptyTotals()};
@@ -63,7 +67,7 @@ async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<
 }
 
 export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;storeId:string;startDate:string;endDate:string;forceRefresh?:boolean}):Promise<any>{
-  const key=stableKey('content-koc-v11',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  const key=stableKey('content-koc-v13',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return{...cached,cacheStatus:'HIT'};}
   const [shopResult,adsVideos]=await Promise.all([
     fetchShopVideos(env,input.startDate,input.endDate).catch(()=>({available:false,videos:[],latestAvailableDate:null})),
@@ -86,14 +90,14 @@ export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;
     const products=(raw.products||[]).map((product:any)=>({id:String(product.id),name:String(product.name||product.id),imageUrl:''}));
     for(const product of ads?.products||[])if(!products.some((item:any)=>item.id===product.id))products.push(product);
     const type=adsCreatorType(raw,ads);
-    const postedDate=postDate(raw.video_post_time);videos.push({itemId,title:String(raw.title||ads?.title||`Video ${itemId}`),videoUrl:`https://www.tiktok.com/@${encodeURIComponent(String(raw.username||raw.creator?.user_name||ads?.accountUsername||''))}/video/${itemId}`,
+    const postedDate=postDate(raw.video_post_time)||postDateFromItemId(itemId,env.TIMEZONE);videos.push({itemId,title:String(raw.title||ads?.title||`Video ${itemId}`),videoUrl:`https://www.tiktok.com/@${encodeURIComponent(String(raw.username||raw.creator?.user_name||ads?.accountUsername||''))}/video/${itemId}`,
       accountName:String(raw.creator?.nick_name||raw.username||ads?.accountName||''),accountUsername:String(raw.creator?.user_name||raw.username||ads?.accountUsername||''),creatorType:type,
       postTime:raw.video_post_time||null,isPostedInRange:Boolean(postedDate&&postedDate>=input.startDate&&postedDate<=input.endDate),products,shop:{gmv:money(raw.gmv),views,clicks:Math.round(views*(ctr||0)),ctr,skuOrders:numberValue(raw.sku_orders),itemsSold:numberValue(raw.items_sold)},
       ads:ads?{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''}:null,
       roi:numberValue(ads?.cost)?numberValue(ads.grossRevenue)/numberValue(ads.cost):null});
   }
   for(const ads of adsById.values() as Iterable<any>){const metadata:any=shopMetadataById.get(String(ads.itemId));const metadataProducts=(metadata?.products||[]).map((product:any)=>({id:String(product.id),name:String(product.name||product.id),imageUrl:''}));
-    const products=metadataProducts.length?metadataProducts:ads.products||[];const postedDate=postDate(metadata?.video_post_time);videos.push({itemId:String(ads.itemId),title:ads.title||metadata?.title,videoUrl:`https://www.tiktok.com/player/v1/${ads.itemId}`,
+    const products=metadataProducts.length?metadataProducts:ads.products||[];const postedDate=postDate(metadata?.video_post_time)||postDateFromItemId(ads.itemId,env.TIMEZONE);videos.push({itemId:String(ads.itemId),title:ads.title||metadata?.title,videoUrl:`https://www.tiktok.com/player/v1/${ads.itemId}`,
     accountName:metadata?.creator?.nick_name||metadata?.username||ads.accountName||ads.accountUsername||'',accountUsername:metadata?.creator?.user_name||metadata?.username||ads.accountUsername||'',creatorType:adsCreatorType(metadata,ads),postTime:metadata?.video_post_time||null,isPostedInRange:Boolean(postedDate&&postedDate>=input.startDate&&postedDate<=input.endDate),products,shop:null,
     ads:{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''},roi:numberValue(ads.cost)?numberValue(ads.grossRevenue)/numberValue(ads.cost):null});
   }
@@ -123,8 +127,9 @@ export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;
     for(const metric of fallbackTimeline){const point=ensurePoint(String(metric.key));point.seller.gmv=numberValue(metric.grossRevenue)*sellerGmvShare;point.koc.gmv=numberValue(metric.grossRevenue)-point.seller.gmv;
       point.seller.clicks=numberValue(metric.productClicks)*sellerClickShare;point.koc.clicks=numberValue(metric.productClicks)-point.seller.clicks;}}
   const timeSeries={granularity,points:Array.from(points.values()).sort((a,b)=>a.key.localeCompare(b.key))};
+  const orderVideos=videos.filter(video=>numberValue(video.ads?.orders)>0);
   const result={advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate,generatedAt:new Date().toISOString(),
-    totals,byProduct,videos,timeSeries,shopAnalyticsAvailable:shopResult.available,shopLatestAvailableDate:shopResult.latestAvailableDate,
+    totals,byProduct,videos:orderVideos,timeSeries,shopAnalyticsAvailable:shopResult.available,shopLatestAvailableDate:shopResult.latestAvailableDate,
     diagnostics:{shopPeriodVideos:shopResult.videos.length,shopMetadataVideos:metadataVideos.length,metadataMatchedAdsCount,
       adsAuthorizationTypes:Array.from(new Set(adsVideos.map((video:any)=>String(video.authorizationType||'')).filter(Boolean))),
       shopAuthorTypes:Array.from(new Set(metadataVideos.map((video:any)=>String(video.creator?.author_type||'')).filter(Boolean))),
