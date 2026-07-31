@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatOrderBotReport, ORDER_BOT_SLOTS, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
+import { buildOrderBotStyles, formatOrderBotReport, ORDER_BOT_SLOTS, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
 
 describe('order bot', () => {
   it('uses the report date in env timezone for both cutoffs', () => {
@@ -24,8 +24,10 @@ describe('order bot', () => {
       label: 'Số đơn chờ vận chuyển', total: 1, oldTotal: 0, newTotal: 1,
       oldBreakdown: [], newBreakdown: [{ sellerSku: 'TTD', qty: 1, orders: 1 }]
     }], new Date('2026-07-31T03:30:00Z'), 'Asia/Bangkok');
-    expect(text).toContain('Đơn cần gửi trước 12h: 0');
-    expect(text).toContain('Đơn mới: 1\n1 TTD: 1 đơn');
+    expect(text).toContain('Đơn cần gửi trước 12h: 0 đơn');
+    expect(text).toContain('Đơn mới: 1\n- 1 TTD: 1 đơn');
+    expect(text).toContain('Cập nhật: 10:30:00');
+    expect(text.endsWith('---------------------------')).toBe(true);
   });
 
   it('summarizes overflow only when a Zalo-size fallback is requested', () => {
@@ -35,5 +37,22 @@ describe('order bot', () => {
       oldBreakdown: rows, newBreakdown: []
     }], new Date('2026-07-31T09:30:00Z'), 'Asia/Bangkok', 20);
     expect(text).toContain('... và 2 SKU khác');
+  });
+
+  it('styles labels and operational SKU colors like the reference message', () => {
+    const text = [
+      'Số đơn chờ thu gom: 12',
+      'Đơn cần gửi trước 19h: 12 đơn',
+      '- 1 TTD: 12 đơn',
+      '- 1 TKA: 2 đơn',
+      '- 1 TAH: 2 đơn',
+      '',
+      'Đơn mới: 0'
+    ].join('\n');
+    const styles = buildOrderBotStyles(text);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '12' && style.st.includes('c_db342e'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TKA: 2 đơn' && style.st.includes('c_15a85f'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TAH: 2 đơn' && style.st.includes('c_db342e'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn mới: 0' && style.st.includes('i'))).toBe(true);
   });
 });

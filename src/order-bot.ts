@@ -1,8 +1,10 @@
 import type { Env } from './types';
 import { authorizedShop, shopRequest } from './seller';
-import { formatOperationsUpdatedAt } from './operations-bot';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
+const GREEN = 'c_15a85f';
+const RED = 'c_db342e';
+const SEPARATOR = '---------------------------';
 const STATUS_DEFINITIONS = [
   { code: 'AWAITING_SHIPMENT', label: 'Số đơn chờ vận chuyển' },
   { code: 'AWAITING_COLLECTION', label: 'Số đơn chờ thu gom' }
@@ -15,6 +17,7 @@ export interface OrderBotSlot {
 }
 
 export interface OrderSkuBreakdown { sellerSku: string; qty: number; orders: number; }
+export interface OrderTextStyle { start: number; len: number; st: string[]; }
 export interface OrderStatusSummary {
   label: string;
   total: number;
@@ -103,22 +106,26 @@ export function summarizeOrderStatus(label: string, orders: any[], cutoffEpoch: 
 
 export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summaries: OrderStatusSummary[], updatedAt: Date,
   timezone: string, maxBreakdownLines = Number.POSITIVE_INFINITY): string {
+  const updatedTime = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).format(updatedAt);
   const lines = [
     `Báo cáo vận đơn TikTok Shop ${localDate.split('-').reverse().join('/')}`,
-    `Cập nhật: ${formatOperationsUpdatedAt(updatedAt, timezone)}`,
+    `Cập nhật: ${updatedTime}`,
     ''
   ];
   summaries.forEach((summary, index) => {
+    lines.push(SEPARATOR);
     lines.push(`${summary.label}: ${summary.total}`);
     if (summary.total > 0) {
-      lines.push(`${slot.oldLabel}: ${summary.oldTotal}`);
-      summary.oldBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`${row.qty} ${row.sellerSku}: ${row.orders} đơn`));
+      lines.push(`${slot.oldLabel}: ${summary.oldTotal} đơn`);
+      summary.oldBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.qty} ${row.sellerSku}: ${row.orders} đơn`));
       if (summary.oldBreakdown.length > maxBreakdownLines) {
         const remaining = new Set(summary.oldBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
         lines.push(`... và ${remaining} SKU khác`);
       }
-      lines.push(`Đơn mới: ${summary.newTotal}`);
-      summary.newBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`${row.qty} ${row.sellerSku}: ${row.orders} đơn`));
+      lines.push('', `Đơn mới: ${summary.newTotal}`);
+      summary.newBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.qty} ${row.sellerSku}: ${row.orders} đơn`));
       if (summary.newBreakdown.length > maxBreakdownLines) {
         const remaining = new Set(summary.newBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
         lines.push(`... và ${remaining} SKU khác`);
@@ -126,7 +133,28 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
     }
     if (index < summaries.length - 1) lines.push('');
   });
+  lines.push('', SEPARATOR);
   return lines.join('\n');
+}
+
+export function buildOrderBotStyles(text: string): OrderTextStyle[] {
+  const styles: OrderTextStyle[] = [];
+  const add = (start: number, len: number, ...st: string[]) => {
+    if (start >= 0 && len > 0) styles.push({ start, len, st });
+  };
+  const lines = text.split('\n');
+  let offset = 0;
+  for (const line of lines) {
+    if (/^Đơn cần gửi trước/.test(line) || /^Đơn mới:/.test(line)) add(offset, line.length, 'i');
+    const totalMatch = line.match(/^Số đơn .+?:\s*(\d+)$/);
+    if (totalMatch && Number(totalMatch[1]) > 0) add(offset + line.lastIndexOf(totalMatch[1]), totalMatch[1].length, RED);
+    const oldMatch = line.match(/^Đơn cần gửi trước .+?:\s*(\d+)\s+đơn$/);
+    if (oldMatch && Number(oldMatch[1]) > 0) add(offset + line.lastIndexOf(oldMatch[1]), oldMatch[1].length, RED);
+    if (/^-\s+\d+\s+TKA\b/i.test(line)) add(offset, line.length, GREEN);
+    if (/^-\s+\d+\s+TAH\b/i.test(line)) add(offset, line.length, RED);
+    offset += line.length + 1;
+  }
+  return styles;
 }
 
 async function currentOrders(env: Env, shopCipher: string, status: string): Promise<any[]> {
@@ -160,7 +188,7 @@ async function sendOrderBotMessage(env: Env, text: string): Promise<string> {
   if (!env.ZALO_ORDER_GROUP_CHAT_ID) throw new Error('Missing ZALO_ORDER_GROUP_CHAT_ID.');
   const response = await fetch(`${API}${encodeURIComponent(env.ZALO_ORDER_BOT_TOKEN)}/sendMessage`, {
     method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ chat_id: env.ZALO_ORDER_GROUP_CHAT_ID, text })
+    body: JSON.stringify({ chat_id: env.ZALO_ORDER_GROUP_CHAT_ID, text, text_styles: buildOrderBotStyles(text) })
   });
   const data = await response.json<any>().catch(() => ({}));
   if (!response.ok || data.ok !== true) throw new Error(`Zalo Bot API ${data.error_code || response.status}: ${data.description || 'Invalid response'}`);
