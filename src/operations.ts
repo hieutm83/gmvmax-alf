@@ -120,7 +120,12 @@ function breakdown(map: Map<string, number>): Array<{ label: string; count: numb
 }
 
 export function returnReasonLabel(item: any): string {
-  const code = String(item?.return_reason || item?.refund_reason || '').toLowerCase();
+  // Search Returns documents these fields on each return_orders item. Prefer the
+  // stable code because TikTok occasionally returns an unrelated localized text.
+  const rawCode = item?.return_reason?.code || item?.return_reason || item?.refund_reason?.code || item?.refund_reason;
+  const rawText = item?.return_reason_text || item?.return_reason?.text ||
+    item?.refund_reason_text || item?.refund_reason?.text;
+  const code = String(rawCode || '').toLowerCase();
   const mappings: Array<[RegExp, string]> = [
     [/suspected_counterfeit/, 'Nghi ngờ hàng giả'],
     [/not_match(?:_description)?/, 'Sản phẩm không khớp với mô tả'],
@@ -134,7 +139,7 @@ export function returnReasonLabel(item: any): string {
     [/_other(?:_|$)/, 'Lý do khác']
   ];
   for (const [pattern, label] of mappings) if (pattern.test(code)) return label;
-  return String(item?.return_reason_text || item?.refund_reason_text || item?.return_reason || item?.refund_reason || 'Không xác định');
+  return String(rawText || rawCode || 'Không xác định');
 }
 
 async function currentLifecycleCounts(env: Env, shopCipher: string,
@@ -177,7 +182,7 @@ function packageStatus(order: any): string {
 }
 
 export async function loadOperationsAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-operations-v7-status-counts', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('seller-operations-v8-return-reasons-funnel', { startDate: input.startDate, endDate: input.endDate });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
 
@@ -268,15 +273,18 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
       packageStatus: packageStatus(order), cancelledAt: 0, updatedAt: timestampMillis(latestTimestamp(item.update_time, item.create_time)) });
   }
 
-  const lifecycle = [
+  const currentLifecycle = [
     { code: 'UNPAID', label: 'Chưa thanh toán' },
     { code: 'AWAITING_SHIPMENT', label: 'Chờ vận chuyển' },
     { code: 'AWAITING_COLLECTION', label: 'Chờ thu gom' },
-    { code: 'IN_TRANSIT', label: 'Đang vận chuyển' },
-    { code: 'DELIVERED', label: 'Đã giao' },
-    { code: 'COMPLETED', label: 'Hoàn tất' }
+    { code: 'IN_TRANSIT', label: 'Đang vận chuyển' }
   ];
-  const lifecycleCounts = await currentLifecycleCounts(env, cipher, lifecycle, warnings);
+  const lifecycleCounts = await currentLifecycleCounts(env, cipher, currentLifecycle, warnings);
+  const funnel = [
+    ...currentLifecycle.map((item) => ({ ...item, count: lifecycleCounts.get(item.code) || 0 })),
+    { code: 'CANCELLED_IN_PERIOD', label: 'Đã hủy', count: cancellations.length },
+    { code: 'REFUND_IN_PERIOD', label: 'Hoàn tiền', count: returns.length }
+  ];
 
   const logisticsCancellationByOrderId = new Map(logisticsCancellations
     .map((item) => [String(item.order_id || ''), item] as const).filter(([orderId]) => Boolean(orderId)));
@@ -289,7 +297,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
 
   const totalOrders = populationOrders.length;
   const result = {
-    schemaVersion: 'operations-v7-status-counts',
+    schemaVersion: 'operations-v8-return-reasons-funnel',
     generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
     shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code }, warnings,
     totals: {
@@ -310,7 +318,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     cancelReasons: breakdown(cancelReasons),
     returnReasons: breakdown(returnReasons),
     failedReasons: breakdown(systemCancelReasons),
-    funnel: lifecycle.map((item) => ({ ...item, count: lifecycleCounts.get(item.code) || 0 })),
+    funnel,
     incidents
   };
   await cachePut(env, key, result, 300);

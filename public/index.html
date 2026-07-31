@@ -871,7 +871,7 @@
           options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, font: { family: 'Inter', size: 10 } } } } }
         });
         deliveryFunnelChart = new Chart(document.getElementById('deliveryFunnelChart'), {
-          type: 'bar', plugins: [emptyChartPlugin], data: { labels: funnel.map(function (item) { return item.label; }), datasets: [{ label: 'Đơn', data: funnel.map(function (item) { return item.count; }), backgroundColor: ['#f59e0b','#ea580c','#dc2626','#7c3aed','#059669'], borderRadius: 5 }] },
+          type: 'bar', plugins: [emptyChartPlugin], data: { labels: funnel.map(function (item) { return item.label; }), datasets: [{ label: 'Đơn', data: funnel.map(function (item) { return item.count; }), backgroundColor: ['#f59e0b','#ea580c','#dc2626','#7c3aed','#2563eb','#059669'], borderRadius: 5 }] },
           options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: function (context) { return 'Mã ' + (funnel[context.dataIndex] && funnel[context.dataIndex].code || ''); } } } }, scales: { x: { display: funnel.some(function (item) { return item.count > 0; }), beginAtZero: true, ticks: { precision: 0 } }, y: { display: funnel.some(function (item) { return item.count > 0; }) } } }
         });
       }
