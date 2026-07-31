@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateStatementTransactions, unsettledReasonLabel } from '../src/finance';
+import { aggregateStatementTransactions, calculateFinanceSummary, unsettledReasonLabel } from '../src/finance';
 
 describe('finance aggregation', () => {
   it('aggregates statement fields and removes zero fee fields', () => {
@@ -29,5 +29,26 @@ describe('finance aggregation', () => {
     }]);
     expect(result.shipping.total).toBe(-12);
     expect(result.shipping.breakdown).toEqual({ actual_shipping_fee_amount: -20, shipping_fee_discount_amount: 8 });
+  });
+
+  it('calculates the six finance cards without double counting affiliate ads before PIT', () => {
+    const detail = aggregateStatementTransactions([{
+      order_id: 'order-3', revenue_amount: '120', shipping_cost_amount: '-5', fee_tax_amount: '-28',
+      revenue_breakdown: {
+        subtotal_before_discount_amount: '200', seller_discount_amount: '-50',
+        refund_subtotal_before_discount_amount: '-30', seller_discount_refund_amount: '10'
+      },
+      fee_tax_breakdown: { fee: {
+        platform_commission_amount: '-10', transaction_fee_amount: '-4',
+        affiliate_commission_amount: '-8', affiliate_commission_before_pit_amount: '-6',
+        affiliate_ads_commission_amount: '-5', voucher_xtra_service_fee_amount: '-3'
+      }, tax: { local_vat_amount: '-2' } }
+    }]);
+    const summary = calculateFinanceSummary(detail, 25);
+    expect(summary.sellerSubtotal).toBe(150);
+    expect(summary.feeTax).toBe(24);
+    expect(summary.affiliate).toBe(13);
+    expect(summary.refunds).toBe(20);
+    expect(summary.grossProfit).toBe(68);
   });
 });

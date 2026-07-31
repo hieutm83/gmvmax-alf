@@ -9,7 +9,9 @@ type NumberMap = Record<string, number>;
 
 const PLATFORM_FEES = new Set([
   'platform_commission_amount', 'transaction_fee_amount', 'referral_fee_amount',
-  'refund_administration_fee_amount', 'credit_card_handling_fee_amount'
+  'refund_administration_fee_amount', 'credit_card_handling_fee_amount',
+  'transaction_fee_before_discount_amount', 'transaction_fee_discount_amount',
+  'gmv_max_transaction_fee_saving_amount', 'gmv_max_transaction_fee_savings_amount'
 ]);
 const KOC_FEES = new Set([
   'affiliate_commission_amount', 'affiliate_commission_amount_before_pit',
@@ -164,11 +166,22 @@ function mergeBreakdown(target: any, source: any): void {
 }
 
 async function settledBlock(env: Env, cipher: string, startDate: string, endDate: string): Promise<any> {
-  const list = await statements(env, cipher, startDate, endDate);
+  // A statement can be issued after the order period. Search the settlement
+  // horizon, then keep only transactions whose order was created in scope.
+  const today = dateInTimezone(new Date(), env.TIMEZONE);
+  const horizonEnd = shiftDate(endDate, 45) < today ? shiftDate(endDate, 45) : today;
+  const list = await statements(env, cipher, startDate, horizonEnd);
   const total = aggregateStatementTransactions([]);
   const statementRows: any[] = [];
+  const start = epoch(startDate);
+  const end = epoch(shiftDate(endDate, 1));
   for (const statement of list) {
-    const transactions = await statementTransactions(env, cipher, String(statement.id));
+    const transactions = (await statementTransactions(env, cipher, String(statement.id)))
+      .filter((item) => {
+        const created = numberValue(item.order_create_time);
+        return created >= start && created < end;
+      });
+    if (!transactions.length) continue;
     const detail = aggregateStatementTransactions(transactions);
     mergeBreakdown(total, detail);
     statementRows.push({
@@ -235,6 +248,14 @@ async function unsettledBlock(env: Env, cipher: string, startDate: string, endDa
   const start = epoch(startDate);
   const end = epoch(shiftDate(endDate, 1));
   const orderTimes = transactions.map((item) => numberValue(item.order_create_time)).filter(Boolean);
+  const normalized = transactions.map((item) => ({
+    ...item,
+    settlement_amount: item.est_settlement_amount,
+    revenue_amount: item.est_revenue_amount,
+    shipping_cost_amount: item.est_shipping_cost_amount,
+    fee_tax_amount: item.est_fee_tax_amount,
+    adjustment_amount: item.est_adjustment_amount
+  }));
   return {
     isEstimate: true,
     sumEstSettlementAmount: numberValue(sums?.sum_est_settlement_amount),
@@ -242,6 +263,7 @@ async function unsettledBlock(env: Env, cipher: string, startDate: string, endDa
     sumEstFeeAmount: numberValue(sums?.sum_est_fee_amount),
     sumEstAdjustmentAmount: numberValue(sums?.sum_est_adjustment_amount),
     transactionCount: transactions.length,
+    detail: aggregateStatementTransactions(normalized),
     reasons: Array.from(reasonCounts, ([label, item]) => ({ label, count: item.count, amount: item.amount, rawValues: Array.from(item.raw) })),
     observedOrderCreateTime: orderTimes.length ? { min: Math.min(...orderTimes) * 1000, max: Math.max(...orderTimes) * 1000,
       allWithinSelectedRange: orderTimes.every((value) => value >= start && value < end) } : null
@@ -342,7 +364,49 @@ function emptySettled(): any {
 
 function emptyUnsettled(): any {
   return { isEstimate: true, sumEstSettlementAmount: 0, sumEstRevenueAmount: 0,
-    sumEstFeeAmount: 0, sumEstAdjustmentAmount: 0, transactionCount: 0, reasons: [], observedOrderCreateTime: null };
+    sumEstFeeAmount: 0, sumEstAdjustmentAmount: 0, transactionCount: 0,
+    detail: aggregateStatementTransactions([]), reasons: [], observedOrderCreateTime: null };
+}
+
+function sumMap(values: NumberMap | undefined): number {
+  return Object.values(values || {}).reduce((sum, value) => sum + numberValue(value), 0);
+}
+
+function affiliateTotal(values: NumberMap | undefined): number {
+  const fees = values || {};
+  const standard = numberValue(fees.affiliate_commission_amount);
+  const beforePit = numberValue(fees.affiliate_commission_amount_before_pit) +
+    numberValue(fees.affiliate_commission_before_pit_amount);
+  // The SEA payload commonly returns the same affiliate commission twice:
+  // once after PIT and once before PIT. Use the larger representation rather
+  // than adding both, while affiliate ads remains a separate charge.
+  const core = Math.abs(beforePit) > Math.abs(standard) ? beforePit : standard;
+  const ads = numberValue(fees.affiliate_ads_commission_amount);
+  const partner = numberValue(fees.affiliate_partner_commission_amount);
+  const shopAds = numberValue(fees.tap_shop_ads_commission) +
+    numberValue(fees.tap_shop_ads_commission_amount) +
+    numberValue(fees.cps_shop_ads_commission_amount);
+  return core + ads + partner + shopAds;
+}
+
+export function calculateFinanceSummary(detail: any, adsCost: number): any {
+  const revenue = detail.revenue || {};
+  const fees = detail.fees || {};
+  const sellerSubtotal = numberValue(revenue.subtotalBeforeDiscount) + numberValue(revenue.sellerDiscount);
+  const refunds = Math.abs(numberValue(revenue.refundSubtotal) + numberValue(revenue.sellerDiscountRefund));
+  const affiliate = Math.abs(affiliateTotal(fees.koc));
+  const inSettlementAds = numberValue(fees.promotion?.gmv_max_ad_fee_amount);
+  const feeTax = Math.abs(sumMap(fees.platform) + sumMap(fees.promotion) - inSettlementAds +
+    sumMap(fees.otherPrograms) + sumMap(fees.tax) + numberValue(detail.shipping?.total));
+  return {
+    sellerSubtotal,
+    feeTax,
+    affiliate,
+    adsCost,
+    refunds,
+    grossProfit: sellerSubtotal - feeTax - affiliate - refunds - adsCost,
+    estimatedSettlement: sellerSubtotal - feeTax - affiliate - refunds
+  };
 }
 
 async function period(env: Env, cipher: string, input: Scope, includeSku: boolean, warnings: string[]): Promise<any> {
@@ -362,14 +426,23 @@ async function period(env: Env, cipher: string, input: Scope, includeSku: boolea
   const ads = { cost: numberValue(adsTotals.cost), orders: numberValue(adsTotals.orders),
     grossRevenue: numberValue(adsTotals.grossRevenue), roi: numberValue(adsTotals.roi),
     costPerOrder: numberValue(adsTotals.costPerOrder), cAds: 0, gmvMax: numberValue(adsTotals.cost) };
-  const netProfitSettledOnly = numberValue(settled.settlementAmount) - ads.cost;
-  const netProfitWithEstimate = netProfitSettledOnly + numberValue(unsettled.sumEstSettlementAmount);
-  return { settled, unsettled, sku, ads, netProfitSettledOnly, netProfitWithEstimate,
-    totalGmv: numberValue(settled.revenue?.netRevenue) + numberValue(unsettled.sumEstRevenueAmount) };
+  const combined = aggregateStatementTransactions([]);
+  mergeBreakdown(combined, settled);
+  mergeBreakdown(combined, unsettled.detail || aggregateStatementTransactions([]));
+  combined.fees.platform = nonZero(combined.fees.platform);
+  combined.fees.koc = nonZero(combined.fees.koc);
+  combined.fees.promotion = nonZero(combined.fees.promotion);
+  combined.fees.otherPrograms = nonZero(combined.fees.otherPrograms);
+  combined.fees.tax = nonZero(combined.fees.tax);
+  combined.shipping.breakdown = nonZero(combined.shipping.breakdown);
+  const summary = calculateFinanceSummary(combined, ads.cost);
+  return { settled, unsettled, combined, summary, sku, ads,
+    netProfitSettledOnly: summary.grossProfit, netProfitWithEstimate: summary.grossProfit,
+    totalGmv: summary.sellerSubtotal };
 }
 
 export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> {
-  const key = stableKey('seller-finance-v1', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('seller-finance-v2-order-created', { startDate: input.startDate, endDate: input.endDate });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
   const shop = await authorizedShop(env);
@@ -387,16 +460,11 @@ export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> 
   ]);
   const today = dateInTimezone(new Date(), env.TIMEZONE);
   const result = {
-    schemaVersion: 'finance-v1', generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
+    schemaVersion: 'finance-v2', generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
     previousStartDate, previousEndDate, shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },
-    warnings, current, previous: { totalGmv: previous.totalGmv,
-      netRevenue: previous.settled.revenue?.netRevenue || 0,
-      totalFeeTax: previous.settled.fees?.totalFeeTax || 0,
-      adsCost: previous.ads.cost,
-      netProfitSettledOnly: previous.netProfitSettledOnly,
-      netProfitWithEstimate: previous.netProfitWithEstimate },
-    todaySettlementNotice: input.startDate === today && input.endDate === today,
-    dateScopeNote: 'Số liệu quyết toán tính theo ngày TikTok xử lý, có thể khác ngày khách đặt hàng.'
+    warnings, current, previous: { ...previous.summary },
+    todaySettlementNotice: false,
+    dateScopeNote: 'Dữ liệu tài chính được tổng hợp theo ngày tạo đơn hàng trong khoảng thời gian đã chọn.'
   };
   const ttl = input.endDate >= today ? 300 : 86400;
   await cachePut(env, key, result, ttl);
