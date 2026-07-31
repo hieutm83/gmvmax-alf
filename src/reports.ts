@@ -209,6 +209,33 @@ export async function discoverVideoContexts(env:Env,input:any,startDate:string,e
   return contexts;
 }
 
+export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,endDate:string):Promise<any[]>{
+  const session=await createSession(env);
+  const contexts=await discoverVideoContexts(env,input,startDate,endDate,session);
+  const main=await loadMainReport(env,{advertiserId:input.advertiserId,storeId:input.storeId,startDate,endDate});
+  const products=new Map<string,any>((main.products||[]).map((product:any)=>[String(product.itemGroupId),product]));
+  const byId=new Map<string,any>();
+  for(let offset=0;offset<contexts.length;offset+=4){
+    const chunk=contexts.slice(offset,offset+4);
+    const values=await Promise.all(chunk.map(async context=>{
+      const rows=await contextsRows(env,session,input.advertiserId,input.storeId,[context],startDate,endDate,['item_id'],creativeMetrics);
+      return rows.map(row=>({row,context}));
+    }));
+    for(const {row,context} of values.flat()){
+      const itemId=rowId(row,'item_id');if(!itemId||itemId==='-1')continue;
+      const video=normalizeVideo(row);const product=products.get(String(context.itemGroupId));
+      const current=byId.get(itemId)||{itemId,title:video.name,accountName:video.accountName,accountUsername:video.accountUserName,
+        cost:0,orders:0,grossRevenue:0,productClicks:0,productImpressions:0,campaigns:[],products:[]};
+      current.cost+=numberValue(video.cost);current.orders+=numberValue(video.orders);current.grossRevenue+=numberValue(video.grossRevenue);
+      current.productClicks+=numberValue(video.productClicks);current.productImpressions+=numberValue(video.productImpressions);
+      if(!current.campaigns.some((item:any)=>item.campaignId===context.campaignId))current.campaigns.push({campaignId:context.campaignId,campaignName:product?.campaignName||`GMV Max ${context.campaignId}`});
+      if(!current.products.some((item:any)=>item.id===String(context.itemGroupId)))current.products.push({id:String(context.itemGroupId),name:product?.productName||`Sản phẩm ${context.itemGroupId}`,imageUrl:product?.productImageUrl||''});
+      byId.set(itemId,current);
+    }
+  }
+  return Array.from(byId.values());
+}
+
 export async function loadVideoDayStats(env:Env,input:any,contexts:ProductContext[],reportDate:string):Promise<any>{
   const session=await createSession(env);const point={date:reportDate,cost:0,orders:0,grossRevenue:0};
   const campaignIds=unique(contexts.map(context=>context.campaignId));

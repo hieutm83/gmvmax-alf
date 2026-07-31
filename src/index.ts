@@ -6,6 +6,7 @@ import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
 import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
 import { loadFinanceAnalysis, loadSkuUnitCosts, saveSkuUnitCost } from './finance';
+import { loadContentKocAnalysis } from './content-koc';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, sendOperationsReport } from './operations-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
@@ -53,6 +54,10 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   if(url.pathname==='/api/revenue-analysis'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
     return ok(await loadSellerRevenueAnalysis(env,scope));
+  }
+  if(url.pathname==='/api/content-koc-analysis'){
+    const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    return ok(await loadContentKocAnalysis(env,{...scope,forceRefresh:input.forceRefresh===true}));
   }
   if(url.pathname==='/api/operations-analysis'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
@@ -163,7 +168,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
 
 async function assetResponse(request:Request,env:Env):Promise<Response>{
   const assetUrl=new URL(request.url);
-  const reportPaths=new Set(['/doanh-thu','/quang-cao','/hoan-huy-logistics','/tai-chinh']);
+  const reportPaths=new Set(['/doanh-thu','/quang-cao','/hoan-huy-logistics','/tai-chinh','/content-koc']);
   if(reportPaths.has(assetUrl.pathname))assetUrl.pathname='/';
   const isHtml=assetUrl.pathname==='/'||assetUrl.pathname.endsWith('.html');
   if(isHtml)assetUrl.searchParams.set('__asset_version','20260729-utf8');

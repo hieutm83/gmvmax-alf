@@ -226,6 +226,15 @@
       .admin-sku-cost-row span { overflow:hidden; font-size:11px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
       .admin-sku-cost-row input { width:100%; min-height:34px; padding:0 8px; }
       .admin-sku-cost-row button { min-height:34px; padding:0 9px; font-size:10px; }
+      .content-koc-summaries { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+      .content-koc-group-label { margin:0 0 9px; font-size:13px; font-weight:800; }
+      .content-koc-group-label.seller { color:#f7b942; } .content-koc-group-label.koc { color:#0f9f9a; }
+      .content-koc-summaries .summary { grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:18px; }
+      .content-koc-expand { min-width:30px; width:30px; min-height:30px; padding:0; }
+      .content-koc-video-list { display:grid; gap:8px; padding:10px; background:#f8fafc; }
+      .content-koc-video-item { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:10px; padding:8px; background:#fff; border:1px solid var(--border); border-radius:6px; }
+      .content-koc-video-item > div { display:grid; gap:4px; min-width:0; } .content-koc-video-item > div span { color:var(--text-muted); font-size:11px; }
+      @media (max-width:960px) { .content-koc-summaries { grid-template-columns:1fr; } }
       .finance-amount.expense { color:#dc2626 !important; }
       .finance-table tfoot td { padding:12px; border-top:2px solid var(--border); background:#f8fafc; font-weight:800; }
       .finance-tree-group { padding:8px 0; border-top:1px solid #eef2f7; }
@@ -350,6 +359,7 @@
         <button class="report-tab" type="button" data-report-view="ads" aria-selected="false">Hiệu Quả Quảng Cáo</button>
         <button class="report-tab" type="button" data-report-view="operations" aria-selected="false">Đơn Hoàn Hủy &amp; Logistics</button>
         <button class="report-tab" type="button" data-report-view="finance" aria-selected="false">Tài chính</button>
+        <button class="report-tab" type="button" data-report-view="content-koc" aria-selected="false">Content &amp; KOC</button>
       </nav>
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
@@ -399,6 +409,19 @@
           </table>
           <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
         </div>
+      </section>
+      <section id="contentKocReport" class="hidden">
+        <div id="contentKocSellerNotice" class="analytics-unavailable hidden"><div><strong>Cần kết nối TikTok Shop Seller</strong><span>Đang hiển thị dữ liệu Ads; kết nối Seller để bổ sung GMV, lượt xem và click organic.</span></div></div>
+        <div class="content-koc-summaries">
+          <div><h3 class="content-koc-group-label seller">Nhà bán hàng</h3><div id="contentKocSummarySeller" class="summary"></div></div>
+          <div><h3 class="content-koc-group-label koc">KOC</h3><div id="contentKocSummaryKoc" class="summary"></div></div>
+        </div>
+        <section class="gmv-analysis-panel"><header class="gmv-analysis-head"><h2>Tỷ trọng GMV video: Nhà bán hàng vs KOC</h2><span>GMV video</span></header>
+          <div id="contentKocGroupEmpty" class="analytics-unavailable hidden"><div><strong>Chưa có dữ liệu GMV video</strong><span>Không có GMV hoặc chi phí Ads trong khoảng ngày đã chọn.</span></div></div>
+          <div id="contentKocGroupContent" class="gmv-analysis-grid"><div class="gmv-attribution-chart"><canvas id="contentKocGroupChart"></canvas></div><div class="table-wrap"><table class="gmv-source-table"><thead><tr><th>Nhóm</th><th>GMV</th><th>Chi phí Ads</th><th>ROI</th></tr></thead><tbody id="contentKocGroupRows"></tbody></table></div></div>
+        </section>
+        <div class="analytics-grid"><section class="analytics-panel"><h2>Top sản phẩm theo GMV video</h2><div class="analytics-canvas"><canvas id="contentKocProductChart"></canvas></div></section><section class="analytics-panel"><h2>Lượt xem &amp; lượt click</h2><div class="analytics-canvas"><canvas id="contentKocEngagementChart"></canvas></div></section></div>
+        <h2 class="section-title">Chi tiết theo sản phẩm</h2><div class="table-wrap"><table class="operations-table" id="contentKocProductTable"><thead><tr><th></th><th>Sản phẩm</th><th>Nhóm</th><th>Video</th><th>GMV</th><th>Chi phí Ads</th><th>ROI</th></tr></thead><tbody id="contentKocProductRows"></tbody></table><div id="contentKocEmpty" class="analytics-unavailable hidden"><div><strong>Chưa có video</strong><span>Không có video khớp khoảng ngày đã chọn.</span></div></div></div>
       </section>
       <section id="revenueReport" class="hidden">
         <div id="revenueContent" class="hidden">
@@ -570,20 +593,25 @@
       var failedReasonsChart = null;
       var deliveryFunnelChart = null;
       var financeDonutChart = null;
+      var contentKocGroupChart = null;
+      var contentKocProductChart = null;
+      var contentKocEngagementChart = null;
+      var currentContentKocData = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
       var currentFinanceData = null;
       var initialParams = new URLSearchParams(window.location.search);
-      var viewPaths = { revenue:'/doanh-thu', ads:'/quang-cao', operations:'/hoan-huy-logistics', finance:'/tai-chinh' };
+      var viewPaths = { revenue:'/doanh-thu', ads:'/quang-cao', operations:'/hoan-huy-logistics', finance:'/tai-chinh', 'content-koc':'/content-koc' };
       var pathViews = Object.keys(viewPaths).reduce(function(map,key){map[viewPaths[key]]=key;return map;},{});
       var requestedView = pathViews[window.location.pathname] || initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
-        (['ads', 'revenue', 'operations', 'finance'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
+        (['ads', 'revenue', 'operations', 'finance', 'content-koc'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
       var loadedRevenueScope = '';
       var loadedOperationsScope = '';
       var loadedFinanceScope = '';
+      var loadedContentKocScope = '';
       var videoHoverLinePlugin = {
         id: 'videoHoverLine',
         afterDraw: function (chart) {
@@ -682,9 +710,11 @@
         loadedRevenueScope = '';
         loadedOperationsScope = '';
         loadedFinanceScope = '';
+        loadedContentKocScope = '';
         if (activeReportView === 'revenue') requestRevenueAnalysis(true);
         else if (activeReportView === 'operations') requestOperationsAnalysis(true);
         else if (activeReportView === 'finance') requestFinanceAnalysis(true);
+        else if (activeReportView === 'content-koc') requestContentKocAnalysis(true);
         else requestReport(true);
       });
 
@@ -763,6 +793,12 @@
             loadedRevenueScope = '';
             loadedOperationsScope = '';
             requestFinanceAnalysis(true);
+          } else if (activeReportView === 'content-koc') {
+            loadedReportScope = '';
+            loadedRevenueScope = '';
+            loadedOperationsScope = '';
+            loadedFinanceScope = '';
+            requestContentKocAnalysis(true);
           } else {
             loadedRevenueScope = '';
             loadedOperationsScope = '';
@@ -856,7 +892,7 @@
       }
 
       function setReportView(view, updateUrl) {
-        activeReportView = ['revenue', 'operations', 'finance'].indexOf(view) !== -1 ? view : 'ads';
+        activeReportView = ['ads', 'revenue', 'operations', 'finance', 'content-koc'].indexOf(view) !== -1 ? view : 'revenue';
         if (updateUrl && window.location.pathname !== viewPaths[activeReportView]) history.pushState({ view:activeReportView }, '', viewPaths[activeReportView] + window.location.search);
         document.querySelectorAll('[data-report-view]').forEach(function (tab) {
           var selected = tab.dataset.reportView === activeReportView;
@@ -867,6 +903,7 @@
         document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
         document.getElementById('operationsReport').classList.toggle('hidden', activeReportView !== 'operations');
         document.getElementById('financeReport').classList.toggle('hidden', activeReportView !== 'finance');
+        document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
         if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
@@ -876,6 +913,9 @@
         } else if (activeReportView === 'finance') {
           var financeKey = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedFinanceScope !== financeKey) requestFinanceAnalysis(false);
+        } else if (activeReportView === 'content-koc') {
+          var contentKocKey = JSON.stringify(reportScope());
+          if (loadedContentKocScope !== contentKocKey) requestContentKocAnalysis(false);
         } else {
           var adsKey = JSON.stringify(reportScope());
           if (loadedReportScope !== adsKey) requestReport(false);
@@ -934,6 +974,120 @@
           })
           .withFailureHandler(showError)
           .loadFinanceAnalysis(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function requestContentKocAnalysis(force) {
+        if (button.disabled) return;
+        var scope = reportScope();
+        var key = JSON.stringify(scope);
+        if (!force && loadedContentKocScope === key) return;
+        setLoading(true); hideError();
+        google.script.run
+          .withSuccessHandler(function (data) {
+            setLoading(false); loadedContentKocScope = key; renderContentKocAnalysis(data);
+          })
+          .withFailureHandler(showError)
+          .loadContentKocAnalysis(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function contentKocMetric(labelText, valueText, className) {
+        var box = document.createElement('div'); box.className = 'metric metric-' + className;
+        var label = document.createElement('span'); label.textContent = labelText;
+        var value = document.createElement('strong'); value.textContent = valueText;
+        box.append(label, value); return box;
+      }
+
+      function renderContentKocSummary(elementId, totals) {
+        totals = totals || {};
+        var roi = Number(totals.adsSpend) ? Number(totals.gmv || 0) / Number(totals.adsSpend) : null;
+        document.getElementById(elementId).replaceChildren(
+          contentKocMetric('Video', integer(totals.videoCount || 0), 'totalCreatives'),
+          contentKocMetric('GMV', compactMoney(totals.gmv || 0), 'grossRevenue'),
+          contentKocMetric('Chi phí Ads', compactMoney(totals.adsSpend || 0), 'cost'),
+          contentKocMetric('ROI', number(roi), 'roi')
+        );
+      }
+
+      function appendContentKocGroupRow(parent, labelText, totals, color) {
+        totals = totals || {}; var row = document.createElement('tr');
+        var label = document.createElement('td'); var dot = document.createElement('span'); dot.className = 'gmv-source-dot'; dot.style.backgroundColor = color;
+        var name = document.createElement('span'); name.textContent = labelText; label.append(dot, name); row.appendChild(label);
+        var roi = Number(totals.adsSpend) ? Number(totals.gmv || 0) / Number(totals.adsSpend) : null;
+        [moneyWhole(totals.gmv || 0) + 'đ', moneyWhole(totals.adsSpend || 0) + 'đ', number(roi)].forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell); });
+        parent.appendChild(row);
+      }
+
+      function contentKocChartOptions() {
+        return { maintainAspectRatio:false, responsive:true, scales:{ x:{ grid:{display:false}, ticks:{color:'#64748b'} }, y:{beginAtZero:true,grid:{color:'#e2e8f0'},ticks:{color:'#64748b',callback:function(value){return compactMoney(value);}}} }, plugins:{ legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,color:'#475569'}} } };
+      }
+
+      function contentKocVideosForProduct(productId, type) {
+        return ((currentContentKocData || {}).videos || []).filter(function (video) {
+          if (productId == null) return video.creatorType === 'UNKNOWN';
+          return (!type || video.creatorType === type) && (video.products || []).some(function (product) { return String(product.id) === String(productId); });
+        });
+      }
+
+      function contentKocGroupBadge(type) {
+        var badge = document.createElement('span'); badge.className = 'status-badge';
+        badge.textContent = type === 'SELLER' ? 'Nhà bán hàng' : type === 'KOC' ? 'KOC' : 'Không xác định';
+        badge.style.background = type === 'SELLER' ? '#dbeafe' : type === 'KOC' ? '#f3e8ff' : '#e2e8f0';
+        badge.style.color = type === 'SELLER' ? '#1d4ed8' : type === 'KOC' ? '#7e22ce' : '#475569'; return badge;
+      }
+
+      function toggleContentKocVideos(buttonElement, productId, type, anchorRow) {
+        var existing = anchorRow.nextElementSibling;
+        if (existing && existing.classList.contains('content-koc-video-detail')) { var opening=existing.classList.contains('hidden');existing.classList.toggle('hidden',!opening);buttonElement.textContent=opening?'−':'+';buttonElement.setAttribute('aria-expanded',String(opening));return; }
+        var detail = document.createElement('tr'); detail.className = 'content-koc-video-detail'; var cell = document.createElement('td'); cell.colSpan = 7;
+        var list = document.createElement('div'); list.className = 'content-koc-video-list'; var videos = contentKocVideosForProduct(productId, type);
+        if (!videos.length) { var empty = document.createElement('span'); empty.textContent = 'Không có video trong nhóm này.'; list.appendChild(empty); }
+        videos.forEach(function (video) {
+          var item = document.createElement('div'); item.className = 'content-koc-video-item';
+          item.appendChild(contentKocGroupBadge(video.creatorType)); var copy = document.createElement('div'); var title = document.createElement('strong'); title.textContent = video.title || ('Video ' + video.itemId);
+          var meta = document.createElement('span'); meta.textContent = (video.accountName || video.accountUsername || 'Không rõ tài khoản') + ' · GMV ' + moneyWhole(video.shop && video.shop.gmv || 0) + 'đ · Ads ' + moneyWhole(video.ads && video.ads.cost || 0) + 'đ'; copy.append(title, meta);
+          var open = document.createElement('button'); open.type = 'button'; open.className = 'campaign-button'; open.textContent = 'Xem video'; open.addEventListener('click', function () { openRecommendationVideo(video.itemId); });
+          item.append(copy, open); list.appendChild(item);
+        });
+        cell.appendChild(list); detail.appendChild(cell); anchorRow.after(detail); buttonElement.textContent = '−'; buttonElement.setAttribute('aria-expanded','true');
+      }
+
+      function appendContentKocProductRows(parent, product, includeProduct) {
+        var productRows = [];
+        ['SELLER','KOC'].forEach(function (type, index) {
+          var totals = product[type === 'SELLER' ? 'seller' : 'koc'] || {}; var row = document.createElement('tr');
+          if (index === 0) { var expandCell = document.createElement('td'); expandCell.rowSpan=2; var expand = document.createElement('button'); expand.type = 'button'; expand.className = 'content-koc-expand'; expand.textContent = '+'; expand.setAttribute('aria-expanded','false'); expandCell.appendChild(expand); row.appendChild(expandCell); }
+          if (index === 0 && includeProduct) { var productCell = document.createElement('td'); productCell.rowSpan = 2; var wrap = document.createElement('div'); wrap.className = 'product-name'; if (product.productImageUrl) { var image = document.createElement('img'); image.className='product-image'; image.src = product.productImageUrl; image.alt = ''; wrap.appendChild(image); } var copy=document.createElement('div');var productName = document.createElement('button');productName.type='button';productName.className='campaign-button'; productName.textContent = product.productName || product.productId; var meta=document.createElement('span');meta.className='campaign-meta';meta.textContent='ID sản phẩm: '+product.productId;copy.append(productName,meta);wrap.appendChild(copy); productCell.appendChild(wrap); row.appendChild(productCell); }
+          var group = document.createElement('td'); group.appendChild(contentKocGroupBadge(type)); row.appendChild(group);
+          var roi = Number(totals.adsSpend) ? Number(totals.gmv || 0) / Number(totals.adsSpend) : null;
+          [integer(totals.videoCount || 0), moneyWhole(totals.gmv || 0) + 'đ', moneyWhole(totals.adsSpend || 0) + 'đ', number(roi)].forEach(function (value) { var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell); }); parent.appendChild(row);productRows.push(row);
+        });
+        var expandButton=productRows[0].querySelector('.content-koc-expand');expandButton.addEventListener('click',function(){toggleContentKocVideos(expandButton,product.productId,null,productRows[1]);});
+      }
+
+      function appendUnknownContentKocRow(parent, totals) {
+        if (!Number(totals && totals.videoCount)) return;
+        var row=document.createElement('tr');var expandCell=document.createElement('td');var expand=document.createElement('button');expand.type='button';expand.className='content-koc-expand';expand.textContent='+';expand.setAttribute('aria-expanded','false');expandCell.appendChild(expand);row.appendChild(expandCell);
+        var product=document.createElement('td');var wrap=document.createElement('div');wrap.className='product-name';var copy=document.createElement('div');var name=document.createElement('button');name.type='button';name.className='campaign-button';name.textContent='Chưa xác định nguồn / sản phẩm';var meta=document.createElement('span');meta.className='campaign-meta';meta.textContent='Video chỉ có dữ liệu Ads';copy.append(name,meta);wrap.appendChild(copy);product.appendChild(wrap);row.appendChild(product);
+        var group=document.createElement('td');group.appendChild(contentKocGroupBadge('UNKNOWN'));row.appendChild(group);var roi=Number(totals.adsSpend)?Number(totals.gmv||0)/Number(totals.adsSpend):null;
+        [integer(totals.videoCount||0),moneyWhole(totals.gmv||0)+'đ',moneyWhole(totals.adsSpend||0)+'đ',number(roi)].forEach(function(value){var cell=document.createElement('td');cell.textContent=value;row.appendChild(cell);});parent.appendChild(row);expand.addEventListener('click',function(){toggleContentKocVideos(expand,null,'UNKNOWN',row);});
+      }
+
+      function renderContentKocAnalysis(data) {
+        currentContentKocData = data || {}; document.getElementById('reportTabs').classList.remove('hidden');
+        document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
+        document.getElementById('contentKocSellerNotice').classList.toggle('hidden', data.shopAnalyticsAvailable !== false);
+        renderContentKocSummary('contentKocSummarySeller', data.totals && data.totals.seller);
+        renderContentKocSummary('contentKocSummaryKoc', data.totals && data.totals.koc);
+        var seller = data.totals && data.totals.seller || {}; var koc = data.totals && data.totals.koc || {};
+        var groupRows = document.getElementById('contentKocGroupRows'); groupRows.replaceChildren(); appendContentKocGroupRow(groupRows,'Nhà bán hàng',seller,'#f7b942'); appendContentKocGroupRow(groupRows,'KOC',koc,'#0f9f9a');
+        var groupValues = [Number(seller.gmv || 0), Number(koc.gmv || 0)]; var hasGroupData = groupValues.some(function(value){return value > 0;});
+        document.getElementById('contentKocGroupEmpty').classList.toggle('hidden',hasGroupData); document.getElementById('contentKocGroupContent').classList.toggle('hidden',!hasGroupData);
+        if (contentKocGroupChart) contentKocGroupChart.destroy(); if (hasGroupData) contentKocGroupChart = new Chart(document.getElementById('contentKocGroupChart'),{type:'doughnut',data:{labels:['Nhà bán hàng','KOC'],datasets:[{data:groupValues,backgroundColor:['#f7b942','#0f9f9a'],borderColor:'#fff',borderWidth:2}]},options:{maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'right',labels:{usePointStyle:true,boxWidth:8}}}}});
+        var products = data.byProduct || []; var top = products.slice(0,8); var labels = top.map(function(product){var name=product.productName||product.productId;return name.length>24?name.slice(0,23)+'…':name;});
+        if(contentKocProductChart)contentKocProductChart.destroy(); contentKocProductChart=new Chart(document.getElementById('contentKocProductChart'),{type:'bar',data:{labels:labels,datasets:[{label:'Nhà bán hàng',data:top.map(function(p){return p.seller.gmv;}),backgroundColor:'#f7b942'},{label:'KOC',data:top.map(function(p){return p.koc.gmv;}),backgroundColor:'#0f9f9a'}]},options:contentKocChartOptions()});
+        if(contentKocEngagementChart)contentKocEngagementChart.destroy(); contentKocEngagementChart=new Chart(document.getElementById('contentKocEngagementChart'),{type:'bar',data:{labels:['Lượt xem','Lượt click'],datasets:[{label:'Nhà bán hàng',data:[seller.views||0,seller.clicks||0],backgroundColor:'#f7b942'},{label:'KOC',data:[koc.views||0,koc.clicks||0],backgroundColor:'#0f9f9a'}]},options:contentKocChartOptions()});
+        var rows=document.getElementById('contentKocProductRows');rows.replaceChildren();products.forEach(function(product){appendContentKocProductRows(rows,product,true);});appendUnknownContentKocRow(rows,data.totals&&data.totals.unknown);document.getElementById('contentKocEmpty').classList.toggle('hidden',((data.videos||[]).length)>0);
+        var generated=new Date(data.generatedAt);document.getElementById('updatedAt').textContent='Cập nhật: '+new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'medium'}).format(generated);
       }
 
       function renderFinanceSummary(data) {
