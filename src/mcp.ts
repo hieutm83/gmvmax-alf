@@ -1,5 +1,6 @@
 import type { Env, McpRow, McpSession } from './types';
 import { getAccessToken } from './oauth';
+import { cacheGet, cachePut, stableKey } from './utils';
 
 const PROTOCOL = '2025-06-18';
 
@@ -124,4 +125,19 @@ export async function listStores(env: Env, session: McpSession, advertiserId: st
     .map((item: any) => ({ storeId: String(item.store_id || item.shop_id || item.id || ''),
       storeName: item.store_name || item.shop_name || item.name, storeCode: item.store_code || item.shop_code || '' }))
     .filter((item: any) => item.storeId);
+}
+
+export async function resolveDefaultStoreId(env: Env): Promise<string> {
+  if (env.ZALO_STORE_ID) return env.ZALO_STORE_ID;
+  const key = stableKey('default-gmv-store-v1', {
+    advertiserId: env.DEFAULT_ADVERTISER_ID,
+    storeCode: env.DEFAULT_STORE_CODE
+  });
+  const cached = await cacheGet<string>(env, key);
+  if (cached) return cached;
+  const stores = await listStores(env, await createSession(env), env.DEFAULT_ADVERTISER_ID);
+  const storeId = stores.find((store: any) => store.storeCode === env.DEFAULT_STORE_CODE ||
+    store.storeId === env.DEFAULT_STORE_CODE)?.storeId || env.DEFAULT_STORE_CODE;
+  await cachePut(env, key, storeId, 300);
+  return storeId;
 }

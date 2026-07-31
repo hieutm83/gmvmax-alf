@@ -1,10 +1,11 @@
 import type { Env, TaskMessage } from './types';
 import { OAuthCoordinator, createAuthorizationUrl, disconnect, getAccessToken, handleOAuthCallback, readTokens } from './oauth';
-import { createSession, listAdvertisers, listStores } from './mcp';
+import { createSession, listAdvertisers, listStores, resolveDefaultStoreId } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
 import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
+import { loadFinanceAnalysis } from './finance';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, sendOperationsReport } from './operations-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
@@ -56,6 +57,10 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadOperationsAnalysis(env,scope));
   }
+  if(url.pathname==='/api/finance-analysis'){
+    const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    return ok(await loadFinanceAnalysis(env,scope));
+  }
   if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
   if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));
   if(url.pathname==='/api/comparison')return ok(await loadComparison(env,{advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),startDate:validateDate(input.startDate||input.endDate,'startDate'),endDate:validateDate(input.endDate,'endDate')}));
@@ -106,8 +111,7 @@ async function tiktokShopWebhook(request: Request, env: Env): Promise<Response> 
 }
 
 async function resolveDefaultStore(env:Env):Promise<string>{
-  const stores=await listStores(env,await createSession(env),env.DEFAULT_ADVERTISER_ID);
-  return stores.find((s:any)=>s.storeCode===env.DEFAULT_STORE_CODE||s.storeId===env.DEFAULT_STORE_CODE)?.storeId||env.DEFAULT_STORE_CODE;
+  return resolveDefaultStoreId(env);
 }
 
 async function pollOperationsInbox(env:Env):Promise<void>{

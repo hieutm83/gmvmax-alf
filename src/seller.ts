@@ -136,7 +136,15 @@ export async function shopRequest(env: Env, path: string, method: 'GET' | 'POST'
     method, headers: { 'Content-Type': 'application/json', 'x-tts-access-token': accessToken },
     body: method === 'POST' ? bodyText : undefined
   });
-  const payload = await response.json<any>().catch(() => ({}));
+  const responseText = await response.text();
+  // TikTok serializes several 19-digit identifiers as JSON numbers. Quote only
+  // identifier fields before parsing so JavaScript cannot round SKU/order IDs.
+  const losslessText = responseText.replace(
+    /(\"(?:id|[a-z0-9_]*_id)\"\s*:\s*)(-?\d{16,})(?=\s*[,}])/gi,
+    '$1"$2"'
+  );
+  let payload: any = {};
+  try { payload = JSON.parse(losslessText); } catch { /* handled as an API error below */ }
   if (!response.ok || Number(payload.code) !== 0) {
     const requestId = payload.request_id ? ` · request_id ${payload.request_id}` : '';
     throw new Error(`TikTok Shop API ${path}: ${payload.message || `HTTP ${response.status}`}${requestId}`);
@@ -145,10 +153,16 @@ export async function shopRequest(env: Env, path: string, method: 'GET' | 'POST'
 }
 
 export async function authorizedShop(env: Env): Promise<any> {
+  const cacheKey = stableKey('authorized-shop-v1', { storeCode: env.DEFAULT_STORE_CODE || '' });
+  const cached = await cacheGet<any>(env, cacheKey);
+  if (cached) return cached;
   const data = await shopRequest(env, '/authorization/202309/shops', 'GET', {});
   const shops = data.shops || data.shop_list || [];
   const wanted = String(env.DEFAULT_STORE_CODE || '').toUpperCase();
-  return shops.find((shop: any) => [shop.code, shop.shop_code, shop.name].some((value) => String(value || '').toUpperCase().includes(wanted))) || shops[0];
+  const shop = shops.find((item: any) => [item.code, item.shop_code, item.name]
+    .some((value) => String(value || '').toUpperCase().includes(wanted))) || shops[0] || null;
+  if (shop) await cachePut(env, cacheKey, shop, 300);
+  return shop;
 }
 
 export async function sellerOwnedVideoIds(env: Env, startDate: string, endDate: string,

@@ -160,6 +160,48 @@
       .report-tab { min-height: 42px; padding: 0 2px; color: var(--text-muted); background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0; font-weight: 700; }
       .report-tab:hover { color: var(--primary); background: transparent; border-color: var(--primary-soft); }
       .report-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+      .finance-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
+      .finance-head h2 { margin:0; font-size:16px; }
+      .finance-updated { color:var(--text-muted); font-size:12px; font-weight:600; }
+      .finance-summary { grid-template-columns:repeat(5,minmax(0,1fr)); }
+      .finance-summary .metric { min-width:0; }
+      .finance-notice { margin:0 0 14px; padding:11px 14px; border:1px solid #fed7aa; border-left:3px solid #f59e0b; background:#fff7ed; color:#9a3412; border-radius:6px; font-size:12px; }
+      .finance-source-note { margin:8px 0 0; color:var(--text-muted); font-size:11px; }
+      .finance-subtabs { display:flex; gap:4px; margin:20px 0 12px; padding:4px; width:max-content; border:1px solid var(--border); background:#f1f5f9; border-radius:6px; }
+      .finance-subtab { min-height:34px; padding:0 14px; border:0; background:transparent; color:var(--text-muted); }
+      .finance-subtab.active { color:#fff; background:var(--primary); }
+      .estimate-chip { display:inline-flex; align-items:center; margin-left:8px; padding:3px 7px; border-radius:999px; background:#ffedd5; color:#c2410c; font-size:10px; font-weight:800; text-transform:uppercase; }
+      .finance-settlement-panel { padding:18px; border:1px solid var(--border); background:#fff; border-radius:8px; }
+      .finance-settlement-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+      .finance-mini-metric { padding:12px; border:1px solid var(--border); background:#f8fafc; border-radius:6px; }
+      .finance-mini-metric span { display:block; color:var(--text-muted); font-size:10px; font-weight:800; text-transform:uppercase; }
+      .finance-mini-metric strong { display:block; margin-top:5px; font-size:18px; }
+      .finance-tree { margin-top:20px; border:1px solid var(--border); background:#fff; border-radius:8px; overflow:hidden; }
+      .finance-tree > details + details { border-top:1px solid var(--border); }
+      .finance-tree summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 18px; cursor:pointer; color:var(--text); font-size:12px; font-weight:800; list-style:none; }
+      .finance-tree summary::-webkit-details-marker { display:none; }
+      .finance-tree summary::before { content:'›'; margin-right:8px; color:var(--primary); font-size:18px; transform:rotate(0); transition:transform .15s; }
+      .finance-tree details[open] > summary::before { transform:rotate(90deg); }
+      .finance-tree summary span:first-of-type { flex:1; }
+      .finance-source { color:var(--text-muted); font-size:10px; font-weight:600; }
+      .finance-tree-body { padding:0 18px 16px; }
+      .finance-tree-group { padding:8px 0; border-top:1px solid #eef2f7; }
+      .finance-tree-group h3 { margin:0 0 7px; font-size:11px; }
+      .finance-line { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; padding:5px 0; color:#475569; font-size:12px; }
+      .finance-line strong { color:var(--text); font-variant-numeric:tabular-nums; }
+      .finance-total-line { margin-top:8px; padding-top:10px; border-top:1px solid var(--border); font-weight:800; }
+      .finance-dual { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; }
+      .finance-card { padding:18px; border:1px solid var(--border); background:#fff; border-radius:8px; }
+      .finance-card h2 { margin:0 0 14px; font-size:14px; }
+      .finance-card-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+      .finance-table th,.finance-table td { padding:11px 12px; }
+      .finance-table tbody tr[data-statement-id] { cursor:pointer; }
+      .finance-table tbody tr[data-statement-id]:hover { background:#eff6ff; }
+      .finance-status { display:inline-flex; padding:4px 7px; border-radius:999px; background:#e2e8f0; color:#475569; font-size:10px; font-weight:800; }
+      .finance-status.PAID { background:#d1fae5; color:#047857; }
+      .finance-status.PROCESSING { background:#fef3c7; color:#b45309; }
+      .finance-statement-modal { width:min(860px,calc(100vw - 32px)); }
+      .finance-modal-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
       .revenue-summary { margin-bottom: 20px; }
       .revenue-summary .metric { min-height: 108px; }
       .metric-revenueGmv { --metric-color: #059669; }
@@ -233,7 +275,8 @@
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
       @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid { grid-template-columns: 1fr; } }
-      @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } }
+      @media (max-width: 1100px) { .finance-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } .finance-dual { grid-template-columns:1fr; } }
+      @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } }
     </style>
   </head>
   <body>
@@ -256,6 +299,7 @@
         <button class="report-tab active" type="button" data-report-view="revenue" aria-selected="true">Phân Tích Doanh Thu</button>
         <button class="report-tab" type="button" data-report-view="ads" aria-selected="false">Hiệu Quả Quảng Cáo</button>
         <button class="report-tab" type="button" data-report-view="operations" aria-selected="false">Đơn Hoàn Hủy &amp; Logistics</button>
+        <button class="report-tab" type="button" data-report-view="finance" aria-selected="false">Tài chính</button>
       </nav>
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
@@ -362,6 +406,33 @@
           <div id="operationsEmpty" class="empty hidden">Không có sự cố trong khoảng ngày đã chọn.</div>
         </div>
       </section>
+      <section id="financeReport" class="hidden">
+        <div class="finance-head"><h2>Tổng quan tài chính</h2><span id="financeUpdatedAt" class="finance-updated"></span></div>
+        <div id="financeTodayNotice" class="finance-notice hidden">Đơn hôm nay chưa đủ điều kiện quyết toán, xem số liệu ước tính ở tab “Sẽ quyết toán”.</div>
+        <div id="financeWarnings" class="operations-warning hidden"></div>
+        <div id="financeSummary" class="summary finance-summary"></div>
+        <div class="finance-subtabs" role="tablist" aria-label="Trạng thái quyết toán">
+          <button class="finance-subtab active" type="button" data-finance-view="settled" aria-selected="true">Đã quyết toán</button>
+          <button class="finance-subtab" type="button" data-finance-view="unsettled" aria-selected="false">Sẽ quyết toán <span class="estimate-chip">Ước tính</span></button>
+        </div>
+        <section id="financeSettledPanel" class="finance-settlement-panel"></section>
+        <section id="financeUnsettledPanel" class="finance-settlement-panel hidden"></section>
+        <p id="financeDateScopeNote" class="finance-source-note"></p>
+
+        <section class="finance-tree" aria-label="Cây phân tích tài chính">
+          <details open><summary><span>QUYẾT TOÁN</span><small class="finance-source">TikTok Shop Finance API</small></summary><div id="financeSettlementTree" class="finance-tree-body"></div></details>
+          <details open><summary><span>CHI PHÍ ADS</span><small class="finance-source">Ngoài quyết toán · TikTok Ads MCP</small></summary><div id="financeAdsTree" class="finance-tree-body"></div></details>
+          <details open><summary><span>SẢN LƯỢNG THEO SKU</span><small class="finance-source">Ngoài quyết toán · Shop Analytics API</small></summary><div id="financeSkuTree" class="finance-tree-body"></div></details>
+        </section>
+
+        <section class="finance-dual">
+          <div class="finance-card"><h2>Chi phí Ads</h2><div id="financeAdsKpis" class="finance-card-kpis"></div><p class="finance-source-note">Nguồn: TikTok Ads MCP, tách biệt khỏi quyết toán TikTok Shop.</p></div>
+          <div class="finance-card"><h2>Sản lượng theo SKU</h2><div class="table-wrap"><table class="finance-table"><thead><tr><th>Tên SKU</th><th>Số lượng bán</th><th>Số đơn</th><th>GMV</th></tr></thead><tbody id="financeSkuRows"></tbody></table><div id="financeSkuEmpty" class="empty hidden">Không có dữ liệu SKU trong kỳ.</div></div></div>
+        </section>
+
+        <h2 class="section-title">Theo statement</h2>
+        <div class="table-wrap"><table class="finance-table"><thead><tr><th>Ngày</th><th>GMV / doanh thu</th><th>Phí sàn</th><th>Khuyến mãi</th><th>KOC</th><th>Số đơn</th><th>Trạng thái</th><th>Thực nhận</th></tr></thead><tbody id="financeStatementRows"></tbody></table><div id="financeStatementEmpty" class="empty hidden">Không có statement trong khoảng ngày này.</div></div>
+      </section>
     </main>
     <div id="creativeModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="creativeModalTitle">
       <section class="modal">
@@ -400,6 +471,9 @@
           <button id="adminAuthSubmit" type="submit">Mở quản trị</button>
         </form>
       </section>
+    </div>
+    <div id="financeStatementModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="financeStatementTitle">
+      <section class="modal finance-statement-modal"><header class="modal-header"><div class="modal-title"><h2 id="financeStatementTitle">Chi tiết statement</h2><span id="financeStatementMeta"></span></div><button id="financeStatementClose" class="modal-close" type="button" aria-label="Đóng">&times;</button></header><div id="financeStatementBody" class="modal-body"></div></section>
     </div>
     <div id="adminModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
       <section class="modal admin-modal">
@@ -459,13 +533,16 @@
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
+      var currentFinanceData = null;
+      var activeFinanceView = 'settled';
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
-        (['ads', 'revenue', 'operations'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
+        (['ads', 'revenue', 'operations', 'finance'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
       var loadedRevenueScope = '';
       var loadedOperationsScope = '';
+      var loadedFinanceScope = '';
       var videoHoverLinePlugin = {
         id: 'videoHoverLine',
         afterDraw: function (chart) {
@@ -563,13 +640,18 @@
         loadedReportScope = '';
         loadedRevenueScope = '';
         loadedOperationsScope = '';
+        loadedFinanceScope = '';
         if (activeReportView === 'revenue') requestRevenueAnalysis(true);
         else if (activeReportView === 'operations') requestOperationsAnalysis(true);
+        else if (activeReportView === 'finance') requestFinanceAnalysis(true);
         else requestReport(true);
       });
 
       document.querySelectorAll('[data-report-view]').forEach(function (tab) {
         tab.addEventListener('click', function () { setReportView(tab.dataset.reportView); });
+      });
+      document.querySelectorAll('[data-finance-view]').forEach(function (tab) {
+        tab.addEventListener('click', function () { setFinanceView(tab.dataset.financeView); });
       });
 
       document.getElementById('disconnectButton').addEventListener('click', function () {
@@ -637,9 +719,15 @@
             loadedReportScope = '';
             loadedRevenueScope = '';
             requestOperationsAnalysis(true);
+          } else if (activeReportView === 'finance') {
+            loadedReportScope = '';
+            loadedRevenueScope = '';
+            loadedOperationsScope = '';
+            requestFinanceAnalysis(true);
           } else {
             loadedRevenueScope = '';
             loadedOperationsScope = '';
+            loadedFinanceScope = '';
             requestReport(true);
           }
         }, 300000) : null;
@@ -729,7 +817,7 @@
       }
 
       function setReportView(view) {
-        activeReportView = ['revenue', 'operations'].indexOf(view) !== -1 ? view : 'ads';
+        activeReportView = ['revenue', 'operations', 'finance'].indexOf(view) !== -1 ? view : 'ads';
         document.querySelectorAll('[data-report-view]').forEach(function (tab) {
           var selected = tab.dataset.reportView === activeReportView;
           tab.classList.toggle('active', selected);
@@ -738,12 +826,16 @@
         document.getElementById('report').classList.toggle('hidden', activeReportView !== 'ads');
         document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
         document.getElementById('operationsReport').classList.toggle('hidden', activeReportView !== 'operations');
+        document.getElementById('financeReport').classList.toggle('hidden', activeReportView !== 'finance');
         if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
         } else if (activeReportView === 'operations') {
           var operationsKey = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedOperationsScope !== operationsKey) requestOperationsAnalysis(false);
+        } else if (activeReportView === 'finance') {
+          var financeKey = JSON.stringify(reportScope());
+          if (sellerOAuthConnected && loadedFinanceScope !== financeKey) requestFinanceAnalysis(false);
         } else {
           var adsKey = JSON.stringify(reportScope());
           if (loadedReportScope !== adsKey) requestReport(false);
@@ -785,6 +877,238 @@
           })
           .withFailureHandler(handleRevenueFailure)
           .loadRevenueAnalysis(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function requestFinanceAnalysis(force) {
+        if (button.disabled || !sellerOAuthConnected) return;
+        var scope = reportScope();
+        var key = JSON.stringify(scope);
+        if (!force && loadedFinanceScope === key) return;
+        setLoading(true);
+        hideError();
+        google.script.run
+          .withSuccessHandler(function (data) {
+            setLoading(false);
+            loadedFinanceScope = key;
+            renderFinanceAnalysis(data);
+          })
+          .withFailureHandler(showError)
+          .loadFinanceAnalysis(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function setFinanceView(view) {
+        activeFinanceView = view === 'unsettled' ? 'unsettled' : 'settled';
+        document.querySelectorAll('[data-finance-view]').forEach(function (tab) {
+          var selected = tab.dataset.financeView === activeFinanceView;
+          tab.classList.toggle('active', selected);
+          tab.setAttribute('aria-selected', String(selected));
+        });
+        document.getElementById('financeSettledPanel').classList.toggle('hidden', activeFinanceView !== 'settled');
+        document.getElementById('financeUnsettledPanel').classList.toggle('hidden', activeFinanceView !== 'unsettled');
+        if (currentFinanceData) renderFinanceSummary(currentFinanceData);
+      }
+
+      function renderFinanceSummary(data) {
+        var current = data.current || {}; var previous = data.previous || {};
+        var settled = current.settled || {}; var fees = settled.fees || {};
+        var includeEstimate = activeFinanceView === 'unsettled';
+        var profit = includeEstimate ? current.netProfitWithEstimate : current.netProfitSettledOnly;
+        var previousProfit = includeEstimate ? previous.netProfitWithEstimate : previous.netProfitSettledOnly;
+        var summary = document.getElementById('financeSummary'); summary.replaceChildren(
+          financeMetric('GMV tổng', compactMoney(current.totalGmv), 'revenueGmv', current.totalGmv, previous.totalGmv, false),
+          financeMetric('Doanh thu ròng đã quyết toán', compactMoney(settled.revenue && settled.revenue.netRevenue), 'revenueOrders', settled.revenue && settled.revenue.netRevenue, previous.netRevenue, false),
+          financeMetric('Tổng phí & thuế', compactMoney(Math.abs(fees.totalFeeTax || 0)), 'revenueAov', Math.abs(fees.totalFeeTax || 0), Math.abs(previous.totalFeeTax || 0), true),
+          financeMetric('Chi phí Ads', compactMoney(current.ads && current.ads.cost), 'costPerOrder', current.ads && current.ads.cost, previous.adsCost, true),
+          financeMetric(includeEstimate ? 'Lợi nhuận gồm ước tính' : 'Lợi nhuận đã quyết toán', compactMoney(profit), 'grossRevenue', profit, previousProfit, false)
+        );
+      }
+
+      function financeMetric(labelText, valueText, className, current, previous, lowerIsBetter) {
+        var box = document.createElement('div'); box.className = 'metric metric-' + className;
+        var label = document.createElement('span'); label.textContent = labelText;
+        var value = document.createElement('strong'); value.textContent = valueText;
+        var comparison = document.createElement('span'); comparison.className = 'metric-change neutral';
+        var change = changeValue(current, previous);
+        if (change == null) comparison.textContent = 'Không có dữ liệu kỳ trước';
+        else {
+          var good = lowerIsBetter ? change <= 0 : change >= 0;
+          comparison.className = 'metric-change ' + (good ? 'good' : 'bad');
+          comparison.textContent = (change >= 0 ? '↑ ' : '↓ ') + number(Math.abs(change)) + '% so với kỳ trước';
+        }
+        box.append(label, value, comparison); return box;
+      }
+
+      function financeMiniMetric(labelText, valueText) {
+        var box = document.createElement('div'); box.className = 'finance-mini-metric';
+        var label = document.createElement('span'); label.textContent = labelText;
+        var value = document.createElement('strong'); value.textContent = valueText;
+        box.append(label, value); return box;
+      }
+
+      var financeLabels = {
+        subtotalBeforeDiscount: 'Tổng tiền hàng trước giảm giá', sellerDiscount: 'Giảm giá do người bán tài trợ',
+        refundSubtotal: 'Hoàn tiền hàng', sellerDiscountRefund: 'Hoàn lại giảm giá người bán', netRevenue: 'Doanh thu ròng',
+        platform_commission_amount: 'Hoa hồng sàn', transaction_fee_amount: 'Phí giao dịch', referral_fee_amount: 'Phí giới thiệu',
+        refund_administration_fee_amount: 'Phí quản lý hoàn tiền', credit_card_handling_fee_amount: 'Phí xử lý thẻ',
+        affiliate_commission_amount: 'Hoa hồng Affiliate', affiliate_commission_amount_before_pit: 'Hoa hồng Affiliate trước PIT',
+        affiliate_commission_before_pit_amount: 'Hoa hồng Affiliate trước PIT',
+        affiliate_partner_commission_amount: 'Hoa hồng đối tác Affiliate', affiliate_ads_commission_amount: 'Hoa hồng Affiliate Ads',
+        tap_shop_ads_commission: 'Hoa hồng Shop Ads', tap_shop_ads_commission_amount: 'Hoa hồng Shop Ads', cps_shop_ads_commission_amount: 'Hoa hồng CPS Shop Ads',
+        cofunded_creator_bonus_amount: 'Thưởng nhà sáng tạo đồng tài trợ', gmv_max_ad_fee_amount: 'Phí quảng cáo GMV Max',
+        smart_promotion_fee_amount: 'Phí Smart Promotion', cofunded_promotion_service_fee_amount: 'Phí khuyến mãi đồng tài trợ',
+        campaign_period_fee_cfp_amount: 'Phí chiến dịch CFP', campaign_period_fee_sp_amount: 'Phí chiến dịch Smart Promotion',
+        gmv_max_coupon_fee_amount: 'Phí coupon GMV Max', local_vat_amount: 'VAT nội địa', pit_amount: 'Thuế thu nhập cá nhân'
+      };
+
+      function financeFieldLabel(key) {
+        if (financeLabels[key]) return financeLabels[key];
+        return String(key || '').replace(/_amount$/,'').replace(/_/g,' ').replace(/\b\w/g,function (letter) { return letter.toUpperCase(); });
+      }
+
+      function appendFinanceLine(parent, labelText, value, extraClass) {
+        if (!Number(value)) return;
+        var line = document.createElement('div'); line.className = 'finance-line' + (extraClass ? ' ' + extraClass : '');
+        var label = document.createElement('span'); label.textContent = labelText;
+        var amountText = document.createElement('strong'); amountText.textContent = moneyWhole(value) + ' đ';
+        line.append(label, amountText); parent.appendChild(line);
+      }
+
+      function appendFinanceGroup(parent, title, values) {
+        var entries = Object.entries(values || {}).filter(function (entry) { return Number(entry[1]) !== 0; });
+        if (!entries.length) return;
+        var group = document.createElement('div'); group.className = 'finance-tree-group';
+        var heading = document.createElement('h3'); heading.textContent = title; group.appendChild(heading);
+        entries.forEach(function (entry) { appendFinanceLine(group, financeFieldLabel(entry[0]), entry[1]); });
+        parent.appendChild(group);
+      }
+
+      function renderSettlementTree(current) {
+        var settled = current.settled || {};
+        var root = document.getElementById('financeSettlementTree'); root.replaceChildren();
+        appendFinanceGroup(root, 'Doanh thu', settled.revenue);
+        appendFinanceGroup(root, 'Phí vận chuyển', settled.shipping && settled.shipping.breakdown);
+        appendFinanceGroup(root, 'Phí sàn', settled.fees && settled.fees.platform);
+        appendFinanceGroup(root, 'Hoa hồng KOC / Affiliate', settled.fees && settled.fees.koc);
+        appendFinanceGroup(root, 'Phí quảng cáo / khuyến mãi trong đơn', settled.fees && settled.fees.promotion);
+        appendFinanceGroup(root, 'Phí chương trình khác', settled.fees && settled.fees.otherPrograms);
+        appendFinanceGroup(root, 'Thuế', settled.fees && settled.fees.tax);
+        if ((settled.adjustments || []).length) {
+          var adjustmentGroup = document.createElement('div'); adjustmentGroup.className = 'finance-tree-group';
+          var adjustmentTitle = document.createElement('h3'); adjustmentTitle.textContent = 'Điều chỉnh'; adjustmentGroup.appendChild(adjustmentTitle);
+          settled.adjustments.forEach(function (item) { appendFinanceLine(adjustmentGroup, financeFieldLabel(item.type) + (item.orderId ? ' · ' + item.orderId : ''), item.amount); });
+          root.appendChild(adjustmentGroup);
+        }
+        appendFinanceLine(root, 'Số tiền quyết toán', settled.settlementAmount, 'finance-total-line');
+      }
+
+      function renderFinanceAds(current) {
+        var ads = current.ads || {};
+        var tree = document.getElementById('financeAdsTree'); tree.replaceChildren();
+        appendFinanceLine(tree, 'Chi tiêu C-Ads', ads.cAds);
+        appendFinanceLine(tree, 'Chi tiêu GMV Max', ads.gmvMax);
+        appendFinanceLine(tree, 'Tổng chi Ads', ads.cost, 'finance-total-line');
+        var kpis = document.getElementById('financeAdsKpis'); kpis.replaceChildren(
+          financeMiniMetric('Tổng chi Ads', moneyWhole(ads.cost)),
+          financeMiniMetric('ROI', number(ads.roi)),
+          financeMiniMetric('Cost / Order', moneyWhole(ads.costPerOrder))
+        );
+      }
+
+      function renderFinanceSku(skuData) {
+        skuData = skuData || { products: [] };
+        var tree = document.getElementById('financeSkuTree'); tree.replaceChildren();
+        (skuData.products || []).forEach(function (product) {
+          var group = document.createElement('div'); group.className = 'finance-tree-group';
+          var title = document.createElement('h3'); title.textContent = product.productName; group.appendChild(title);
+          (product.skus || []).forEach(function (sku) {
+            var line = document.createElement('div'); line.className = 'finance-line';
+            var label = document.createElement('span'); label.textContent = sku.skuName + ' — ' + integer(sku.unitsSold) + ' sp / ' + integer(sku.skuOrders) + ' đơn';
+            var value = document.createElement('strong'); value.textContent = moneyWhole(sku.gmv) + ' đ';
+            line.append(label, value); group.appendChild(line);
+          });
+          tree.appendChild(group);
+        });
+        appendFinanceLine(tree, 'Tổng sản phẩm đã bán · ' + integer(skuData.totalSkuOrders) + ' đơn theo SKU', skuData.totalGmv, 'finance-total-line');
+
+        var rows = document.getElementById('financeSkuRows'); rows.replaceChildren();
+        var flat = [];
+        (skuData.products || []).forEach(function (product) { (product.skus || []).forEach(function (sku) { flat.push(sku); }); });
+        flat.sort(function (left, right) { return Number(right.unitsSold) - Number(left.unitsSold); }).forEach(function (sku) {
+          var row = document.createElement('tr');
+          [sku.skuName, integer(sku.unitsSold), integer(sku.skuOrders), moneyWhole(sku.gmv)].forEach(function (text) { var cell = document.createElement('td'); cell.textContent = text; row.appendChild(cell); });
+          rows.appendChild(row);
+        });
+        document.getElementById('financeSkuEmpty').classList.toggle('hidden', flat.length > 0);
+      }
+
+      function renderFinanceStatements(statements) {
+        var rows = document.getElementById('financeStatementRows'); rows.replaceChildren();
+        (statements || []).forEach(function (statement) {
+          var row = document.createElement('tr'); row.dataset.statementId = statement.id;
+          var values = [operationDate(statement.statementTime), moneyWhole(statement.revenue), moneyWhole(statement.platformFees),
+            moneyWhole(statement.promotionFees), moneyWhole(statement.kocFees), integer(statement.orderCount)];
+          values.forEach(function (text) { var cell = document.createElement('td'); cell.textContent = text; row.appendChild(cell); });
+          var statusCell = document.createElement('td'); var status = document.createElement('span'); status.className = 'finance-status ' + statement.paymentStatus; status.textContent = statement.paymentStatus; statusCell.appendChild(status); row.appendChild(statusCell);
+          var settlementCell = document.createElement('td'); settlementCell.textContent = moneyWhole(statement.settlementAmount); row.appendChild(settlementCell);
+          row.addEventListener('click', function () { openFinanceStatement(statement); });
+          rows.appendChild(row);
+        });
+        document.getElementById('financeStatementEmpty').classList.toggle('hidden', (statements || []).length > 0);
+      }
+
+      function openFinanceStatement(statement) {
+        var detail = statement.detail || {};
+        document.getElementById('financeStatementTitle').textContent = 'Statement ' + statement.id;
+        document.getElementById('financeStatementMeta').textContent = operationDate(statement.statementTime) + ' · ' + statement.paymentStatus;
+        var body = document.getElementById('financeStatementBody'); body.replaceChildren();
+        var grid = document.createElement('div'); grid.className = 'finance-modal-grid';
+        var left = document.createElement('div'); var right = document.createElement('div');
+        appendFinanceGroup(left, 'Doanh thu', detail.revenue);
+        appendFinanceGroup(left, 'Vận chuyển', detail.shipping && detail.shipping.breakdown);
+        appendFinanceGroup(right, 'Phí sàn', detail.fees && detail.fees.platform);
+        appendFinanceGroup(right, 'KOC / Affiliate', detail.fees && detail.fees.koc);
+        appendFinanceGroup(right, 'Khuyến mãi', detail.fees && detail.fees.promotion);
+        appendFinanceGroup(right, 'Thuế và phí khác', Object.assign({}, detail.fees && detail.fees.otherPrograms, detail.fees && detail.fees.tax));
+        grid.append(left, right); body.appendChild(grid);
+        appendFinanceLine(body, 'Số tiền thực nhận', statement.settlementAmount, 'finance-total-line');
+        document.getElementById('financeStatementModal').classList.remove('hidden'); document.body.classList.add('modal-open');
+      }
+
+      function closeFinanceStatement() {
+        document.getElementById('financeStatementModal').classList.add('hidden'); syncModalOpenState();
+      }
+
+      document.getElementById('financeStatementClose').addEventListener('click', closeFinanceStatement);
+      document.getElementById('financeStatementModal').addEventListener('click', function (event) { if (event.target === event.currentTarget) closeFinanceStatement(); });
+
+      function renderFinanceAnalysis(data) {
+        currentFinanceData = data;
+        document.getElementById('reportTabs').classList.remove('hidden');
+        document.getElementById('financeReport').classList.toggle('hidden', activeReportView !== 'finance');
+        var generated = new Date(data.generatedAt);
+        document.getElementById('financeUpdatedAt').textContent = 'Cập nhật lúc ' + new Intl.DateTimeFormat('vi-VN', { hour:'2-digit', minute:'2-digit' }).format(generated);
+        document.getElementById('updatedAt').textContent = 'Cập nhật: ' + new Intl.DateTimeFormat('vi-VN', { dateStyle:'short', timeStyle:'medium' }).format(generated);
+        document.getElementById('financeTodayNotice').classList.toggle('hidden', !data.todaySettlementNotice);
+        document.getElementById('financeDateScopeNote').textContent = data.dateScopeNote || '';
+        var warning = document.getElementById('financeWarnings'); warning.textContent = (data.warnings || []).join(' · '); warning.classList.toggle('hidden', !(data.warnings || []).length);
+        var current = data.current || {}; var settled = current.settled || {}; var fees = settled.fees || {};
+        renderFinanceSummary(data);
+        var settledPanel = document.getElementById('financeSettledPanel'); settledPanel.replaceChildren();
+        var settledGrid = document.createElement('div'); settledGrid.className = 'finance-settlement-grid';
+        settledGrid.append(financeMiniMetric('Doanh thu ròng', moneyWhole(settled.revenue && settled.revenue.netRevenue)),
+          financeMiniMetric('Phí & thuế', moneyWhole(Math.abs(fees.totalFeeTax || 0))),
+          financeMiniMetric('Số statement', integer((settled.statements || []).length)),
+          financeMiniMetric('Số tiền quyết toán', moneyWhole(settled.settlementAmount)));
+        settledPanel.appendChild(settledGrid);
+        var unsettled = current.unsettled || {}; var unsettledPanel = document.getElementById('financeUnsettledPanel'); unsettledPanel.replaceChildren();
+        var unsettledGrid = document.createElement('div'); unsettledGrid.className = 'finance-settlement-grid';
+        unsettledGrid.append(financeMiniMetric('Doanh thu ước tính', moneyWhole(unsettled.sumEstRevenueAmount)),
+          financeMiniMetric('Phí ước tính', moneyWhole(Math.abs(unsettled.sumEstFeeAmount || 0))),
+          financeMiniMetric('Điều chỉnh ước tính', moneyWhole(unsettled.sumEstAdjustmentAmount)),
+          financeMiniMetric('Sẽ quyết toán', moneyWhole(unsettled.sumEstSettlementAmount)));
+        unsettledPanel.appendChild(unsettledGrid);
+        (unsettled.reasons || []).forEach(function (reason) { appendFinanceLine(unsettledPanel, reason.label + ' · ' + integer(reason.count) + ' giao dịch', reason.amount); });
+        renderSettlementTree(current); renderFinanceAds(current); renderFinanceSku(current.sku); renderFinanceStatements(settled.statements || []); setFinanceView(activeFinanceView);
       }
 
       function handleRevenueFailure(error) {

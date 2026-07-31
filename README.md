@@ -58,7 +58,7 @@ Trong TikTok Shop Partner Center, cau hinh redirect URL chinh xac:
 https://anlanhfarm.indevs.in/auth/callback
 ```
 
-Ung dung Seller can quyen doc thong tin shop, analytics va don hang (`seller.authorization.info`, `data.shop_analytics.public.read`, `seller.order.info`). GMV, so don va AOV duoc lay tu Shop Analytics; Order API bo sung don huy, khach hang va tinh/thanh pho.
+Ung dung Seller can quyen doc thong tin shop, analytics, don hang va tai chinh (`seller.authorization.info`, `data.shop_analytics.public.read`, `seller.order.info`, `seller.finance.info`). GMV, so don va AOV duoc lay tu Shop Analytics; Order API bo sung don huy, khach hang va tinh/thanh pho; Finance API cung cap statement va giao dich chua quyet toan cho tab Tai chinh.
 
 Webhook URL:
 

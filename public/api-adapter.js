@@ -10,6 +10,7 @@
     loadReport: ['POST', '/api/report'],
     loadRevenueAnalysis: ['POST', '/api/revenue-analysis'],
     loadOperationsAnalysis: ['POST', '/api/operations-analysis'],
+    loadFinanceAnalysis: ['POST', '/api/finance-analysis'],
     loadProductVideos: ['POST', '/api/product-videos'],
     loadCreativeSummaries: ['POST', '/api/creative-summaries'],
     loadYesterdayComparison: ['POST', '/api/comparison'],
