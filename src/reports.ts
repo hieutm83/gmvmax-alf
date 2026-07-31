@@ -47,7 +47,7 @@ async function contextsRows(env: Env, session: McpSession, advertiserId: string,
 }
 
 export async function loadMainReport(env: Env, input: any, force = false): Promise<any> {
-  const key = stableKey('main-v2', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
+  const key = stableKey('main-v4', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
   const { advertiserId, storeId, startDate, endDate } = input;
   const multiDay = startDate !== endDate;
   const session = await createSession(env);
@@ -64,7 +64,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
         metrics: ['product_name','product_image_url','product_status','cost','orders','cost_per_order','gross_revenue','roi'],
         start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] }, sort_field: 'cost', sort_type: 'DESC' }),
       multiDay ? Promise.resolve([]) : pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['item_group_id','stat_time_hour'],
-        metrics: ['cost','orders','gross_revenue'], start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] } })
+        metrics: ['cost','orders','gross_revenue','product_clicks'], start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] } })
     ]);
     hourlyRows.push(...hours);
     for (const row of productRows) {
@@ -88,7 +88,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
   const daily: any[] = [];
   if (multiDay) {
     const dailyRows = await pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId],
-      dimensions: ['campaign_id','stat_time_day'], metrics: ['cost','orders','gross_revenue'],
+      dimensions: ['campaign_id','stat_time_day'], metrics: ['cost','orders','gross_revenue','product_clicks'],
       start_date: startDate, end_date: endDate });
     const dailyByDate = new Map<string, any>();
     for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
@@ -215,26 +215,41 @@ export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,end
   const main=await loadMainReport(env,{advertiserId:input.advertiserId,storeId:input.storeId,startDate,endDate});
   const products=new Map<string,any>((main.products||[]).map((product:any)=>[String(product.itemGroupId),product]));
   const byId=new Map<string,any>();
+  const timeDimension=startDate===endDate?'stat_time_hour':'stat_time_day';
   for(let offset=0;offset<contexts.length;offset+=4){
     const chunk=contexts.slice(offset,offset+4);
     const values=await Promise.all(chunk.map(async context=>{
-      const rows=await contextsRows(env,session,input.advertiserId,input.storeId,[context],startDate,endDate,['item_id'],creativeMetrics);
-      return rows.map(row=>({row,context}));
+      const [rows,timeRows]=await Promise.all([
+        contextsRows(env,session,input.advertiserId,input.storeId,[context],startDate,endDate,['item_id'],creativeMetrics),
+        contextsRows(env,session,input.advertiserId,input.storeId,[context],startDate,endDate,['item_id',timeDimension],['cost','orders','gross_revenue','product_impressions','product_clicks'])
+      ]);
+      return{rows:rows.map(row=>({row,context})),timeRows:timeRows.map(row=>({row,context}))};
     }));
-    for(const {row,context} of values.flat()){
+    for(const {row,context} of values.flatMap(value=>value.rows)){
       const itemId=rowId(row,'item_id');if(!itemId||itemId==='-1')continue;
       const video=normalizeVideo(row);const product=products.get(String(context.itemGroupId));
       const current=byId.get(itemId)||{itemId,title:video.name,accountName:video.accountName,accountUsername:video.accountUserName,
-        authorizationType:video.authorizationType,cost:0,orders:0,grossRevenue:0,productClicks:0,productImpressions:0,campaigns:[],products:[]};
+        authorizationType:video.authorizationType,cost:0,orders:0,grossRevenue:0,productClicks:0,productImpressions:0,campaigns:[],products:[],timeline:{}};
       current.cost+=numberValue(video.cost);current.orders+=numberValue(video.orders);current.grossRevenue+=numberValue(video.grossRevenue);
       current.productClicks+=numberValue(video.productClicks);current.productImpressions+=numberValue(video.productImpressions);
       if(!current.campaigns.some((item:any)=>item.campaignId===context.campaignId))current.campaigns.push({campaignId:context.campaignId,campaignName:product?.campaignName||`GMV Max ${context.campaignId}`});
       if(!current.products.some((item:any)=>item.id===String(context.itemGroupId)))current.products.push({id:String(context.itemGroupId),name:product?.productName||`Sản phẩm ${context.itemGroupId}`,imageUrl:product?.productImageUrl||''});
       byId.set(itemId,current);
     }
+    for(const {row} of values.flatMap(value=>value.timeRows)){
+      const itemId=rowId(row,'item_id'),current=byId.get(itemId);if(!current)continue;const metrics=row.metrics||{};
+      const rawTime=String(row.dimensions?.[timeDimension]||metrics[timeDimension]||'');
+      const timeKey=timeDimension==='stat_time_day'?rawTime.slice(0,10):String((rawTime.match(/(?:T|\s)(\d{1,2}):/)||rawTime.match(/^(\d{1,2})$/)||[])[1]||'').padStart(2,'0');
+      if(!timeKey)continue;const point=current.timeline[timeKey]||{cost:0,orders:0,grossRevenue:0,productClicks:0,productImpressions:0};
+      point.cost+=numberValue(metrics.cost);point.orders+=numberValue(metrics.orders);point.grossRevenue+=numberValue(metrics.gross_revenue);
+      point.productClicks+=numberValue(metrics.product_clicks);point.productImpressions+=numberValue(metrics.product_impressions);current.timeline[timeKey]=point;
+    }
   }
-  return Array.from(byId.values()).filter(video=>numberValue(video.cost)||numberValue(video.orders)||numberValue(video.grossRevenue)||
+  const result=Array.from(byId.values()).filter(video=>numberValue(video.cost)||numberValue(video.orders)||numberValue(video.grossRevenue)||
     numberValue(video.productClicks)||numberValue(video.productImpressions));
+  (result as any).overallTimeline=(startDate===endDate?main.hourly:main.daily).map((point:any)=>({key:startDate===endDate?String(Math.max(0,Number(point.hour||1)-1)).padStart(2,'0'):point.date,
+    grossRevenue:numberValue(point.metrics?.grossRevenue),productClicks:numberValue(point.metrics?.traffic)}));
+  return result;
 }
 
 export async function loadVideoDayStats(env:Env,input:any,contexts:ProductContext[],reportDate:string):Promise<any>{
