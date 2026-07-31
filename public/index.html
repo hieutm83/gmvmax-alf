@@ -204,8 +204,7 @@
       .gmv-change { font-size: 11px; font-weight: 700; }
       .gmv-change.good { color: #059669; } .gmv-change.bad { color: #dc2626; } .gmv-change.neutral { color: var(--text-muted); }
       .operations-summary { margin-bottom: 18px; }
-      .operations-summary .metric { min-height: 126px; }
-      .operations-summary .metric small { display: block; margin-top: 8px; color: var(--text-muted); font-size: 11px; font-weight: 600; line-height: 1.55; }
+      .operations-summary .metric { min-height: 100px; }
       .metric-cancelRate { --metric-color: #dc2626; }
       .metric-returnRate { --metric-color: #d97706; }
       .metric-failedRate { --metric-color: #7c3aed; }
@@ -348,7 +347,6 @@
       <section id="operationsReport" class="hidden">
         <div id="operationsSummary" class="summary operations-summary"></div>
         <div id="operationsWarnings" class="operations-warning hidden"></div>
-        <p class="analytics-note">Giám sát thụ động từ Search Cancellations, Search Returns và Get Order List. Dashboard chỉ đọc, không thực hiện thao tác trên đơn.</p>
         <div class="analytics-grid operations-charts">
           <section class="analytics-panel"><h2>Cơ cấu lý do hủy đơn</h2><div class="analytics-canvas"><canvas id="cancelReasonsChart"></canvas></div></section>
           <section class="analytics-panel"><h2>Lý do trả hàng &amp; hoàn tiền</h2><div class="analytics-canvas"><canvas id="returnReasonsChart"></canvas></div></section>
@@ -804,12 +802,11 @@
         showError(error);
       }
 
-      function operationsMetric(labelText, valueText, className, detailText) {
+      function operationsMetric(labelText, valueText, className) {
         var box = document.createElement('div'); box.className = 'metric metric-' + className;
         var label = document.createElement('span'); label.textContent = labelText;
         var value = document.createElement('strong'); value.textContent = valueText;
-        var detail = document.createElement('small'); detail.textContent = detailText;
-        box.append(label, value, detail); return box;
+        box.append(label, value); return box;
       }
 
       function renderOperationsAnalysis(data) {
@@ -822,14 +819,10 @@
         var types = totals.returnTypes || {};
         var summary = document.getElementById('operationsSummary'); summary.replaceChildren();
         summary.append(
-          operationsMetric('Tỷ lệ hủy đơn', percent(totals.cancellationRate), 'cancelRate',
-            integer(totals.cancellations) + ' đơn hủy có thời gian tạo trong kỳ / ' + integer(totals.openOrders) + ' đơn đang mở được tạo trong kỳ · BUYER ' + integer(roles.BUYER || 0) + ' · SYSTEM ' + integer(roles.SYSTEM || 0) + ' · SELLER ' + integer(roles.SELLER || 0)),
-          operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate',
-            integer(totals.returns) + ' yêu cầu / ' + integer(totals.returnEligibleOrders) + ' đơn DELIVERED · REFUND ' + integer(types.REFUND || 0) + ' · RETURN & REFUND ' + integer(types.RETURN_AND_REFUND || 0)),
-          operationsMetric('Tỷ lệ đơn huỷ do sự cố logistics', percent(totals.logisticsCancellationRate), 'failedRate',
-            integer(totals.logisticsCancellations) + ' đơn SYSTEM do giao gói hàng thất bại / ' + integer(totals.totalOrders) + ' đơn tạo trong kỳ'),
-          operationsMetric('Giá trị tiền hàng rủi ro', moneyWhole(totals.atRiskValue) + ' VND', 'riskValue',
-            'Tổng giá trị đơn thuộc nhóm huỷ do sự cố logistics · không trùng mã đơn')
+          operationsMetric('Tỷ lệ hủy đơn', percent(totals.cancellationRate), 'cancelRate'),
+          operationsMetric('Tỷ lệ trả hàng / hoàn tiền', percent(totals.returnRate), 'returnRate'),
+          operationsMetric('Tỷ lệ đơn huỷ do sự cố logistics', percent(totals.logisticsCancellationRate), 'failedRate'),
+          operationsMetric('Giá trị tiền hàng rủi ro', moneyWhole(totals.atRiskValue) + ' VND', 'riskValue')
         );
         var warning = document.getElementById('operationsWarnings');
         warning.textContent = (data.warnings || []).join(' · ');

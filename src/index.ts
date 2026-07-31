@@ -130,7 +130,8 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     try{await getAccessToken(runtime);}catch(error){console.error('TikTok OAuth refresh failed',error instanceof Error?error.message:String(error));return;}
     const tasks:Promise<unknown>[]=[];
     if(env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
-      if(message.reportHour===8)await env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:shiftDate(message.reportDate,-1),mode:'DAILY'});
+      if(message.reportHour===8){const yesterday=shiftDate(message.reportDate,-1);
+        await env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'});}
     }
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
     if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},message.reportHour===8?{delaySeconds:30}:undefined));
@@ -138,7 +139,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   }
   if(message.type==='operations-daily-report'){
     const storeId=env.ZALO_STORE_ID||await resolveDefaultStore(runtime);
-    await sendOperationsReport({...runtime,DEFAULT_STORE_CODE:storeId},message.reportDate,message.mode,message.chatId);
+    await sendOperationsReport({...runtime,DEFAULT_STORE_CODE:storeId},message.reportDate,message.mode,message.chatId,message.operationsDate||message.reportDate);
     if(message.eventId)await env.DB.prepare("UPDATE operations_bot_events SET status='DONE',processed_at=? WHERE external_id=?")
       .bind(Date.now(),message.eventId).run();
     return;

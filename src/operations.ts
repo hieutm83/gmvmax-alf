@@ -119,6 +119,43 @@ function breakdown(map: Map<string, number>): Array<{ label: string; count: numb
   return Array.from(map, ([label, count]) => ({ label, count })).sort((left, right) => right.count - left.count);
 }
 
+export function returnReasonLabel(item: any): string {
+  const code = String(item?.return_reason || item?.refund_reason || '').toLowerCase();
+  const mappings: Array<[RegExp, string]> = [
+    [/suspected_counterfeit/, 'Nghi ngờ hàng giả'],
+    [/not_match(?:_description)?/, 'Sản phẩm không khớp với mô tả'],
+    [/wrong_product/, 'Gửi sai sản phẩm'],
+    [/missing_(?:product|parts|broken_parts)/, 'Thiếu sản phẩm hoặc phụ kiện'],
+    [/damaged/, 'Sản phẩm hoặc bao bì bị hư hỏng'],
+    [/defective/, 'Sản phẩm bị lỗi hoặc không hoạt động'],
+    [/not_received/, 'Chưa nhận được hàng'],
+    [/(?:missed_delivery|not_arrive_on_time)/, 'Giao hàng trễ'],
+    [/no_need/, 'Không còn nhu cầu'],
+    [/_other(?:_|$)/, 'Lý do khác']
+  ];
+  for (const [pattern, label] of mappings) if (pattern.test(code)) return label;
+  return String(item?.return_reason_text || item?.refund_reason_text || item?.return_reason || item?.refund_reason || 'Không xác định');
+}
+
+async function currentLifecycleCounts(env: Env, shopCipher: string,
+  lifecycle: Array<{ code: string; label: string }>, warnings: string[]): Promise<Map<string, number>> {
+  const counts = new Map(lifecycle.map((item) => [item.code, 0]));
+  for (const item of lifecycle) {
+    try {
+      const data = await shopRequest(env, '/order/202309/orders/search', 'POST', {
+        shop_cipher: shopCipher,
+        page_size: 1,
+        sort_field: 'update_time',
+        sort_order: 'DESC'
+      }, { order_status: item.code });
+      counts.set(item.code, numberValue(data?.total_count ?? data?.orders?.length));
+    } catch (error) {
+      warnings.push(`Phễu ${item.label}: ${errorMessage(error)}`);
+    }
+  }
+  return counts;
+}
+
 function latestTimestamp(...values: unknown[]): number {
   return Math.max(0, ...values.map(numberValue));
 }
@@ -140,7 +177,7 @@ function packageStatus(order: any): string {
 }
 
 export async function loadOperationsAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-operations-v6-batch', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('seller-operations-v7-status-counts', { startDate: input.startDate, endDate: input.endDate });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
 
@@ -222,7 +259,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     const orderId = String(item.order_id || '');
     const type = String(item.return_type || 'OTHER').toUpperCase();
     returnTypes[type] = (returnTypes[type] || 0) + 1;
-    const reason = String(item.return_reason_text || item.return_reason || 'Không xác định');
+    const reason = returnReasonLabel(item);
     addCount(returnReasons, reason);
     const order = orderById.get(orderId);
     incidents.push({ id: String(item.return_id || orderId), orderId, rmaId: String(item.return_id || ''), type: type === 'REFUND' ? 'Hoàn tiền' : 'Trả hàng',
@@ -239,11 +276,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     { code: 'DELIVERED', label: 'Đã giao' },
     { code: 'COMPLETED', label: 'Hoàn tất' }
   ];
-  const lifecycleCounts = new Map(lifecycle.map((item) => [item.code, 0]));
-  for (const order of populationOrders) {
-    const status = String(order.status || order.order_status || '').toUpperCase();
-    if (lifecycleCounts.has(status)) lifecycleCounts.set(status, (lifecycleCounts.get(status) || 0) + 1);
-  }
+  const lifecycleCounts = await currentLifecycleCounts(env, cipher, lifecycle, warnings);
 
   const logisticsCancellationByOrderId = new Map(logisticsCancellations
     .map((item) => [String(item.order_id || ''), item] as const).filter(([orderId]) => Boolean(orderId)));
@@ -256,7 +289,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
 
   const totalOrders = populationOrders.length;
   const result = {
-    schemaVersion: 'operations-v6-batch',
+    schemaVersion: 'operations-v7-status-counts',
     generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
     shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code }, warnings,
     totals: {

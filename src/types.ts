@@ -34,7 +34,7 @@ export interface Env {
 export type TaskMessage =
   | { type: 'hourly-dispatch'; reportDate: string; reportHour: number; backupDate?: string }
   | { type: 'scheduled-report'; reportDate: string; reportHour: number }
-  | { type: 'operations-daily-report'; reportDate: string; mode: 'DAILY' | 'REALTIME'; chatId?: string; eventId?: string }
+  | { type: 'operations-daily-report'; reportDate: string; operationsDate?: string; mode: 'DAILY' | 'REALTIME'; chatId?: string; eventId?: string }
   | { type: 'zalo-poll' }
   | { type: 'zalo-webhook-ensure' }
   | { type: 'zalo-video'; eventId: number }

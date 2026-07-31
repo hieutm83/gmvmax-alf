@@ -164,21 +164,25 @@ export async function pollOperationsBot(env: Env, timeoutSeconds = 25): Promise<
   return items.map(normalizeOperationsUpdate).filter((update: OperationsBotUpdate) => update.id);
 }
 
-export async function sendOperationsReport(env: Env, reportDate: string, mode: 'DAILY' | 'REALTIME', chatId?: string): Promise<void> {
+export async function sendOperationsReport(env: Env, reportDate: string, mode: 'DAILY' | 'REALTIME', chatId?: string,
+  operationsDate = reportDate): Promise<void> {
   if (mode === 'DAILY') {
     const existing = await env.DB.prepare('SELECT status FROM operations_bot_reports WHERE report_date=? AND report_kind=?')
       .bind(reportDate, mode).first<{ status: string }>();
     if (existing?.status === 'SENT') return;
   }
   const previousDate = shiftDate(reportDate, -1);
+  const previousOperationsDate = shiftDate(operationsDate, -1);
   const input = { startDate: reportDate, endDate: reportDate, forceRefresh: true };
   const previousInput = { startDate: previousDate, endDate: previousDate, forceRefresh: false };
+  const operationsInput = { startDate: operationsDate, endDate: operationsDate, forceRefresh: true };
+  const previousOperationsInput = { startDate: previousOperationsDate, endDate: previousOperationsDate, forceRefresh: false };
   const [revenue, ads, previousAds, operations, previousOperations] = await Promise.all([
     loadSellerRevenueAnalysis(env, input),
     loadMainReport(env, { ...input, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }, true),
     loadMainReport(env, { ...previousInput, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }),
-    loadOperationsAnalysis(env, input),
-    loadOperationsAnalysis(env, previousInput)
+    loadOperationsAnalysis(env, operationsInput),
+    loadOperationsAnalysis(env, previousOperationsInput)
   ]);
   const currentRevenue = revenue.totals || {};
   const previousRevenue = revenue.previousTotals || {};
@@ -211,5 +215,5 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
   const messageId = await sendOperationsMessage(env, text, buildOperationsReportStyles(text), chatId);
   if (mode === 'DAILY') await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
     VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
-    .bind(reportDate, mode, 'SENT', messageId, JSON.stringify({ values, productCount: products.length })).run();
+    .bind(reportDate, mode, 'SENT', messageId, JSON.stringify({ values, productCount: products.length, operationsDate })).run();
 }
