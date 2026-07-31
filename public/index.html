@@ -1583,6 +1583,10 @@
           var roiCell = document.createElement('td'); roiCell.textContent = number(metric.roi); row.appendChild(roiCell);
           rows.appendChild(row);
         });
+        var productWrap=document.getElementById('productTableWrap');var productMore=document.getElementById('productMore');
+        var hasHiddenProducts=data.products.length>3&&data.products.some(function(product){return String(product.displayStatus||product.status||'AVAILABLE').toUpperCase()!=='AVAILABLE';});
+        productWrap.classList.toggle('products-collapsed',hasHiddenProducts);productMore.classList.toggle('hidden',!hasHiddenProducts);productMore.textContent='Thêm';
+        productMore.onclick=function(){productsExpanded=!productsExpanded;productWrap.classList.toggle('products-collapsed',!productsExpanded);productMore.textContent=productsExpanded?'Thu gọn':'Thêm';};
         document.getElementById('empty').classList.toggle('hidden', data.products.length > 0);
         currentReportProducts = data.products.slice();
         currentAvailableProductCount = Number(data.availableProductCount) || 0;
@@ -1617,10 +1621,6 @@
             }
           }
         });
-        var productWrap=document.getElementById('productTableWrap');var productMore=document.getElementById('productMore');
-        var hasHiddenProducts=data.products.length>3&&data.products.some(function(product){return String(product.displayStatus||product.status||'AVAILABLE').toUpperCase()!=='AVAILABLE';});
-        productWrap.classList.toggle('products-collapsed',hasHiddenProducts);productMore.classList.toggle('hidden',!hasHiddenProducts);productMore.textContent='Thêm';
-        productMore.onclick=function(){productsExpanded=!productsExpanded;productWrap.classList.toggle('products-collapsed',!productsExpanded);productMore.textContent=productsExpanded?'Thu gọn':'Thêm';};
       }
 
       function openProductVideos(product) {
