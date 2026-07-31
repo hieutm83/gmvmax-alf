@@ -15,6 +15,11 @@ describe('order bot cancellation alert', () => {
       'Lý do chi tiết: Không còn nhu cầu',
       'Thời gian hủy: 10:16 31/7/26'
     ].join('\n'));
-    expect(result.styles[0].st).toEqual(['u', 'i', 'c_db342e']);
+    expect(result.styles[0].st).toEqual(['f_15', 'u', 'i', 'c_db342e']);
+    expect(result.styles[1]).toEqual({
+      start: 'Đơn hủy\n'.length,
+      len: result.text.length - 'Đơn hủy\n'.length,
+      st: ['f_13']
+    });
   });
 });

@@ -210,7 +210,11 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
     `Lý do chi tiết: ${String(incident?.reason || 'Không xác định')}`,
     `Thời gian hủy: ${time}`
   ].join('\n');
-  const styles: OrderTextStyle[] = [{ start: 0, len: 'Đơn hủy'.length, st: ['u', 'i', RED] }];
+  const titleLength = 'Đơn hủy'.length;
+  const styles: OrderTextStyle[] = [
+    { start: 0, len: titleLength, st: ['f_15', 'u', 'i', RED] },
+    { start: titleLength + 1, len: text.length - titleLength - 1, st: ['f_13'] }
+  ];
   let offset = 0;
   for (const line of text.split('\n')) {
     const separator = line.indexOf(':');
