@@ -1,6 +1,6 @@
 import type { Env, McpRow, McpSession, ProductContext } from './types';
 import { callTool, createSession, forEachReportPage, pagedReport, resolveTool } from './mcp';
-import { cacheGet, cachePut, numberValue, shiftDate, stableKey, unique } from './utils';
+import { cacheGet, cachePut, dateInTimezone, hourInTimezone, numberValue, shiftDate, stableKey, unique } from './utils';
 import { evaluateVideos } from './evaluator';
 import { sellerOwnedVideoIds } from './seller';
 
@@ -47,7 +47,7 @@ async function contextsRows(env: Env, session: McpSession, advertiserId: string,
 }
 
 export async function loadMainReport(env: Env, input: any, force = false): Promise<any> {
-  const key = stableKey('main-v4', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
+  const key = stableKey('main-v5', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
   const { advertiserId, storeId, startDate, endDate } = input;
   const multiDay = startDate !== endDate;
   const session = await createSession(env);
@@ -55,18 +55,19 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
     dimensions: ['campaign_id'], metrics: ['cost','orders','cost_per_order','gross_revenue','roi'], start_date: startDate, end_date: endDate }))
     .filter((row) => numberValue(row.metrics?.cost) > 0);
   const totals = empty(); campaignRows.forEach((row) => add(totals, metric(row.metrics || {})));
-  const products: any[] = []; const hourlyRows: McpRow[] = [];
+  const products: any[] = [];
+  let hourlyRows: McpRow[] = multiDay ? [] : await pagedReport(env, session, {
+    advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['stat_time_hour'],
+    metrics: ['cost','orders','gross_revenue'], start_date: startDate, end_date: endDate
+  });
   for (const campaignRow of campaignRows) {
     const campaignId = rowId(campaignRow, 'campaign_id'); if (!campaignId) continue;
-    const [info, productRows, hours] = await Promise.all([
+    const [info, productRows] = await Promise.all([
       campaignInfo(env, session, advertiserId, campaignId).catch(() => ({})),
       pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['item_group_id'],
         metrics: ['product_name','product_image_url','product_status','cost','orders','cost_per_order','gross_revenue','roi'],
-        start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] }, sort_field: 'cost', sort_type: 'DESC' }),
-      multiDay ? Promise.resolve([]) : pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['item_group_id','stat_time_hour'],
-        metrics: ['cost','orders','gross_revenue','product_clicks'], start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] } })
+        start_date: startDate, end_date: endDate, filtering: { campaign_ids: [campaignId] }, sort_field: 'cost', sort_type: 'DESC' })
     ]);
-    hourlyRows.push(...hours);
     for (const row of productRows) {
       const raw = row.metrics || {}; const d = row.dimensions || {}; const itemGroupId = rowId(row, 'item_group_id');
       const active = campaignActive(info);
@@ -79,11 +80,27 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
     }
   }
   const contexts = products.filter((p) => p.itemGroupId).map((p) => ({ campaignId: p.campaignId, itemGroupId: p.itemGroupId, campaignActive: p.campaignActive }));
+  if (!multiDay && !hourlyRows.length && contexts.length) {
+    for (let offset = 0; offset < contexts.length; offset += 4) {
+      const chunk = contexts.slice(offset, offset + 4);
+      const values = await Promise.all(chunk.map((context) => contextsRows(env, session, advertiserId, storeId,
+        [context], startDate, endDate, ['item_id','stat_time_hour'], ['cost','orders','gross_revenue'])));
+      values.forEach((rows) => hourlyRows.push(...rows));
+    }
+  }
   const hourly = Array.from({ length: 24 }, (_, index) => ({ hour: index + 1, label: `${index + 1}:00`, metrics: empty() }));
   for (const row of hourlyRows) {
     const value = String(row.dimensions?.stat_time_hour || row.metrics?.stat_time_hour || '');
-    const match = value.match(/(?:T|\s)(\d{1,2}):/) || value.match(/^(\d{1,2})$/); if (!match) continue;
+    const match = value.match(/(?:T|\s)(\d{1,2})(?::|$)/) || value.match(/^(\d{1,2})(?::|$)/); if (!match) continue;
     const index = Number(match[1]); if (index >= 0 && index < 24) add(hourly[index].metrics, metric(row.metrics || {}));
+  }
+  let hourlyMode: 'hourly' | 'cumulative' = 'hourly';
+  if (!multiDay && !hourly.some((point) => point.metrics.cost || point.metrics.grossRevenue) && (totals.cost || totals.grossRevenue)) {
+    const now = new Date();
+    const isToday = endDate === dateInTimezone(now, env.TIMEZONE);
+    const fallbackIndex = isToday ? Math.max(0, Math.min(23, hourInTimezone(now, env.TIMEZONE))) : 23;
+    hourly[fallbackIndex].metrics = { ...totals };
+    hourlyMode = 'cumulative';
   }
   const daily: any[] = [];
   if (multiDay) {
@@ -103,7 +120,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
   const result = { advertiserId, store: { storeId }, startDate, endDate, generatedAt: new Date().toISOString(), totals,
     products: products.filter((p) => (p.campaignActive && p.status === 'AVAILABLE') || p.metrics.cost > 0).sort((a,b) => b.metrics.cost-a.metrics.cost),
     availableProductCount: products.filter((p) => p.campaignActive && p.status === 'AVAILABLE').length,
-    creativeContexts: contexts, hourly, daily };
+    creativeContexts: contexts, hourly, hourlyMode, daily };
   await cachePut(env, key, result, endDate === new Date().toISOString().slice(0,10) ? 240 : 86400);
   return result;
 }

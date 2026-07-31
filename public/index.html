@@ -304,6 +304,8 @@
       .cost-source-table th:nth-child(2),.cost-source-table td:nth-child(2),.cost-source-table th:nth-child(3),.cost-source-table td:nth-child(3) { width:18%; min-width:0; }
       .cost-source-table th:nth-child(n+4),.cost-source-table td:nth-child(n+4) { width:12%; min-width:0; }
       .cost-source-table th,.cost-source-table td { padding-right:7px; padding-left:7px; overflow:hidden; text-overflow:ellipsis; }
+      .cost-analysis-panel .table-wrap { min-height: 250px; }
+      .cost-source-table td { height: 68px; }
       .cost-source-table td:not(:first-child) { font-weight:500; }
       .gmv-source-row td { color: var(--text); font-weight: 800; background: #f8fafc; }
       .gmv-source-label { display: inline-flex; align-items: center; gap: 8px; }
@@ -379,7 +381,7 @@
           <div class="hourly-chart-canvas"><canvas id="hourlyPerformanceChart"></canvas></div>
         </section>
         <section class="gmv-analysis-panel cost-analysis-panel">
-          <header class="gmv-analysis-head"><h2>Phân tích COST</h2><span>Theo nguồn COST</span></header>
+          <header class="gmv-analysis-head"><h2>Phân tích COST</h2></header>
           <div id="costAttributionEmpty" class="analytics-unavailable"><div><strong>Đang tải dữ liệu nguồn COST</strong><span>Dữ liệu được tổng hợp từ các creative trong khoảng ngày đã chọn.</span></div></div>
           <div id="costAttributionContent" class="gmv-analysis-grid hidden">
             <div class="gmv-attribution-chart"><canvas id="costAttributionChart"></canvas></div>
@@ -1676,7 +1678,8 @@
           summary.appendChild(box);
         });
         var reportUsesDailySeries = data.startDate !== data.endDate;
-        document.getElementById('adsTimeSeriesTitle').textContent = reportUsesDailySeries ? 'Dữ liệu theo ngày' : 'Dữ liệu theo giờ';
+        document.getElementById('adsTimeSeriesTitle').textContent = reportUsesDailySeries ? 'Dữ liệu theo ngày' :
+          (data.hourlyMode === 'cumulative' ? 'Dữ liệu lũy kế trong ngày' : 'Dữ liệu theo giờ');
         currentReportHourly = reportUsesDailySeries ? (data.daily || []) : (data.hourly || []);
         renderHourlyChart(currentReportHourly);
 
