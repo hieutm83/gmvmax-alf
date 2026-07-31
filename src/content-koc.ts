@@ -67,7 +67,7 @@ async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<
 }
 
 export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;storeId:string;startDate:string;endDate:string;forceRefresh?:boolean}):Promise<any>{
-  const key=stableKey('content-koc-v13',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  const key=stableKey('content-koc-v14',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return{...cached,cacheStatus:'HIT'};}
   const [shopResult,adsVideos]=await Promise.all([
     fetchShopVideos(env,input.startDate,input.endDate).catch(()=>({available:false,videos:[],latestAvailableDate:null})),
@@ -88,7 +88,7 @@ export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;
     const itemId=String(raw.id||'');if(!itemId)continue;const ads:any=adsById.get(itemId);adsById.delete(itemId);
     const ctr=raw.click_through_rate==null?null:numberValue(raw.click_through_rate);const views=numberValue(raw.views);
     const products=(raw.products||[]).map((product:any)=>({id:String(product.id),name:String(product.name||product.id),imageUrl:''}));
-    for(const product of ads?.products||[])if(!products.some((item:any)=>item.id===product.id))products.push(product);
+    for(const product of ads?.products||[]){const existing=products.find((item:any)=>item.id===product.id);if(!existing)products.push(product);else if(!existing.imageUrl)existing.imageUrl=product.imageUrl||'';}
     const type=adsCreatorType(raw,ads);
     const postedDate=postDate(raw.video_post_time)||postDateFromItemId(itemId,env.TIMEZONE);videos.push({itemId,title:String(raw.title||ads?.title||`Video ${itemId}`),videoUrl:`https://www.tiktok.com/@${encodeURIComponent(String(raw.username||raw.creator?.user_name||ads?.accountUsername||''))}/video/${itemId}`,
       accountName:String(raw.creator?.nick_name||raw.username||ads?.accountName||''),accountUsername:String(raw.creator?.user_name||raw.username||ads?.accountUsername||''),creatorType:type,
@@ -96,8 +96,8 @@ export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;
       ads:ads?{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''}:null,
       roi:numberValue(ads?.cost)?numberValue(ads.grossRevenue)/numberValue(ads.cost):null});
   }
-  for(const ads of adsById.values() as Iterable<any>){const metadata:any=shopMetadataById.get(String(ads.itemId));const metadataProducts=(metadata?.products||[]).map((product:any)=>({id:String(product.id),name:String(product.name||product.id),imageUrl:''}));
-    const products=metadataProducts.length?metadataProducts:ads.products||[];const postedDate=postDate(metadata?.video_post_time)||postDateFromItemId(ads.itemId,env.TIMEZONE);videos.push({itemId:String(ads.itemId),title:ads.title||metadata?.title,videoUrl:`https://www.tiktok.com/player/v1/${ads.itemId}`,
+  for(const ads of adsById.values() as Iterable<any>){const metadata:any=shopMetadataById.get(String(ads.itemId));const adsProducts=ads.products||[];const metadataProducts=(metadata?.products||[]).map((product:any)=>{const adsProduct=adsProducts.find((item:any)=>String(item.id)===String(product.id));return{id:String(product.id),name:String(product.name||adsProduct?.name||product.id),imageUrl:adsProduct?.imageUrl||''};});
+    const products=metadataProducts.length?metadataProducts:adsProducts;const postedDate=postDate(metadata?.video_post_time)||postDateFromItemId(ads.itemId,env.TIMEZONE);videos.push({itemId:String(ads.itemId),title:ads.title||metadata?.title,videoUrl:`https://www.tiktok.com/player/v1/${ads.itemId}`,
     accountName:metadata?.creator?.nick_name||metadata?.username||ads.accountName||ads.accountUsername||'',accountUsername:metadata?.creator?.user_name||metadata?.username||ads.accountUsername||'',creatorType:adsCreatorType(metadata,ads),postTime:metadata?.video_post_time||null,isPostedInRange:Boolean(postedDate&&postedDate>=input.startDate&&postedDate<=input.endDate),products,shop:null,
     ads:{cost:ads.cost,orders:ads.orders,grossRevenue:ads.grossRevenue,productClicks:ads.productClicks,productImpressions:ads.productImpressions,timeline:ads.timeline||{},campaignId:ads.campaigns?.[0]?.campaignId||'',campaignName:ads.campaigns?.[0]?.campaignName||''},roi:numberValue(ads.cost)?numberValue(ads.grossRevenue)/numberValue(ads.cost):null});
   }
@@ -106,9 +106,12 @@ export async function loadContentKocAnalysis(env:Env,input:{advertiserId:string;
   const productMap=new Map<string,any>();
   for(const video of videos.filter(video=>video.creatorType!=='UNKNOWN')){
     const product=video.products[0];if(!product)continue;const row=productMap.get(product.id)||{productId:product.id,productName:product.name,productImageUrl:product.imageUrl||'',seller:emptyTotals(),koc:emptyTotals()};
+    if(!row.productImageUrl&&product.imageUrl)row.productImageUrl=product.imageUrl;
     addTotals(row[video.creatorType==='SELLER'?'seller':'koc'],video);productMap.set(product.id,row);
   }
-  const byProduct=Array.from(productMap.values()).sort((a,b)=>(b.seller.gmv+b.koc.gmv)-(a.seller.gmv+a.koc.gmv));
+  const hasProductMetrics=(group:GroupTotals)=>numberValue(group.videoCount)||numberValue(group.gmv)||numberValue(group.adsSpend)||numberValue(group.impressions)||numberValue(group.adClicks);
+  const byProduct=Array.from(productMap.values()).filter(row=>hasProductMetrics(row.seller)||hasProductMetrics(row.koc))
+    .sort((a,b)=>(b.seller.gmv+b.koc.gmv)-(a.seller.gmv+a.koc.gmv));
   const granularity=input.startDate===input.endDate?'hour':'day';const points=new Map<string,any>();
   const ensurePoint=(key:string)=>{const normalized=granularity==='hour'?key.padStart(2,'0'):key;let point=points.get(normalized);
     if(!point){point={key:normalized,label:granularity==='hour'?`${normalized}:00`:`${normalized.slice(8,10)}/${normalized.slice(5,7)}`,seller:{gmv:0,clicks:0},koc:{gmv:0,clicks:0}};points.set(normalized,point);}return point;};
