@@ -41,6 +41,8 @@ describe('weekly operations report', () => {
       && style.st.includes('u') && style.st.includes('c_15a85f'))).toBe(true);
     expect(formatted.styles.some((style) => formatted.text.slice(style.start, style.start + style.len) === '↑ 40,3%'
       && style.st.includes('c_db342e'))).toBe(true);
+    expect(formatted.styles.some((style) => formatted.text.slice(style.start, style.start + style.len)
+      === '1. GMV: 46,05M (↑ 27,15%)' && style.st.includes('f_13'))).toBe(true);
     expect(formatted.styles.some((style) => formatted.text.slice(style.start, style.start + style.len) === '133 Video - Roi 1.71'
       && style.st.includes('b'))).toBe(true);
     expect(formatted.styles.some((style) => style.start === formatted.text.indexOf('\n') + 1

@@ -190,7 +190,10 @@ export function formatWeeklyOperationsReport(data: WeeklyOperationsReportData): 
   const badWhenUp = new Set(data.metrics.filter((metric) => metric.badWhenUp).map((metric) => metric.label));
   for (const line of lines) {
     const metric = data.metrics.find((item) => line.startsWith(item.label));
-    if (metric) add(offset, metric.label.length, 'b');
+    if (metric) {
+      add(offset, line.length, 'f_13');
+      add(offset, metric.label.length, 'b');
+    }
     const sourceLabel = line.match(/^(Liên kết|Người bán)/)?.[0];
     if (sourceLabel) add(offset, sourceLabel.length, 'b');
     if (line.startsWith('›')) {
