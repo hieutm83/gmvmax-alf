@@ -329,6 +329,9 @@ export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string
   const currentAttribution = revenue.gmvAttribution || {};
   const previousAttribution = revenue.previousGmvAttribution || {};
   const currentFinance = finance.current?.summary || {};
+  if (finance.warnings?.length || finance.previousWarnings?.length) {
+    throw new Error(`Dữ liệu Finance tuần chưa đầy đủ: ${[...(finance.warnings || []), ...(finance.previousWarnings || [])].join(' | ')}`);
+  }
   const previousFinance = finance.previous || {};
   const contentTotals = content.totals || {};
   const source = (key: 'affiliate' | 'seller') => {
@@ -370,8 +373,10 @@ export async function prepareWeeklyOperationsReport(env: Env, saturdayDate: stri
   else if (stage === 1) {
     await loadMainReport(env, { ...scope, startDate, endDate }, true);
     await loadMainReport(env, { ...scope, startDate: previousStartDate, endDate: previousEndDate });
-  } else if (stage === 2) await loadFinanceAnalysis(env, { startDate, endDate, forceRefresh: true });
-  else if (stage === 3) await loadOperationsAnalysis(env, { startDate, endDate, forceRefresh: true });
+  } else if (stage === 2) {
+    const finance = await loadFinanceAnalysis(env, { startDate, endDate, forceRefresh: true });
+    if (finance.warnings?.length || finance.previousWarnings?.length) throw new Error('TikTok Finance chưa trả đủ dữ liệu hai tuần.');
+  } else if (stage === 3) await loadOperationsAnalysis(env, { startDate, endDate, forceRefresh: true });
   else if (stage === 4) await loadContentKocAnalysis(env, { ...scope, startDate, endDate, forceRefresh: true });
   else return sendWeeklyOperationsReport(env, saturdayDate);
   await env.TASK_QUEUE.send({ type: 'operations-weekly-prepare', saturdayDate, stage: stage + 1 });

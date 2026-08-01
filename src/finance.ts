@@ -514,12 +514,12 @@ export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> 
   const result = {
     schemaVersion: 'finance-v2', generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
     previousStartDate, previousEndDate, shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code },
-    warnings, current, previous: { ...previous.summary },
+    warnings, previousWarnings, current, previous: { ...previous.summary },
     todaySettlementNotice: false
   };
   const ttl = input.endDate >= today ? 300 : 86400;
   // A long finance range must still render even when its optional cache entry
   // exceeds D1's row/value limit.
-  await cachePut(env, key, result, ttl).catch(() => undefined);
+  if (!warnings.length && !previousWarnings.length) await cachePut(env, key, result, ttl).catch(() => undefined);
   return result;
 }
