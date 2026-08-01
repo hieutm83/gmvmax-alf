@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatWeeklyOperationsReport, monthlyRanges } from '../src/operations-bot';
+import { financePeriodSlices, formatWeeklyOperationsReport, monthlyRanges } from '../src/operations-bot';
 
 describe('weekly operations report', () => {
   it('uses complete calendar months for a monthly report', () => {
@@ -9,14 +9,22 @@ describe('weekly operations report', () => {
     });
   });
 
+  it('splits the settlement horizon into Worker-safe slices', () => {
+    expect(financePeriodSlices('2026-06-01', '2026-06-07', '2026-08-01')).toEqual([
+      { startDate: '2026-06-01', endDate: '2026-06-07', statementStartDate: '2026-06-01', statementEndDate: '2026-06-20', includeUnsettled: false },
+      { startDate: '2026-06-01', endDate: '2026-06-07', statementStartDate: '2026-06-21', statementEndDate: '2026-07-10', includeUnsettled: false },
+      { startDate: '2026-06-01', endDate: '2026-06-07', statementStartDate: '2026-07-11', statementEndDate: '2026-07-22', includeUnsettled: true }
+    ]);
+  });
+
   it('formats the Saturday-to-Friday report using Zalo text styles', () => {
     const formatted = formatWeeklyOperationsReport({
       startDate: '2026-07-25', endDate: '2026-07-31',
       metrics: [
         { label: '1. GMV:', value: '46,05M', change: { text: '↑ 27,15%', direction: 'up' } },
-        { label: '2. ĐƠN HÀNG:', value: '297', change: { text: '↑ 24,79%', direction: 'up' } },
+        { label: '2. Đơn hàng:', value: '297', change: { text: '↑ 24,79%', direction: 'up' } },
         { label: '3. AOV:', value: '152,53K', change: { text: '↓ 2,5%', direction: 'down' } },
-        { label: '4. CHI TIÊU ADS:', value: '26,22M', change: { text: '↑ 40,3%', direction: 'up' }, badWhenUp: true },
+        { label: '4. ADS:', value: '26,22M', change: { text: '↑ 40,3%', direction: 'up' }, badWhenUp: true },
         { label: '5. Tổng phí sàn:', value: '9,84M', change: { text: '↑ 16,01%', direction: 'up' }, badWhenUp: true },
         { label: '6. Hoa hồng KOC:', value: '2,41M', change: { text: '↑ 31,11%', direction: 'up' }, badWhenUp: true },
         { label: '7. Hoàn tiền:', value: '2,1M', change: { text: '↓ 26,14%', direction: 'down' }, badWhenUp: true },
@@ -30,7 +38,7 @@ describe('weekly operations report', () => {
       }
     });
     expect(formatted.text).toContain('Báo cáo chỉ số vận hành Tiktok shop tuần 25/07-31/07/2026');
-    expect(formatted.text).toContain('4. CHI TIÊU ADS: 26,22M (↑ 40,3%)');
+    expect(formatted.text).toContain('4. ADS: 26,22M (↑ 40,3%)');
     expect(formatted.text).toContain('› Video (Đóng góp 86,29%) : 133 Video - Roi 1.71');
     expect(formatted.text).toContain('Tổng quan\n1. GMV:');
     expect(formatted.text).toContain('Nguồn\nLiên kết');

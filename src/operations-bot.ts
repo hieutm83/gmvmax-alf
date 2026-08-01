@@ -2,9 +2,9 @@ import type { Env } from './types';
 import { loadSellerRevenueAnalysis } from './seller';
 import { loadMainReport } from './reports';
 import { loadOperationsAnalysis } from './operations';
-import { loadFinanceAnalysis } from './finance';
+import { loadFinanceAnalysis, loadFinancePeriodSummary, type FinancePeriodSummaryScope } from './finance';
 import { loadContentKocAnalysis, loadContentKocPeriodTotals } from './content-koc';
-import { shiftDate } from './utils';
+import { dateInTimezone, shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 const GREEN = 'c_15a85f';
@@ -116,7 +116,7 @@ export function buildOperationsReportStyles(text: string): OperationsTextStyle[]
   const titleEnd = text.indexOf('\n');
   add(0, titleEnd < 0 ? text.length : titleEnd, 'f_15', 'i');
   add(titleEnd + 1, text.length - titleEnd - 1, 'f_13');
-  const labels = ['1. GMV:', '2. ĐƠN HÀNG:', '3. AOV:', '4. CHI TIÊU ADS:', '5. ROI:', '6. Tỷ lệ hủy:', 'Sản phẩm'];
+  const labels = ['1. GMV:', '2. Đơn hàng:', '3. AOV:', '4. ADS:', '5. ROI:', '6. Tỷ lệ hủy:', 'Sản phẩm'];
   for (const label of labels) {
     const start = text.indexOf(label);
     add(start, label.length, 'b', ...(label === 'Sản phẩm' ? ['u', GREEN] : []));
@@ -129,7 +129,7 @@ export function buildOperationsReportStyles(text: string): OperationsTextStyle[]
     while ((match = productGmvPattern.exec(text)) !== null) add(match.index, match[0].length, 'b');
   }
   const lines = text.split('\n'); let offset = 0;
-  const badWhenUp = new Set(['4. CHI TIÊU ADS:', '6. Tỷ lệ hủy:']);
+  const badWhenUp = new Set(['4. ADS:', '6. Tỷ lệ hủy:']);
   for (const line of lines) {
     const match = line.match(/(?:↑|↓)\s*[\d.,]+%/);
     if (match) {
@@ -287,9 +287,9 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
   const previousRevenue = revenue.previousTotals || {};
   const values = [
     { label: '1. GMV:', value: compact(currentRevenue.grossRevenue), change: trend(currentRevenue.grossRevenue, previousRevenue.grossRevenue) },
-    { label: '2. ĐƠN HÀNG:', value: whole(currentRevenue.orders), change: trend(currentRevenue.orders, previousRevenue.orders) },
+    { label: '2. Đơn hàng:', value: whole(currentRevenue.orders), change: trend(currentRevenue.orders, previousRevenue.orders) },
     { label: '3. AOV:', value: compact(currentRevenue.aov), change: trend(currentRevenue.aov, previousRevenue.aov) },
-    { label: '4. CHI TIÊU ADS:', value: compact(ads.totals?.cost), change: trend(ads.totals?.cost, previousAds.totals?.cost) },
+    { label: '4. ADS:', value: compact(ads.totals?.cost), change: trend(ads.totals?.cost, previousAds.totals?.cost) },
     { label: '5. ROI:', value: roi(ads.totals?.roi), change: trend(ads.totals?.roi, previousAds.totals?.roi) },
     { label: '6. Tỷ lệ hủy:', value: `${((Number(operations.totals?.cancellationRate) || 0) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`, change: trend(operations.totals?.cancellationRate, previousOperations.totals?.cancellationRate) }
   ];
@@ -361,9 +361,9 @@ export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string
     startDate, endDate,
     metrics: [
       { label: '1. GMV:', value: weeklyCompact(currentRevenue.grossRevenue), change: weeklyTrend(currentRevenue.grossRevenue, previousRevenue.grossRevenue) },
-      { label: '2. ĐƠN HÀNG:', value: whole(currentRevenue.orders), change: weeklyTrend(currentRevenue.orders, previousRevenue.orders) },
+      { label: '2. Đơn hàng:', value: whole(currentRevenue.orders), change: weeklyTrend(currentRevenue.orders, previousRevenue.orders) },
       { label: '3. AOV:', value: weeklyCompact(currentRevenue.aov), change: weeklyTrend(currentRevenue.aov, previousRevenue.aov) },
-      { label: '4. CHI TIÊU ADS:', value: weeklyCompact(ads.totals?.cost), change: weeklyTrend(ads.totals?.cost, previousAds.totals?.cost), badWhenUp: true },
+      { label: '4. ADS:', value: weeklyCompact(ads.totals?.cost), change: weeklyTrend(ads.totals?.cost, previousAds.totals?.cost), badWhenUp: true },
       { label: '5. Tổng phí sàn:', value: weeklyCompact(currentFinance.feeTax), change: weeklyTrend(currentFinance.feeTax, previousFinance.feeTax), badWhenUp: true },
       { label: '6. Hoa hồng KOC:', value: weeklyCompact(currentFinance.affiliate), change: weeklyTrend(currentFinance.affiliate, previousFinance.affiliate), badWhenUp: true },
       { label: '7. Hoàn tiền:', value: weeklyCompact(currentFinance.refunds), change: weeklyTrend(currentFinance.refunds, previousFinance.refunds), badWhenUp: true },
@@ -421,9 +421,24 @@ function periodChunks(startDate: string, endDate: string, days = 7): Array<{ sta
   return chunks;
 }
 
+export function financePeriodSlices(startDate: string, endDate: string, today: string, days = 20): FinancePeriodSummaryScope[] {
+  const inputs: FinancePeriodSummaryScope[] = [];
+  const horizonEnd = shiftDate(endDate, 45) < today ? shiftDate(endDate, 45) : today;
+  for (let statementStartDate = startDate; statementStartDate <= horizonEnd; statementStartDate = shiftDate(statementStartDate, days)) {
+    const candidate = shiftDate(statementStartDate, days - 1);
+    const statementEndDate = candidate < horizonEnd ? candidate : horizonEnd;
+    inputs.push({ startDate, endDate, statementStartDate, statementEndDate, includeUnsettled: statementEndDate === horizonEnd });
+  }
+  return inputs;
+}
+
+function monthlyFinanceInputs(startDate: string, endDate: string, today: string): FinancePeriodSummaryScope[] {
+  return periodChunks(startDate, endDate).flatMap((chunk) => financePeriodSlices(chunk.startDate, chunk.endDate, today));
+}
+
 function sumFinanceReports(reports: any[]): any {
   return reports.reduce((total, report) => {
-    const summary = report.current?.summary || {};
+    const summary = report.summary || report.current?.summary || {};
     for (const key of ['sellerSubtotal', 'feeTax', 'affiliate', 'adsCost', 'refunds']) total[key] += Number(summary[key]) || 0;
     return total;
   }, { sellerSubtotal: 0, feeTax: 0, affiliate: 0, adsCost: 0, refunds: 0 });
@@ -434,15 +449,16 @@ export async function buildMonthlyOperationsReport(env: Env, firstDayOfMonth: st
   const currentInput = { startDate, endDate, forceRefresh: false };
   const previousInput = { startDate: previousStartDate, endDate: previousEndDate, forceRefresh: false };
   const scope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
-  const currentChunks = periodChunks(startDate, endDate);
-  const previousChunks = periodChunks(previousStartDate, previousEndDate);
+  const today = dateInTimezone(new Date(), env.TIMEZONE);
+  const currentChunks = monthlyFinanceInputs(startDate, endDate, today);
+  const previousChunks = monthlyFinanceInputs(previousStartDate, previousEndDate, today);
   const [revenue, previousRevenueReport, ads, previousAds, financeReports, previousFinanceReports, operations, content] = await Promise.all([
     loadSellerRevenueAnalysis(env, currentInput),
     loadSellerRevenueAnalysis(env, previousInput),
     loadMainReport(env, { ...scope, startDate, endDate }),
     loadMainReport(env, { ...scope, startDate: previousStartDate, endDate: previousEndDate }),
-    Promise.all(currentChunks.map((chunk) => loadFinanceAnalysis(env, { ...chunk, forceRefresh: false }))),
-    Promise.all(previousChunks.map((chunk) => loadFinanceAnalysis(env, { ...chunk, forceRefresh: false }))),
+    Promise.all(currentChunks.map((chunk) => loadFinancePeriodSummary(env, { ...chunk, forceRefresh: false }))),
+    Promise.all(previousChunks.map((chunk) => loadFinancePeriodSummary(env, { ...chunk, forceRefresh: false }))),
     loadOperationsAnalysis(env, currentInput),
     loadContentKocPeriodTotals(env, { ...scope, ...currentInput })
   ]);
@@ -468,9 +484,9 @@ export async function buildMonthlyOperationsReport(env: Env, firstDayOfMonth: st
     startDate, endDate,
     metrics: [
       { label: '1. GMV:', value: weeklyCompact(currentRevenue.grossRevenue), change: weeklyTrend(currentRevenue.grossRevenue, previousRevenue.grossRevenue) },
-      { label: '2. ĐƠN HÀNG:', value: whole(currentRevenue.orders), change: weeklyTrend(currentRevenue.orders, previousRevenue.orders) },
+      { label: '2. Đơn hàng:', value: whole(currentRevenue.orders), change: weeklyTrend(currentRevenue.orders, previousRevenue.orders) },
       { label: '3. AOV:', value: weeklyCompact(currentRevenue.aov), change: weeklyTrend(currentRevenue.aov, previousRevenue.aov) },
-      { label: '4. CHI TIÊU ADS:', value: weeklyCompact(ads.totals?.cost), change: weeklyTrend(ads.totals?.cost, previousAds.totals?.cost), badWhenUp: true },
+      { label: '4. ADS:', value: weeklyCompact(ads.totals?.cost), change: weeklyTrend(ads.totals?.cost, previousAds.totals?.cost), badWhenUp: true },
       { label: '5. Tổng phí sàn:', value: weeklyCompact(currentFinance.feeTax), change: weeklyTrend(currentFinance.feeTax, previousFinance.feeTax), badWhenUp: true },
       { label: '6. Hoa hồng KOC:', value: weeklyCompact(currentFinance.affiliate), change: weeklyTrend(currentFinance.affiliate, previousFinance.affiliate), badWhenUp: true },
       { label: '7. Hoàn tiền:', value: weeklyCompact(currentFinance.refunds), change: weeklyTrend(currentFinance.refunds, previousFinance.refunds), badWhenUp: true },
@@ -483,15 +499,16 @@ export async function buildMonthlyOperationsReport(env: Env, firstDayOfMonth: st
 export async function prepareMonthlyOperationsReport(env: Env, firstDayOfMonth: string, stage: number): Promise<void> {
   const { startDate, endDate, previousStartDate, previousEndDate } = monthlyRanges(firstDayOfMonth);
   const scope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
+  const today = dateInTimezone(new Date(), env.TIMEZONE);
   const jobs: Array<() => Promise<unknown>> = [
     () => loadSellerRevenueAnalysis(env, { startDate, endDate, forceRefresh: true }),
     () => loadSellerRevenueAnalysis(env, { startDate: previousStartDate, endDate: previousEndDate, forceRefresh: true }),
     () => loadMainReport(env, { ...scope, startDate, endDate }, true),
     () => loadMainReport(env, { ...scope, startDate: previousStartDate, endDate: previousEndDate })
   ];
-  for (const chunk of [...periodChunks(startDate, endDate), ...periodChunks(previousStartDate, previousEndDate)]) {
+  for (const chunk of [...monthlyFinanceInputs(startDate, endDate, today), ...monthlyFinanceInputs(previousStartDate, previousEndDate, today)]) {
     jobs.push(async () => {
-      const value = await loadFinanceAnalysis(env, { ...chunk, forceRefresh: true });
+      const value = await loadFinancePeriodSummary(env, { ...chunk, forceRefresh: true });
       if (criticalFinanceWarnings(value).length) throw new Error(`TikTok Finance ${chunk.startDate}-${chunk.endDate} chưa đầy đủ.`);
       return value;
     });

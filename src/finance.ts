@@ -5,6 +5,11 @@ import { authorizedShop, epoch, shopRequest } from './seller';
 import { cacheGet, cachePut, dateInTimezone, numberValue, shiftDate, stableKey } from './utils';
 
 type Scope = { startDate: string; endDate: string; forceRefresh?: boolean };
+export type FinancePeriodSummaryScope = Scope & {
+  statementStartDate?: string;
+  statementEndDate?: string;
+  includeUnsettled?: boolean;
+};
 type NumberMap = Record<string, number>;
 export const DEFAULT_SKU_UNIT_COST = 40_000;
 
@@ -181,12 +186,16 @@ function mergeBreakdown(target: any, source: any): void {
   target.orderCount += numberValue(source.orderCount);
 }
 
-async function settledBlock(env: Env, cipher: string, startDate: string, endDate: string): Promise<any> {
+async function settledBlock(env: Env, cipher: string, startDate: string, endDate: string,
+  statementStartDate?: string, statementEndDate?: string): Promise<any> {
   // A statement can be issued after the order period. Search the settlement
   // horizon, then keep only transactions whose order was created in scope.
   const today = dateInTimezone(new Date(), env.TIMEZONE);
   const horizonEnd = shiftDate(endDate, 45) < today ? shiftDate(endDate, 45) : today;
-  const list = await statements(env, cipher, startDate, horizonEnd);
+  const listStart = statementStartDate && statementStartDate > startDate ? statementStartDate : startDate;
+  const listEnd = statementEndDate && statementEndDate < horizonEnd ? statementEndDate : horizonEnd;
+  if (listStart > listEnd) return emptySettled();
+  const list = await statements(env, cipher, listStart, listEnd);
   const total = aggregateStatementTransactions([]);
   const statementRows: any[] = [];
   const start = epoch(startDate);
@@ -433,6 +442,26 @@ export function calculateFinanceSummary(detail: any, adsCost: number): any {
   };
 }
 
+function combineFinanceDetails(settled: any, unsettled: any): any {
+  const combined = aggregateStatementTransactions([]);
+  mergeBreakdown(combined, settled);
+  mergeBreakdown(combined, unsettled.detail || aggregateStatementTransactions([]));
+  combined.fees.platform = nonZero(combined.fees.platform);
+  combined.fees.koc = nonZero(combined.fees.koc);
+  combined.fees.promotion = nonZero(combined.fees.promotion);
+  combined.fees.otherPrograms = nonZero(combined.fees.otherPrograms);
+  combined.fees.tax = nonZero(combined.fees.tax);
+  combined.shipping.breakdown = nonZero(combined.shipping.breakdown);
+  delete combined.fees.otherPrograms.order_processing_fee_amount;
+  delete combined.fees.otherPrograms.order_processing_fee;
+  delete combined.fees.otherPrograms.voucher_xtra_service_fee_amount;
+  const discountedOrderValue = numberValue(combined.revenue.subtotalBeforeDiscount) + numberValue(combined.revenue.sellerDiscount);
+  combined.fees.otherPrograms.voucher_xtra_service_fee_amount = estimatedVoucherXtraFee(discountedOrderValue);
+  combined.processingFee = Math.max(0, Math.round(numberValue(combined.orderCount))) * 3000;
+  if (combined.processingFee) combined.fees.otherPrograms.order_processing_fee_estimated = -combined.processingFee;
+  return combined;
+}
+
 async function period(env: Env, cipher: string, input: Scope, includeSku: boolean, warnings: string[]): Promise<any> {
   const storeIdPromise = resolveDefaultStoreId(env);
   const settledPromise = settledBlock(env, cipher, input.startDate, input.endDate)
@@ -450,26 +479,53 @@ async function period(env: Env, cipher: string, input: Scope, includeSku: boolea
   const ads = { cost: numberValue(adsTotals.cost), orders: numberValue(adsTotals.orders),
     grossRevenue: numberValue(adsTotals.grossRevenue), roi: numberValue(adsTotals.roi),
     costPerOrder: numberValue(adsTotals.costPerOrder), cAds: 0, gmvMax: numberValue(adsTotals.cost) };
-  const combined = aggregateStatementTransactions([]);
-  mergeBreakdown(combined, settled);
-  mergeBreakdown(combined, unsettled.detail || aggregateStatementTransactions([]));
-  combined.fees.platform = nonZero(combined.fees.platform);
-  combined.fees.koc = nonZero(combined.fees.koc);
-  combined.fees.promotion = nonZero(combined.fees.promotion);
-  combined.fees.otherPrograms = nonZero(combined.fees.otherPrograms);
-  combined.fees.tax = nonZero(combined.fees.tax);
-  combined.shipping.breakdown = nonZero(combined.shipping.breakdown);
-  delete combined.fees.otherPrograms.order_processing_fee_amount;
-  delete combined.fees.otherPrograms.order_processing_fee;
-  delete combined.fees.otherPrograms.voucher_xtra_service_fee_amount;
-  const discountedOrderValue = numberValue(combined.revenue.subtotalBeforeDiscount) + numberValue(combined.revenue.sellerDiscount);
-  combined.fees.otherPrograms.voucher_xtra_service_fee_amount = estimatedVoucherXtraFee(discountedOrderValue);
-  combined.processingFee = Math.max(0, Math.round(numberValue(combined.orderCount))) * 3000;
-  if (combined.processingFee) combined.fees.otherPrograms.order_processing_fee_estimated = -combined.processingFee;
+  const combined = combineFinanceDetails(settled, unsettled);
   const summary = calculateFinanceSummary(combined, ads.cost);
   return { settled, unsettled, combined, summary, sku, ads,
     netProfitSettledOnly: summary.grossProfit, netProfitWithEstimate: summary.grossProfit,
     totalGmv: summary.sellerSubtotal };
+}
+
+export async function loadFinancePeriodSummary(env: Env, input: FinancePeriodSummaryScope): Promise<any> {
+  const statementStartDate = input.statementStartDate || input.startDate;
+  const statementEndDate = input.statementEndDate || shiftDate(input.endDate, 45);
+  const includeUnsettled = input.includeUnsettled !== false;
+  const key = stableKey('seller-finance-period-summary-v2', {
+    startDate: input.startDate,
+    endDate: input.endDate,
+    statementStartDate,
+    statementEndDate,
+    includeUnsettled
+  });
+  const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
+  if (cached) return cached;
+  const shop = await authorizedShop(env);
+  if (!shop) throw new Error('Seller OAuth chÆ°a tráº£ vá» TikTok Shop Ä‘Æ°á»£c á»§y quyá»n.');
+  const cipher = String(shop.cipher || shop.shop_cipher || shop.id || '');
+  if (!cipher) throw new Error('KhÃ´ng tÃ¬m tháº¥y shop_cipher.');
+  const warnings: string[] = [];
+  const [settled, unsettled] = await Promise.all([
+    settledBlock(env, cipher, input.startDate, input.endDate, statementStartDate, statementEndDate)
+      .catch((error) => { warnings.push(`ÄÃ£ quyáº¿t toÃ¡n: ${message(error)}`); return emptySettled(); }),
+    (includeUnsettled ? unsettledBlock(env, cipher, input.startDate, input.endDate) : Promise.resolve(emptyUnsettled()))
+      .catch((error) => { warnings.push(`Sáº½ quyáº¿t toÃ¡n: ${message(error)}`); return emptyUnsettled(); })
+  ]);
+  const combined = combineFinanceDetails(settled, unsettled);
+  const result = {
+    startDate: input.startDate,
+    endDate: input.endDate,
+    statementStartDate,
+    statementEndDate,
+    includeUnsettled,
+    generatedAt: new Date().toISOString(),
+    warnings,
+    summary: calculateFinanceSummary(combined, 0)
+  };
+  if (!warnings.length) {
+    const today = dateInTimezone(new Date(), env.TIMEZONE);
+    await cachePut(env, key, result, input.endDate >= today ? 300 : 86400).catch(() => undefined);
+  }
+  return result;
 }
 
 export async function saveSkuUnitCost(env: Env, input: { skuKey: string; unitCost: number }): Promise<any> {

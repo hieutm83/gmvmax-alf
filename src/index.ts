@@ -5,7 +5,7 @@ import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideo
 import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, sellerOAuthState } from './seller';
 import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
-import { loadFinanceAnalysis, loadSkuUnitCosts, saveSkuUnitCost } from './finance';
+import { loadFinanceAnalysis, loadFinancePeriodSummary, loadSkuUnitCosts, saveSkuUnitCost } from './finance';
 import { loadContentKocAnalysis } from './content-koc';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
@@ -67,6 +67,14 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   if(url.pathname==='/api/finance-analysis'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadFinanceAnalysis(env,scope));
+  }
+  if(url.pathname==='/api/finance-period-summary'){
+    const baseScope=validateSellerScope(input);if(baseScope.startDate>baseScope.endDate)throw new HttpError(400,'NgÃ y báº¯t Ä‘áº§u pháº£i trÆ°á»›c ngÃ y káº¿t thÃºc.');
+    const scope={...baseScope,
+      statementStartDate:input.statementStartDate?validateDate(input.statementStartDate,'statementStartDate'):undefined,
+      statementEndDate:input.statementEndDate?validateDate(input.statementEndDate,'statementEndDate'):undefined,
+      includeUnsettled:input.includeUnsettled!==false};
+    return ok(await loadFinancePeriodSummary(env,scope));
   }
   if(url.pathname==='/api/finance-sku-cost')return ok(await saveSkuUnitCost(env,input));
   if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
