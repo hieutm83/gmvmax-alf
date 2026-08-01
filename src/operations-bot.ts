@@ -312,12 +312,12 @@ export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string
   const startDate = shiftDate(saturdayDate, -7);
   const previousEndDate = shiftDate(startDate, -1);
   const previousStartDate = shiftDate(startDate, -7);
-  const currentInput = { startDate, endDate, forceRefresh: true };
+  const currentInput = { startDate, endDate, forceRefresh: false };
   const previousInput = { startDate: previousStartDate, endDate: previousEndDate, forceRefresh: false };
   const reportScope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
   const [revenue, ads, previousAds, finance, operations, content] = await Promise.all([
     loadSellerRevenueAnalysis(env, currentInput),
-    loadMainReport(env, { ...currentInput, ...reportScope }, true),
+    loadMainReport(env, { ...currentInput, ...reportScope }),
     loadMainReport(env, { ...previousInput, ...reportScope }),
     loadFinanceAnalysis(env, currentInput),
     loadOperationsAnalysis(env, currentInput),
@@ -357,6 +357,23 @@ export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string
     ],
     sources: { affiliate: source('affiliate'), seller: source('seller') }
   });
+}
+
+export async function prepareWeeklyOperationsReport(env: Env, saturdayDate: string, stage: number): Promise<void> {
+  const endDate = shiftDate(saturdayDate, -1);
+  const startDate = shiftDate(saturdayDate, -7);
+  const previousEndDate = shiftDate(startDate, -1);
+  const previousStartDate = shiftDate(startDate, -7);
+  const scope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
+  if (stage === 0) await loadSellerRevenueAnalysis(env, { startDate, endDate, forceRefresh: true });
+  else if (stage === 1) {
+    await loadMainReport(env, { ...scope, startDate, endDate }, true);
+    await loadMainReport(env, { ...scope, startDate: previousStartDate, endDate: previousEndDate });
+  } else if (stage === 2) await loadFinanceAnalysis(env, { startDate, endDate, forceRefresh: true });
+  else if (stage === 3) await loadOperationsAnalysis(env, { startDate, endDate, forceRefresh: true });
+  else if (stage === 4) await loadContentKocAnalysis(env, { ...scope, startDate, endDate, forceRefresh: true });
+  else return sendWeeklyOperationsReport(env, saturdayDate);
+  await env.TASK_QUEUE.send({ type: 'operations-weekly-prepare', saturdayDate, stage: stage + 1 });
 }
 
 export async function sendWeeklyOperationsReport(env: Env, saturdayDate: string): Promise<void> {
