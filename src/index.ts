@@ -8,7 +8,7 @@ import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
 import { loadFinanceAnalysis, loadSkuUnitCosts, saveSkuUnitCost } from './finance';
 import { loadContentKocAnalysis } from './content-koc';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
-import { pollOperationsBot, sendOperationsReport } from './operations-bot';
+import { pollOperationsBot, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { monitorOrderBot, ORDER_BOT_SLOTS, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
@@ -152,6 +152,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
       .bind(Date.now(),message.eventId).run();
     return;
   }
+  if(message.type==='operations-weekly-report')return sendWeeklyOperationsReport(env,message.saturdayDate);
   if(message.type==='order-bot-report')return sendOrderBotReport(env,message.reportDate,message.reportTime,message.force===true);
   if(message.type==='order-bot-monitor')return monitorOrderBot(env,message.reportDate);
   if(message.type==='sheet-backup'){
@@ -241,6 +242,9 @@ export default {
       const yesterday=shiftDate(localDate,-1);
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
     }
+    const localWeekday=new Date(`${localDate}T00:00:00Z`).getUTCDay();
+    if(localWeekday===6&&localHour===10&&localMinute===30&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-weekly-report',saturdayDate:localDate}));
     if(localMinute!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;

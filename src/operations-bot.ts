@@ -2,6 +2,8 @@ import type { Env } from './types';
 import { loadSellerRevenueAnalysis } from './seller';
 import { loadMainReport } from './reports';
 import { loadOperationsAnalysis } from './operations';
+import { loadFinanceAnalysis } from './finance';
+import { loadContentKocAnalysis } from './content-koc';
 import { shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
@@ -44,6 +46,28 @@ function compact(value: unknown): string {
   const suffix = divisor === 1_000_000 ? 'M' : divisor === 1_000 ? 'K' : '';
   const digits = divisor === 1 ? 0 : absolute >= divisor * 100 ? 0 : absolute >= divisor * 10 ? 1 : 2;
   return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: digits }).format(amount / divisor)}${suffix}`;
+}
+
+function weeklyCompact(value: unknown): string {
+  const amount = Number(value) || 0;
+  const absolute = Math.abs(amount);
+  const divisor = absolute >= 1_000_000 ? 1_000_000 : absolute >= 1_000 ? 1_000 : 1;
+  const suffix = divisor === 1_000_000 ? 'M' : divisor === 1_000 ? 'K' : '';
+  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: divisor === 1 ? 0 : 2 }).format(amount / divisor)}${suffix}`;
+}
+
+function weeklyPercent(value: unknown): string {
+  return `${(Number(value) || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`;
+}
+
+function weeklyTrend(currentValue: unknown, previousValue: unknown): { text: string; direction: 'up' | 'down' | 'flat' } {
+  const current = Number(currentValue) || 0;
+  const previous = Number(previousValue) || 0;
+  if (!previous) return current ? { text: 'mới phát sinh', direction: 'up' } : { text: '≈ giữ nguyên', direction: 'flat' };
+  const delta = (current - previous) / Math.abs(previous) * 100;
+  if (Math.abs(delta) < 0.005) return { text: '≈ giữ nguyên', direction: 'flat' };
+  return { text: `${delta > 0 ? '↑' : '↓'} ${Math.abs(delta).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`,
+    direction: delta > 0 ? 'up' : 'down' };
 }
 
 function roi(value: unknown): string {
@@ -112,6 +136,71 @@ export function buildOperationsReportStyles(text: string): OperationsTextStyle[]
     offset += line.length + 1;
   }
   return styles;
+}
+
+export interface WeeklyOperationsReportData {
+  startDate: string;
+  endDate: string;
+  metrics: Array<{ label: string; value: string; change?: ReturnType<typeof weeklyTrend>; badWhenUp?: boolean }>;
+  sources: {
+    affiliate: { total: number; live: number; video: number; productCard: number; previousTotal: number; videoCount: number; videoRoi: number };
+    seller: { total: number; live: number; video: number; productCard: number; previousTotal: number; videoCount: number; videoRoi: number };
+  };
+}
+
+function displayShortDate(value: string): string {
+  const [year, month, day] = value.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+export function formatWeeklyOperationsReport(data: WeeklyOperationsReportData): { text: string; styles: OperationsTextStyle[] } {
+  const totalGmv = data.sources.affiliate.total + data.sources.seller.total;
+  const contribution = (value: number) => weeklyPercent(totalGmv ? value / totalGmv * 100 : 0);
+  const sourceLines = (label: string, source: WeeklyOperationsReportData['sources']['affiliate']) => [
+    `${label} (Đóng góp ${contribution(source.total)}): ${weeklyCompact(source.total)} (${weeklyTrend(source.total, source.previousTotal).text})`,
+    `› LIVE (Đóng góp ${contribution(source.live)})`,
+    `› Video (Đóng góp ${contribution(source.video)}) : ${whole(source.videoCount)} Video - Roi ${roi(source.videoRoi)}`,
+    `› Thẻ sản phẩm (Đóng góp ${contribution(source.productCard)})`
+  ];
+  const text = [
+    `Báo cáo chỉ số vận hành Tiktok shop tuần ${displayShortDate(data.startDate).slice(0, 5)}-${displayShortDate(data.endDate)}`,
+    '', 'Tổng quan', '',
+    ...data.metrics.map((metric) => `${metric.label} ${metric.value}${metric.change ? ` (${metric.change.text})` : ''}`),
+    '', 'Nguồn', '',
+    ...sourceLines('Liên kết', data.sources.affiliate),
+    ...sourceLines('Người bán', data.sources.seller)
+  ].join('\n');
+  const styles: OperationsTextStyle[] = [];
+  const add = (start: number, len: number, ...st: string[]) => { if (start >= 0 && len > 0) styles.push({ start, len, st }); };
+  const titleEnd = text.indexOf('\n');
+  add(0, titleEnd, 'f_15', 'i');
+  for (const section of ['Tổng quan', 'Nguồn']) {
+    const start = text.indexOf(`\n${section}\n`) + 1;
+    add(start, section.length, 'f_13', 'u', 'b', GREEN);
+  }
+  const lines = text.split('\n');
+  let offset = 0;
+  const badWhenUp = new Set(data.metrics.filter((metric) => metric.badWhenUp).map((metric) => metric.label));
+  for (const line of lines) {
+    const metric = data.metrics.find((item) => line.startsWith(item.label));
+    if (metric) add(offset, metric.label.length, 'b');
+    const sourceLabel = line.match(/^(Liên kết|Người bán)/)?.[0];
+    if (sourceLabel) add(offset, sourceLabel.length, 'b');
+    if (line.startsWith('›')) {
+      add(offset, line.length, 'f_13');
+      for (const pattern of [/Đóng góp [\d.,]+%/g, /\d+ Video - Roi [\d.]+/g]) {
+        for (const emphasis of line.matchAll(pattern)) add(offset + (emphasis.index || 0), emphasis[0].length, 'b');
+      }
+    }
+    const change = line.match(/(?:↑|↓)\s*[\d.,]+%|mới phát sinh|≈ giữ nguyên/);
+    if (change) {
+      const increasing = change[0].startsWith('↑') || change[0] === 'mới phát sinh';
+      const metricBadWhenUp = metric ? badWhenUp.has(metric.label) : false;
+      add(offset + (change.index || 0), change[0].length, metricBadWhenUp ? (increasing ? RED : GREEN) : (increasing ? GREEN : RED));
+    }
+    offset += line.length + 1;
+  }
+  return { text, styles };
 }
 
 export async function sendOperationsMessage(env: Env, text: string, styles = buildOperationsReportStyles(text), chatId?: string): Promise<string> {
@@ -216,4 +305,69 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
   if (mode === 'DAILY') await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
     VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
     .bind(reportDate, mode, 'SENT', messageId, JSON.stringify({ values, productCount: products.length, operationsDate })).run();
+}
+
+export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string): Promise<{ text: string; styles: OperationsTextStyle[] }> {
+  const endDate = shiftDate(saturdayDate, -1);
+  const startDate = shiftDate(saturdayDate, -7);
+  const previousEndDate = shiftDate(startDate, -1);
+  const previousStartDate = shiftDate(startDate, -7);
+  const currentInput = { startDate, endDate, forceRefresh: true };
+  const previousInput = { startDate: previousStartDate, endDate: previousEndDate, forceRefresh: false };
+  const reportScope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
+  const [revenue, ads, previousAds, finance, operations, content] = await Promise.all([
+    loadSellerRevenueAnalysis(env, currentInput),
+    loadMainReport(env, { ...currentInput, ...reportScope }, true),
+    loadMainReport(env, { ...previousInput, ...reportScope }),
+    loadFinanceAnalysis(env, currentInput),
+    loadOperationsAnalysis(env, currentInput),
+    loadContentKocAnalysis(env, { ...currentInput, ...reportScope })
+  ]);
+  const currentRevenue = revenue.totals || {};
+  const previousRevenue = revenue.previousTotals || {};
+  const currentAttribution = revenue.gmvAttribution || {};
+  const previousAttribution = revenue.previousGmvAttribution || {};
+  const currentFinance = finance.current?.summary || {};
+  const previousFinance = finance.previous || {};
+  const contentTotals = content.totals || {};
+  const source = (key: 'affiliate' | 'seller') => {
+    const value = currentAttribution[key] || {};
+    const video = contentTotals[key === 'affiliate' ? 'koc' : 'seller'] || {};
+    return {
+      total: Number(value.total) || 0,
+      live: Number(value.live) || 0,
+      video: Number(value.video) || 0,
+      productCard: Number(value.productCard) || 0,
+      previousTotal: Number(previousAttribution[key]?.total) || 0,
+      videoCount: Number(video.videoCount) || 0,
+      videoRoi: Number(video.adsSpend) ? Number(video.gmv) / Number(video.adsSpend) : 0
+    };
+  };
+  return formatWeeklyOperationsReport({
+    startDate, endDate,
+    metrics: [
+      { label: '1. GMV:', value: weeklyCompact(currentRevenue.grossRevenue), change: weeklyTrend(currentRevenue.grossRevenue, previousRevenue.grossRevenue) },
+      { label: '2. ĐƠN HÀNG:', value: whole(currentRevenue.orders), change: weeklyTrend(currentRevenue.orders, previousRevenue.orders) },
+      { label: '3. AOV:', value: weeklyCompact(currentRevenue.aov), change: weeklyTrend(currentRevenue.aov, previousRevenue.aov) },
+      { label: '4. CHI TIÊU ADS:', value: weeklyCompact(ads.totals?.cost), change: weeklyTrend(ads.totals?.cost, previousAds.totals?.cost), badWhenUp: true },
+      { label: '5. Tổng phí sàn:', value: weeklyCompact(currentFinance.feeTax), change: weeklyTrend(currentFinance.feeTax, previousFinance.feeTax), badWhenUp: true },
+      { label: '6. Hoa hồng KOC:', value: weeklyCompact(currentFinance.affiliate), change: weeklyTrend(currentFinance.affiliate, previousFinance.affiliate), badWhenUp: true },
+      { label: '7. Hoàn tiền:', value: weeklyCompact(currentFinance.refunds), change: weeklyTrend(currentFinance.refunds, previousFinance.refunds), badWhenUp: true },
+      { label: '8. Tỷ lệ hủy:', value: weeklyPercent((Number(operations.totals?.cancellationRate) || 0) * 100) }
+    ],
+    sources: { affiliate: source('affiliate'), seller: source('seller') }
+  });
+}
+
+export async function sendWeeklyOperationsReport(env: Env, saturdayDate: string): Promise<void> {
+  const reportDate = shiftDate(saturdayDate, -1);
+  const existing = await env.DB.prepare('SELECT status FROM operations_bot_reports WHERE report_date=? AND report_kind=?')
+    .bind(reportDate, 'WEEKLY').first<{ status: string }>();
+  if (existing?.status === 'SENT') return;
+  const formatted = await buildWeeklyOperationsReport(env, saturdayDate);
+  const messageId = await sendOperationsMessage(env, formatted.text, formatted.styles);
+  await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
+    VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
+    payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
+    .bind(reportDate, 'WEEKLY', 'SENT', messageId, JSON.stringify({ saturdayDate })).run();
 }
