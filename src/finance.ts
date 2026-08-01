@@ -86,7 +86,7 @@ async function statements(env: Env, cipher: string, startDate: string, endDate: 
   return rows;
 }
 
-async function statementTransactions(env: Env, cipher: string, statementId: string): Promise<any[]> {
+async function statementTransactions(env: Env, cipher: string, statementId: string, startDate: string, endDate: string): Promise<any[]> {
   const rows: any[] = [];
   let pageToken = '';
   let pages = 0;
@@ -96,6 +96,8 @@ async function statementTransactions(env: Env, cipher: string, statementId: stri
         shop_cipher: cipher,
         page_size: 100,
         page_token: pageToken || undefined,
+        order_create_time_ge: epoch(startDate),
+        order_create_time_lt: epoch(shiftDate(endDate, 1)),
         sort_field: 'order_create_time',
         sort_order: 'DESC'
       });
@@ -190,7 +192,7 @@ async function settledBlock(env: Env, cipher: string, startDate: string, endDate
   const start = epoch(startDate);
   const end = epoch(shiftDate(endDate, 1));
   for (const statement of list) {
-    const transactions = (await statementTransactions(env, cipher, String(statement.id)))
+    const transactions = (await statementTransactions(env, cipher, String(statement.id), startDate, endDate))
       .filter((item) => {
         const created = numberValue(item.order_create_time);
         return created >= start && created < end;
@@ -520,6 +522,7 @@ export async function loadFinanceAnalysis(env: Env, input: Scope): Promise<any> 
   const ttl = input.endDate >= today ? 300 : 86400;
   // A long finance range must still render even when its optional cache entry
   // exceeds D1's row/value limit.
-  if (!warnings.length && !previousWarnings.length) await cachePut(env, key, result, ttl).catch(() => undefined);
+  const criticalWarnings = [...warnings, ...previousWarnings].filter((warning) => /Đã quyết toán|Sẽ quyết toán/i.test(warning));
+  if (!criticalWarnings.length) await cachePut(env, key, result, ttl).catch(() => undefined);
   return result;
 }

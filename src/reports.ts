@@ -317,6 +317,23 @@ export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,end
   return result;
 }
 
+export async function loadAdsCreatorPeriodMetrics(env:Env,input:any,startDate:string,endDate:string):Promise<any[]>{
+  const session=await createSession(env);
+  const main=await loadMainReport(env,{advertiserId:input.advertiserId,storeId:input.storeId,startDate,endDate});
+  const rows:McpRow[]=[];
+  const contexts:ProductContext[]=main.creativeContexts||[];
+  const campaignIds=unique(contexts.map((context)=>context.campaignId));
+  for(const campaignId of campaignIds){const campaignContexts=contexts.filter((context)=>context.campaignId===campaignId);
+    rows.push(...await contextsRows(env,session,input.advertiserId,input.storeId,campaignContexts,startDate,endDate,['item_id'],creativeMetrics));}
+  const byId=new Map<string,any>();
+  for(const row of rows){const itemId=rowId(row,'item_id');if(!itemId||itemId==='-1')continue;const video=normalizeVideo(row);
+    const current=byId.get(itemId)||{itemId,accountUsername:video.accountUserName,authorizationType:video.authorizationType,cost:0,grossRevenue:0};
+    current.cost+=numberValue(video.cost);current.grossRevenue+=numberValue(video.grossRevenue);
+    if(!current.accountUsername&&video.accountUserName)current.accountUsername=video.accountUserName;
+    if(!current.authorizationType&&video.authorizationType)current.authorizationType=video.authorizationType;byId.set(itemId,current);}
+  return Array.from(byId.values());
+}
+
 export async function loadVideoDayStats(env:Env,input:any,contexts:ProductContext[],reportDate:string):Promise<any>{
   const session=await createSession(env);const point={date:reportDate,cost:0,orders:0,grossRevenue:0};
   const campaignIds=unique(contexts.map(context=>context.campaignId));

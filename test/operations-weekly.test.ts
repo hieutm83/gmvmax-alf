@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { formatWeeklyOperationsReport } from '../src/operations-bot';
+import { formatWeeklyOperationsReport, monthlyRanges } from '../src/operations-bot';
 
 describe('weekly operations report', () => {
+  it('uses complete calendar months for a monthly report', () => {
+    expect(monthlyRanges('2026-08-01')).toEqual({
+      startDate: '2026-07-01', endDate: '2026-07-31',
+      previousStartDate: '2026-06-01', previousEndDate: '2026-06-30'
+    });
+  });
+
   it('formats the Saturday-to-Friday report using Zalo text styles', () => {
     const formatted = formatWeeklyOperationsReport({
       startDate: '2026-07-25', endDate: '2026-07-31',

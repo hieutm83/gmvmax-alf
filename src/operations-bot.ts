@@ -3,7 +3,7 @@ import { loadSellerRevenueAnalysis } from './seller';
 import { loadMainReport } from './reports';
 import { loadOperationsAnalysis } from './operations';
 import { loadFinanceAnalysis } from './finance';
-import { loadContentKocAnalysis } from './content-koc';
+import { loadContentKocAnalysis, loadContentKocPeriodTotals } from './content-koc';
 import { shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
@@ -68,6 +68,11 @@ function weeklyTrend(currentValue: unknown, previousValue: unknown): { text: str
   if (Math.abs(delta) < 0.005) return { text: '≈ giữ nguyên', direction: 'flat' };
   return { text: `${delta > 0 ? '↑' : '↓'} ${Math.abs(delta).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`,
     direction: delta > 0 ? 'up' : 'down' };
+}
+
+function criticalFinanceWarnings(report: any): string[] {
+  return [...(report?.warnings || []), ...(report?.previousWarnings || [])]
+    .filter((warning) => /Đã quyết toán|Sẽ quyết toán/i.test(String(warning)));
 }
 
 function roi(value: unknown): string {
@@ -139,6 +144,7 @@ export function buildOperationsReportStyles(text: string): OperationsTextStyle[]
 }
 
 export interface WeeklyOperationsReportData {
+  title?: string;
   startDate: string;
   endDate: string;
   metrics: Array<{ label: string; value: string; change?: ReturnType<typeof weeklyTrend>; badWhenUp?: boolean }>;
@@ -163,7 +169,7 @@ export function formatWeeklyOperationsReport(data: WeeklyOperationsReportData): 
     `› Thẻ sản phẩm (Đóng góp ${contribution(source.productCard)})`
   ];
   const text = [
-    `Báo cáo chỉ số vận hành Tiktok shop tuần ${displayShortDate(data.startDate).slice(0, 5)}-${displayShortDate(data.endDate)}`,
+    data.title || `Báo cáo chỉ số vận hành Tiktok shop tuần ${displayShortDate(data.startDate).slice(0, 5)}-${displayShortDate(data.endDate)}`,
     '', 'Tổng quan',
     ...data.metrics.map((metric) => `${metric.label} ${metric.value}${metric.change ? ` (${metric.change.text})` : ''}`),
     '', 'Nguồn',
@@ -318,8 +324,8 @@ export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string
   const reportScope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
   const [revenue, ads, previousAds, finance, operations, content] = await Promise.all([
     loadSellerRevenueAnalysis(env, currentInput),
-    loadMainReport(env, { ...currentInput, ...reportScope }),
-    loadMainReport(env, { ...previousInput, ...reportScope }),
+    loadMainReport(env, { ...reportScope, startDate, endDate }),
+    loadMainReport(env, { ...reportScope, startDate: previousStartDate, endDate: previousEndDate }),
     loadFinanceAnalysis(env, currentInput),
     loadOperationsAnalysis(env, currentInput),
     loadContentKocAnalysis(env, { ...currentInput, ...reportScope })
@@ -329,8 +335,9 @@ export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string
   const currentAttribution = revenue.gmvAttribution || {};
   const previousAttribution = revenue.previousGmvAttribution || {};
   const currentFinance = finance.current?.summary || {};
-  if (finance.warnings?.length || finance.previousWarnings?.length) {
-    throw new Error(`Dữ liệu Finance tuần chưa đầy đủ: ${[...(finance.warnings || []), ...(finance.previousWarnings || [])].join(' | ')}`);
+  const weeklyFinanceWarnings = criticalFinanceWarnings(finance);
+  if (weeklyFinanceWarnings.length) {
+    throw new Error(`Dữ liệu Finance tuần chưa đầy đủ: ${weeklyFinanceWarnings.join(' | ')}`);
   }
   const previousFinance = finance.previous || {};
   const contentTotals = content.totals || {};
@@ -375,7 +382,7 @@ export async function prepareWeeklyOperationsReport(env: Env, saturdayDate: stri
     await loadMainReport(env, { ...scope, startDate: previousStartDate, endDate: previousEndDate });
   } else if (stage === 2) {
     const finance = await loadFinanceAnalysis(env, { startDate, endDate, forceRefresh: true });
-    if (finance.warnings?.length || finance.previousWarnings?.length) throw new Error('TikTok Finance chưa trả đủ dữ liệu hai tuần.');
+    if (criticalFinanceWarnings(finance).length) throw new Error('TikTok Finance chưa trả đủ dữ liệu hai tuần.');
   } else if (stage === 3) await loadOperationsAnalysis(env, { startDate, endDate, forceRefresh: true });
   else if (stage === 4) await loadContentKocAnalysis(env, { ...scope, startDate, endDate, forceRefresh: true });
   else return sendWeeklyOperationsReport(env, saturdayDate);
@@ -393,4 +400,115 @@ export async function sendWeeklyOperationsReport(env: Env, saturdayDate: string)
     VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
     payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
     .bind(reportDate, 'WEEKLY', 'SENT', messageId, JSON.stringify({ saturdayDate })).run();
+}
+
+export function monthlyRanges(firstDayOfMonth: string): { startDate: string; endDate: string; previousStartDate: string; previousEndDate: string } {
+  const endDate = shiftDate(firstDayOfMonth, -1);
+  const startDate = `${endDate.slice(0, 7)}-01`;
+  const previousEndDate = shiftDate(startDate, -1);
+  return { startDate, endDate, previousStartDate: `${previousEndDate.slice(0, 7)}-01`, previousEndDate };
+}
+
+function periodChunks(startDate: string, endDate: string, days = 7): Array<{ startDate: string; endDate: string }> {
+  const chunks: Array<{ startDate: string; endDate: string }> = [];
+  for (let start = startDate; start <= endDate; start = shiftDate(start, days)) {
+    const candidate = shiftDate(start, days - 1);
+    chunks.push({ startDate: start, endDate: candidate < endDate ? candidate : endDate });
+  }
+  return chunks;
+}
+
+function sumFinanceReports(reports: any[]): any {
+  return reports.reduce((total, report) => {
+    const summary = report.current?.summary || {};
+    for (const key of ['sellerSubtotal', 'feeTax', 'affiliate', 'adsCost', 'refunds']) total[key] += Number(summary[key]) || 0;
+    return total;
+  }, { sellerSubtotal: 0, feeTax: 0, affiliate: 0, adsCost: 0, refunds: 0 });
+}
+
+export async function buildMonthlyOperationsReport(env: Env, firstDayOfMonth: string): Promise<{ text: string; styles: OperationsTextStyle[] }> {
+  const { startDate, endDate, previousStartDate, previousEndDate } = monthlyRanges(firstDayOfMonth);
+  const currentInput = { startDate, endDate, forceRefresh: false };
+  const previousInput = { startDate: previousStartDate, endDate: previousEndDate, forceRefresh: false };
+  const scope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
+  const currentChunks = periodChunks(startDate, endDate);
+  const previousChunks = periodChunks(previousStartDate, previousEndDate);
+  const [revenue, previousRevenueReport, ads, previousAds, financeReports, previousFinanceReports, operations, content] = await Promise.all([
+    loadSellerRevenueAnalysis(env, currentInput),
+    loadSellerRevenueAnalysis(env, previousInput),
+    loadMainReport(env, { ...scope, startDate, endDate }),
+    loadMainReport(env, { ...scope, startDate: previousStartDate, endDate: previousEndDate }),
+    Promise.all(currentChunks.map((chunk) => loadFinanceAnalysis(env, { ...chunk, forceRefresh: false }))),
+    Promise.all(previousChunks.map((chunk) => loadFinanceAnalysis(env, { ...chunk, forceRefresh: false }))),
+    loadOperationsAnalysis(env, currentInput),
+    loadContentKocPeriodTotals(env, { ...scope, ...currentInput })
+  ]);
+  const financeWarnings = [...financeReports, ...previousFinanceReports].flatMap(criticalFinanceWarnings);
+  if (financeWarnings.length) throw new Error(`Dữ liệu Finance tháng chưa đầy đủ: ${financeWarnings.join(' | ')}`);
+  const currentRevenue = revenue.totals || {};
+  const previousRevenue = previousRevenueReport.totals || {};
+  const currentFinance = sumFinanceReports(financeReports);
+  const previousFinance = sumFinanceReports(previousFinanceReports);
+  const currentAttribution = revenue.gmvAttribution || {};
+  const previousAttribution = previousRevenueReport.gmvAttribution || {};
+  const contentTotals = content.totals || {};
+  const source = (key: 'affiliate' | 'seller') => {
+    const value = currentAttribution[key] || {};
+    const video = contentTotals[key === 'affiliate' ? 'koc' : 'seller'] || {};
+    return { total: Number(value.total) || 0, live: Number(value.live) || 0, video: Number(value.video) || 0,
+      productCard: Number(value.productCard) || 0, previousTotal: Number(previousAttribution[key]?.total) || 0,
+      videoCount: Number(video.videoCount) || 0,
+      videoRoi: Number(video.adsSpend) ? Number(video.gmv) / Number(video.adsSpend) : 0 };
+  };
+  return formatWeeklyOperationsReport({
+    title: `Báo cáo chỉ số vận hành Tiktok shop tháng ${endDate.slice(5, 7)}/${endDate.slice(0, 4)}`,
+    startDate, endDate,
+    metrics: [
+      { label: '1. GMV:', value: weeklyCompact(currentRevenue.grossRevenue), change: weeklyTrend(currentRevenue.grossRevenue, previousRevenue.grossRevenue) },
+      { label: '2. ĐƠN HÀNG:', value: whole(currentRevenue.orders), change: weeklyTrend(currentRevenue.orders, previousRevenue.orders) },
+      { label: '3. AOV:', value: weeklyCompact(currentRevenue.aov), change: weeklyTrend(currentRevenue.aov, previousRevenue.aov) },
+      { label: '4. CHI TIÊU ADS:', value: weeklyCompact(ads.totals?.cost), change: weeklyTrend(ads.totals?.cost, previousAds.totals?.cost), badWhenUp: true },
+      { label: '5. Tổng phí sàn:', value: weeklyCompact(currentFinance.feeTax), change: weeklyTrend(currentFinance.feeTax, previousFinance.feeTax), badWhenUp: true },
+      { label: '6. Hoa hồng KOC:', value: weeklyCompact(currentFinance.affiliate), change: weeklyTrend(currentFinance.affiliate, previousFinance.affiliate), badWhenUp: true },
+      { label: '7. Hoàn tiền:', value: weeklyCompact(currentFinance.refunds), change: weeklyTrend(currentFinance.refunds, previousFinance.refunds), badWhenUp: true },
+      { label: '8. Tỷ lệ hủy:', value: weeklyPercent((Number(operations.totals?.cancellationRate) || 0) * 100) }
+    ],
+    sources: { affiliate: source('affiliate'), seller: source('seller') }
+  });
+}
+
+export async function prepareMonthlyOperationsReport(env: Env, firstDayOfMonth: string, stage: number): Promise<void> {
+  const { startDate, endDate, previousStartDate, previousEndDate } = monthlyRanges(firstDayOfMonth);
+  const scope = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE };
+  const jobs: Array<() => Promise<unknown>> = [
+    () => loadSellerRevenueAnalysis(env, { startDate, endDate, forceRefresh: true }),
+    () => loadSellerRevenueAnalysis(env, { startDate: previousStartDate, endDate: previousEndDate, forceRefresh: true }),
+    () => loadMainReport(env, { ...scope, startDate, endDate }, true),
+    () => loadMainReport(env, { ...scope, startDate: previousStartDate, endDate: previousEndDate })
+  ];
+  for (const chunk of [...periodChunks(startDate, endDate), ...periodChunks(previousStartDate, previousEndDate)]) {
+    jobs.push(async () => {
+      const value = await loadFinanceAnalysis(env, { ...chunk, forceRefresh: true });
+      if (criticalFinanceWarnings(value).length) throw new Error(`TikTok Finance ${chunk.startDate}-${chunk.endDate} chưa đầy đủ.`);
+      return value;
+    });
+  }
+  jobs.push(() => loadOperationsAnalysis(env, { startDate, endDate, forceRefresh: true }));
+  jobs.push(() => loadContentKocPeriodTotals(env, { ...scope, startDate, endDate, forceRefresh: true }));
+  if (stage >= jobs.length) return sendMonthlyOperationsReport(env, firstDayOfMonth);
+  await jobs[stage]();
+  await env.TASK_QUEUE.send({ type: 'operations-monthly-prepare', firstDayOfMonth, stage: stage + 1 });
+}
+
+export async function sendMonthlyOperationsReport(env: Env, firstDayOfMonth: string): Promise<void> {
+  const { endDate } = monthlyRanges(firstDayOfMonth);
+  const existing = await env.DB.prepare('SELECT status FROM operations_bot_reports WHERE report_date=? AND report_kind=?')
+    .bind(endDate, 'MONTHLY').first<{ status: string }>();
+  if (existing?.status === 'SENT') return;
+  const formatted = await buildMonthlyOperationsReport(env, firstDayOfMonth);
+  const messageId = await sendOperationsMessage(env, formatted.text, formatted.styles);
+  await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
+    VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
+    payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
+    .bind(endDate, 'MONTHLY', 'SENT', messageId, JSON.stringify({ firstDayOfMonth })).run();
 }

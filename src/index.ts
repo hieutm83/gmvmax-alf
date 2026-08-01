@@ -8,7 +8,7 @@ import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
 import { loadFinanceAnalysis, loadSkuUnitCosts, saveSkuUnitCost } from './finance';
 import { loadContentKocAnalysis } from './content-koc';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
-import { pollOperationsBot, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
+import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { monitorOrderBot, ORDER_BOT_SLOTS, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 
@@ -154,6 +154,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   }
   if(message.type==='operations-weekly-report')return sendWeeklyOperationsReport(env,message.saturdayDate);
   if(message.type==='operations-weekly-prepare')return prepareWeeklyOperationsReport(zaloRuntime(env),message.saturdayDate,message.stage);
+  if(message.type==='operations-monthly-prepare')return prepareMonthlyOperationsReport(zaloRuntime(env),message.firstDayOfMonth,message.stage);
   if(message.type==='order-bot-report')return sendOrderBotReport(env,message.reportDate,message.reportTime,message.force===true);
   if(message.type==='order-bot-monitor')return monitorOrderBot(env,message.reportDate);
   if(message.type==='sheet-backup'){
@@ -246,6 +247,8 @@ export default {
     const localWeekday=new Date(`${localDate}T00:00:00Z`).getUTCDay();
     if(localWeekday===6&&localHour===10&&localMinute===30&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-weekly-prepare',saturdayDate:localDate,stage:0}));
+    if(localDate.endsWith('-01')&&localHour===10&&localMinute===35&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-monthly-prepare',firstDayOfMonth:localDate,stage:0}));
     if(localMinute!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;

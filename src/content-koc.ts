@@ -1,6 +1,6 @@
 import type { Env } from './types';
 import { authorizedShop, shopRequest } from './seller';
-import { loadAdsVideoMetrics } from './reports';
+import { loadAdsCreatorPeriodMetrics, loadAdsVideoMetrics } from './reports';
 import { cacheGet, cachePut, dateInTimezone, numberValue, shiftDate, stableKey } from './utils';
 
 export type CreatorType = 'SELLER' | 'KOC' | 'UNKNOWN';
@@ -45,6 +45,21 @@ export function calculateContentKocTotals(videos:any[]):{all:GroupTotals;seller:
   const totals={all:emptyTotals(),seller:emptyTotals(),koc:emptyTotals(),unknown:emptyTotals()};
   for(const video of videos){addTotals(totals.all,video);addTotals(totals[video.creatorType==='SELLER'?'seller':video.creatorType==='KOC'?'koc':'unknown'],video);}
   return totals;
+}
+
+export async function loadContentKocPeriodTotals(env:Env,input:{advertiserId:string;storeId:string;startDate:string;endDate:string;forceRefresh?:boolean}):Promise<any>{
+  const key=stableKey('content-koc-period-totals-v3',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
+  const [shopResult,adsVideos]=await Promise.all([fetchShopVideos(env,input.startDate,input.endDate),
+    loadAdsCreatorPeriodMetrics(env,input,input.startDate,input.endDate)]);
+  const metadataById=new Map(shopResult.videos.map((video:any)=>[String(video.id||''),video]));
+  const totals={seller:{videoCount:0,gmv:0,adsSpend:0},koc:{videoCount:0,gmv:0,adsSpend:0}};
+  for(const video of shopResult.videos){const posted=postDate(video.video_post_time)||postDateFromItemId(video.id,env.TIMEZONE);
+    if(!posted||posted<input.startDate||posted>input.endDate)continue;const type=shopVideoCreatorType(video);
+    if(type==='SELLER')totals.seller.videoCount+=1;else if(type==='KOC')totals.koc.videoCount+=1;}
+  for(const ads of adsVideos){const type=adsCreatorType(metadataById.get(String(ads.itemId)),ads);if(type==='UNKNOWN')continue;
+    const group=type==='SELLER'?totals.seller:totals.koc;group.gmv+=numberValue(ads.grossRevenue);group.adsSpend+=numberValue(ads.cost);}
+  const result={startDate:input.startDate,endDate:input.endDate,totals};await cachePut(env,key,result,86400).catch(()=>undefined);return result;
 }
 
 async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<{available:boolean;videos:any[];latestAvailableDate:string|null} >{
