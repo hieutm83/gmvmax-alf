@@ -125,7 +125,7 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
         const remaining = new Set(summary.oldBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
         lines.push(`... và ${remaining} SKU khác`);
       }
-      lines.push('', `Đơn mới: ${summary.newTotal}`);
+      lines.push('', `Đơn mới: ${summary.newTotal} đơn`);
       summary.newBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.sellerSku}: ${row.orders} đơn`));
       if (summary.newBreakdown.length > maxBreakdownLines) {
         const remaining = new Set(summary.newBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
@@ -134,7 +134,7 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
     }
     if (index < summaries.length - 1) lines.push('');
   });
-  lines.push('', SEPARATOR);
+  lines.push(SEPARATOR);
   return lines.join('\n');
 }
 
@@ -146,7 +146,11 @@ export function buildOrderBotStyles(text: string): OrderTextStyle[] {
   const lines = text.split('\n');
   let offset = 0;
   for (const line of lines) {
-    if (/^Đơn cần gửi trước/.test(line) || /^Đơn mới:/.test(line)) add(offset, line.length, 'f_13', 'i', RED);
+    if (/^Đơn cần gửi trước/.test(line) || /^Đơn mới:/.test(line)) {
+      add(offset, line.length, 'f_13', 'i');
+      const groupTotal = line.match(/(\d+\s+đơn)$/);
+      if (groupTotal) add(offset + line.lastIndexOf(groupTotal[1]), groupTotal[1].length, RED);
+    }
     const totalMatch = line.match(/^Số đơn .+?:\s*(\d+\s+đơn)$/);
     if (totalMatch) add(offset + line.lastIndexOf(totalMatch[1]), totalMatch[1].length, 'b', RED);
     const breakdownMatch = line.match(/^-.+?:\s*(\d+\s+đơn)$/);

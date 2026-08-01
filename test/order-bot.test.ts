@@ -25,9 +25,10 @@ describe('order bot', () => {
       oldBreakdown: [], newBreakdown: [{ sellerSku: 'TTD', qty: 1, orders: 1 }]
     }], new Date('2026-07-31T03:30:00Z'), 'Asia/Bangkok');
     expect(text).toContain('Đơn cần gửi trước 12h: 0 đơn');
-    expect(text).toContain('Đơn mới: 1\n- TTD: 1 đơn');
+    expect(text).toContain('Đơn mới: 1 đơn\n- TTD: 1 đơn');
     expect(text).toContain('Cập nhật: 10:30:00');
     expect(text.endsWith('-----------------------------------')).toBe(true);
+    expect(text.endsWith('\n\n-----------------------------------')).toBe(false);
   });
 
   it('summarizes overflow only when a Zalo-size fallback is requested', () => {
@@ -56,12 +57,13 @@ describe('order bot', () => {
       '- 1 TKA: 2 đơn',
       '- 1 TAH: 2 đơn',
       '',
-      'Đơn mới: 0'
+      'Đơn mới: 0 đơn'
     ].join('\n');
     const styles = buildOrderBotStyles(text);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '12 đơn' && style.st.includes('c_db342e') && style.st.includes('b'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TKA: 2 đơn' && style.st.includes('f_13'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '2 đơn' && style.st.includes('b'))).toBe(true);
-    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn mới: 0' && style.st.includes('i') && style.st.includes('c_db342e'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn mới: 0 đơn' && style.st.includes('i') && !style.st.includes('c_db342e'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '0 đơn' && style.st.includes('c_db342e'))).toBe(true);
   });
 });
