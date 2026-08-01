@@ -181,8 +181,13 @@ function packageStatus(order: any): string {
     .map((value) => String(value || '').toUpperCase()).find(Boolean) || '';
 }
 
+export function calculateCancellationRate(cancellations: unknown, totalOrders: unknown): number {
+  const total = numberValue(totalOrders);
+  return total > 0 ? numberValue(cancellations) / total : 0;
+}
+
 export async function loadOperationsAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-operations-v9-comparison', { startDate: input.startDate, endDate: input.endDate, skipComparison: input.skipComparison === true });
+  const key = stableKey('seller-operations-v10-comparison', { startDate: input.startDate, endDate: input.endDate, skipComparison: input.skipComparison === true });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
 
@@ -311,7 +316,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
       populationStart,
       openOrders: openOrders.length,
       cancellations: cancellationsCreatedInRange.length,
-      cancellationRate: openOrders.length ? cancellationsCreatedInRange.length / openOrders.length : 0,
+      cancellationRate: calculateCancellationRate(cancellationsCreatedInRange.length, totalOrders),
       cancellationRoles,
       returns: returns.length,
       returnEligibleOrders: deliveredOrders.length,

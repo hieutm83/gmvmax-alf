@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { returnReasonLabel } from '../src/operations';
+import { calculateCancellationRate, returnReasonLabel } from '../src/operations';
 
 describe('returnReasonLabel', () => {
+  it('calculates cancellation rate against all orders created in the selected period', () => {
+    expect(calculateCancellationRate(127, 1379)).toBeCloseTo(0.0920957);
+    expect(calculateCancellationRate(5, 0)).toBe(0);
+  });
+
   it('uses the documented reason code instead of an incorrect localized message', () => {
     expect(returnReasonLabel({
       return_reason: 'buyer_return_and_refund_suspected_counterfeit',
