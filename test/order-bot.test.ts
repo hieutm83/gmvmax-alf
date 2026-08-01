@@ -25,9 +25,9 @@ describe('order bot', () => {
       oldBreakdown: [], newBreakdown: [{ sellerSku: 'TTD', qty: 1, orders: 1 }]
     }], new Date('2026-07-31T03:30:00Z'), 'Asia/Bangkok');
     expect(text).toContain('Đơn cần gửi trước 12h: 0 đơn');
-    expect(text).toContain('Đơn mới: 1\n- 1 TTD: 1 đơn');
+    expect(text).toContain('Đơn mới: 1\n- TTD: 1 đơn');
     expect(text).toContain('Cập nhật: 10:30:00');
-    expect(text.endsWith('---------------------------')).toBe(true);
+    expect(text.endsWith('-----------------------------------')).toBe(true);
   });
 
   it('summarizes overflow only when a Zalo-size fallback is requested', () => {
@@ -39,9 +39,18 @@ describe('order bot', () => {
     expect(text).toContain('... và 2 SKU khác');
   });
 
-  it('styles labels and operational SKU colors like the reference message', () => {
+  it('does not prefix item quantity when the SKU name already contains it', () => {
+    const text = formatOrderBotReport('2026-08-01', ORDER_BOT_SLOTS['08:30'], [{
+      label: 'Số đơn chờ thu gom', total: 2, oldTotal: 2, newTotal: 0,
+      oldBreakdown: [{ sellerSku: '1 TTD', qty: 1, orders: 2 }], newBreakdown: []
+    }], new Date('2026-08-01T01:30:59Z'), 'Asia/Bangkok');
+    expect(text).toContain('- 1 TTD: 2 đơn');
+    expect(text).not.toContain('- 1 1 TTD');
+  });
+
+  it('styles totals, group labels and compact SKU rows like the reference message', () => {
     const text = [
-      'Số đơn chờ thu gom: 12',
+      'Số đơn chờ thu gom: 12 đơn',
       'Đơn cần gửi trước 19h: 12 đơn',
       '- 1 TTD: 12 đơn',
       '- 1 TKA: 2 đơn',
@@ -50,9 +59,9 @@ describe('order bot', () => {
       'Đơn mới: 0'
     ].join('\n');
     const styles = buildOrderBotStyles(text);
-    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '12' && style.st.includes('c_db342e'))).toBe(true);
-    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TKA: 2 đơn' && style.st.includes('c_15a85f'))).toBe(true);
-    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TAH: 2 đơn' && style.st.includes('c_db342e'))).toBe(true);
-    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn mới: 0' && style.st.includes('i'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '12 đơn' && style.st.includes('c_db342e') && style.st.includes('b'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TKA: 2 đơn' && style.st.includes('f_13'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '2 đơn' && style.st.includes('b'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn mới: 0' && style.st.includes('i') && style.st.includes('c_db342e'))).toBe(true);
   });
 });

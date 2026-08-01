@@ -4,9 +4,8 @@ import { loadOperationsAnalysis } from './operations';
 import { hourInTimezone } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
-const GREEN = 'c_15a85f';
 const RED = 'c_db342e';
-const SEPARATOR = '---------------------------';
+const SEPARATOR = '-----------------------------------';
 const STATUS_DEFINITIONS = [
   { code: 'AWAITING_SHIPMENT', label: 'Số đơn chờ vận chuyển' },
   { code: 'AWAITING_COLLECTION', label: 'Số đơn chờ thu gom' }
@@ -118,16 +117,16 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
   ];
   summaries.forEach((summary, index) => {
     lines.push(SEPARATOR);
-    lines.push(`${summary.label}: ${summary.total}`);
+    lines.push(`${summary.label}: ${summary.total} đơn`);
     if (summary.total > 0) {
       lines.push(`${slot.oldLabel}: ${summary.oldTotal} đơn`);
-      summary.oldBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.qty} ${row.sellerSku}: ${row.orders} đơn`));
+      summary.oldBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.sellerSku}: ${row.orders} đơn`));
       if (summary.oldBreakdown.length > maxBreakdownLines) {
         const remaining = new Set(summary.oldBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
         lines.push(`... và ${remaining} SKU khác`);
       }
       lines.push('', `Đơn mới: ${summary.newTotal}`);
-      summary.newBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.qty} ${row.sellerSku}: ${row.orders} đơn`));
+      summary.newBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.sellerSku}: ${row.orders} đơn`));
       if (summary.newBreakdown.length > maxBreakdownLines) {
         const remaining = new Set(summary.newBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
         lines.push(`... và ${remaining} SKU khác`);
@@ -147,13 +146,14 @@ export function buildOrderBotStyles(text: string): OrderTextStyle[] {
   const lines = text.split('\n');
   let offset = 0;
   for (const line of lines) {
-    if (/^Đơn cần gửi trước/.test(line) || /^Đơn mới:/.test(line)) add(offset, line.length, 'i');
-    const totalMatch = line.match(/^Số đơn .+?:\s*(\d+)$/);
-    if (totalMatch && Number(totalMatch[1]) > 0) add(offset + line.lastIndexOf(totalMatch[1]), totalMatch[1].length, RED);
-    const oldMatch = line.match(/^Đơn cần gửi trước .+?:\s*(\d+)\s+đơn$/);
-    if (oldMatch && Number(oldMatch[1]) > 0) add(offset + line.lastIndexOf(oldMatch[1]), oldMatch[1].length, RED);
-    if (/^-\s+\d+\s+TKA\b/i.test(line)) add(offset, line.length, GREEN);
-    if (/^-\s+\d+\s+TAH\b/i.test(line)) add(offset, line.length, RED);
+    if (/^Đơn cần gửi trước/.test(line) || /^Đơn mới:/.test(line)) add(offset, line.length, 'f_13', 'i', RED);
+    const totalMatch = line.match(/^Số đơn .+?:\s*(\d+\s+đơn)$/);
+    if (totalMatch) add(offset + line.lastIndexOf(totalMatch[1]), totalMatch[1].length, 'b', RED);
+    const breakdownMatch = line.match(/^-.+?:\s*(\d+\s+đơn)$/);
+    if (breakdownMatch) {
+      add(offset, line.length, 'f_13');
+      add(offset + line.lastIndexOf(breakdownMatch[1]), breakdownMatch[1].length, 'b');
+    }
     offset += line.length + 1;
   }
   return styles;
