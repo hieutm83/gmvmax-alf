@@ -36,6 +36,10 @@ export const ORDER_BOT_SLOTS: Record<string, OrderBotSlot> = Object.fromEntries(
   oldLabel: time < '15:00' ? 'Đơn cần gửi trước 12h' : 'Đơn cần gửi trước 19h'
 }])) as Record<string, OrderBotSlot>;
 
+export function isOrderBotReportDay(localDate: string): boolean {
+  return new Date(`${localDate}T00:00:00Z`).getUTCDay() !== 0;
+}
+
 function timestampMillis(value: unknown): number {
   const timestamp = Number(value) || 0;
   return timestamp > 0 && timestamp < 1e12 ? timestamp * 1000 : timestamp;
@@ -115,7 +119,7 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
     `Cập nhật: ${updatedTime}`,
     ''
   ];
-  summaries.forEach((summary, index) => {
+  summaries.forEach((summary) => {
     lines.push(SEPARATOR);
     lines.push(`${summary.label}: ${summary.total} đơn`);
     if (summary.total > 0) {
@@ -132,7 +136,6 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
         lines.push(`... và ${remaining} SKU khác`);
       }
     }
-    if (index < summaries.length - 1) lines.push('');
   });
   lines.push(SEPARATOR);
   return lines.join('\n');
@@ -296,6 +299,7 @@ export async function sendLatestCancellationTest(env: Env, reportDate: string): 
 export async function sendOrderBotReport(env: Env, localDate: string, slotTime: string, force = false): Promise<void> {
   const slot = ORDER_BOT_SLOTS[slotTime];
   if (!slot) throw new Error(`Invalid order bot slot: ${slotTime}`);
+  if (!isOrderBotReportDay(localDate)) return;
   if (!force) {
     const existing = await env.DB.prepare('SELECT status FROM order_bot_reports WHERE report_date=? AND report_time=?')
       .bind(localDate, slotTime).first<{ status: string }>();

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrderBotStyles, formatOrderBotReport, ORDER_BOT_SLOTS, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
+import { buildOrderBotStyles, formatOrderBotReport, isOrderBotReportDay, ORDER_BOT_SLOTS, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
 
 describe('order bot', () => {
+  it('sends Monday through Saturday and skips Sunday', () => {
+    expect(isOrderBotReportDay('2026-08-01')).toBe(true);
+    expect(isOrderBotReportDay('2026-08-02')).toBe(false);
+    expect(isOrderBotReportDay('2026-08-03')).toBe(true);
+  });
+
   it('uses the report date in env timezone for both cutoffs', () => {
     expect(new Date(zonedDateTimeEpoch('2026-07-31', '00:01', 'Asia/Bangkok')).toISOString()).toBe('2026-07-30T17:01:00.000Z');
     expect(new Date(zonedDateTimeEpoch('2026-07-31', '18:00', 'Asia/Bangkok')).toISOString()).toBe('2026-07-31T11:00:00.000Z');
@@ -29,6 +35,22 @@ describe('order bot', () => {
     expect(text).toContain('Cập nhật: 10:30:00');
     expect(text.endsWith('-----------------------------------')).toBe(true);
     expect(text.endsWith('\n\n-----------------------------------')).toBe(false);
+  });
+
+  it('does not insert a blank line before the separator between statuses', () => {
+    const summaries = [
+      {
+        label: 'Số đơn chờ vận chuyển', total: 1, oldTotal: 0, newTotal: 1,
+        oldBreakdown: [], newBreakdown: [{ sellerSku: '1 TTD', qty: 1, orders: 1 }]
+      },
+      {
+        label: 'Số đơn chờ thu gom', total: 1, oldTotal: 1, newTotal: 0,
+        oldBreakdown: [{ sellerSku: '1 TTD', qty: 1, orders: 1 }], newBreakdown: []
+      }
+    ];
+    const text = formatOrderBotReport('2026-08-01', ORDER_BOT_SLOTS['08:30'], summaries,
+      new Date('2026-08-01T01:30:59Z'), 'Asia/Bangkok');
+    expect(text).toContain('- 1 TTD: 1 đơn\n-----------------------------------\nSố đơn chờ thu gom');
   });
 
   it('summarizes overflow only when a Zalo-size fallback is requested', () => {
