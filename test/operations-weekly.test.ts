@@ -25,6 +25,10 @@ describe('weekly operations report', () => {
     expect(formatted.text).toContain('Báo cáo chỉ số vận hành Tiktok shop tuần 25/07-31/07/2026');
     expect(formatted.text).toContain('4. CHI TIÊU ADS: 26,22M (↑ 40,3%)');
     expect(formatted.text).toContain('› Video (Đóng góp 86,29%) : 133 Video - Roi 1.71');
+    expect(formatted.text).toContain('Tổng quan\n1. GMV:');
+    expect(formatted.text).toContain('Nguồn\nLiên kết');
+    expect(formatted.text).not.toContain('Tổng quan\n\n1. GMV:');
+    expect(formatted.text).not.toContain('Nguồn\n\nLiên kết');
     expect(formatted.text).not.toContain('<font');
     expect(formatted.styles.some((style) => formatted.text.slice(style.start, style.start + style.len) === 'Tổng quan'
       && style.st.includes('u') && style.st.includes('c_15a85f'))).toBe(true);
@@ -32,5 +36,7 @@ describe('weekly operations report', () => {
       && style.st.includes('c_db342e'))).toBe(true);
     expect(formatted.styles.some((style) => formatted.text.slice(style.start, style.start + style.len) === '133 Video - Roi 1.71'
       && style.st.includes('b'))).toBe(true);
+    expect(formatted.styles.some((style) => style.start === formatted.text.indexOf('\n') + 1
+      && style.st.includes('f_13') && style.len === formatted.text.length - formatted.text.indexOf('\n') - 1)).toBe(true);
   });
 });

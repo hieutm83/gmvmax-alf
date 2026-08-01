@@ -164,9 +164,9 @@ export function formatWeeklyOperationsReport(data: WeeklyOperationsReportData): 
   ];
   const text = [
     `Báo cáo chỉ số vận hành Tiktok shop tuần ${displayShortDate(data.startDate).slice(0, 5)}-${displayShortDate(data.endDate)}`,
-    '', 'Tổng quan', '',
+    '', 'Tổng quan',
     ...data.metrics.map((metric) => `${metric.label} ${metric.value}${metric.change ? ` (${metric.change.text})` : ''}`),
-    '', 'Nguồn', '',
+    '', 'Nguồn',
     ...sourceLines('Liên kết', data.sources.affiliate),
     ...sourceLines('Người bán', data.sources.seller)
   ].join('\n');
@@ -174,6 +174,7 @@ export function formatWeeklyOperationsReport(data: WeeklyOperationsReportData): 
   const add = (start: number, len: number, ...st: string[]) => { if (start >= 0 && len > 0) styles.push({ start, len, st }); };
   const titleEnd = text.indexOf('\n');
   add(0, titleEnd, 'f_15', 'i');
+  add(titleEnd + 1, text.length - titleEnd - 1, 'f_13');
   for (const section of ['Tổng quan', 'Nguồn']) {
     const start = text.indexOf(`\n${section}\n`) + 1;
     add(start, section.length, 'f_13', 'u', 'b', GREEN);
