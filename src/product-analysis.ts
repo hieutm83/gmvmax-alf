@@ -118,7 +118,7 @@ async function fetchProductPages(env: Env, shopCipher: string, startDate: string
 }
 
 async function productCatalog(env: Env, shopCipher: string): Promise<Record<string, any>> {
-  const key = stableKey('product-analysis-catalog-v1', { shopCipher });
+  const key = stableKey('product-analysis-catalog-v2', { shopCipher });
   const cached = await cacheGet<Record<string, any>>(env, key);
   if (cached) return cached;
   const catalog: Record<string, any> = {};
@@ -138,12 +138,49 @@ async function productCatalog(env: Env, shopCipher: string): Promise<Record<stri
   return catalog;
 }
 
+async function productDetail(env: Env, shopCipher: string, productId: string): Promise<any | null> {
+  const key = stableKey('product-analysis-detail-v1', { shopCipher, productId });
+  const cached = await cacheGet<any>(env, key);
+  if (cached) return cached;
+  try {
+    const product = await shopRequest(env, `/product/202309/products/${productId}`, 'GET', { shop_cipher: shopCipher });
+    const detail = {
+      title: String(product?.title || product?.name || ''),
+      imageUrl: catalogImage(product)
+    };
+    if (detail.title || detail.imageUrl) await cachePut(env, key, detail, 21600).catch(() => undefined);
+    return detail;
+  } catch (error) {
+    console.warn('Product image lookup failed', productId, error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+async function hydrateProductImages(env: Env, shopCipher: string, catalog: Record<string, any>, products: any[]): Promise<void> {
+  const ids = products
+    .filter((product) => Object.values(CHANNEL_FIELDS).some((field) => numberValue(product?.[field]?.product_clicks) > 0))
+    .map((product) => String(product.id || product.product_id || ''))
+    .filter((id) => id && !catalog[id]?.imageUrl);
+  for (let offset = 0; offset < ids.length; offset += 8) {
+    const batch = ids.slice(offset, offset + 8);
+    const details = await Promise.all(batch.map((id) => productDetail(env, shopCipher, id)));
+    batch.forEach((id, index) => {
+      const detail = details[index];
+      if (!detail) return;
+      catalog[id] = {
+        title: detail.title || catalog[id]?.title || `Sản phẩm ${id}`,
+        imageUrl: detail.imageUrl || catalog[id]?.imageUrl || ''
+      };
+    });
+  }
+}
+
 function dayCount(startDate: string, endDate: string): number {
   return Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1;
 }
 
 export async function loadProductAnalysis(env: Env, input: { startDate: string; endDate: string; forceRefresh?: boolean }): Promise<any> {
-  const key = stableKey('product-analysis-v1', { startDate: input.startDate, endDate: input.endDate });
+  const key = stableKey('product-analysis-v2', { startDate: input.startDate, endDate: input.endDate });
   if (!input.forceRefresh) {
     const cached = await cacheGet<any>(env, key);
     if (cached) return cached;
@@ -159,9 +196,10 @@ export async function loadProductAnalysis(env: Env, input: { startDate: string; 
     fetchProductPages(env, shopCipher, previousStartDate, previousEndDate),
     productCatalog(env, shopCipher)
   ]);
+  await hydrateProductImages(env, shopCipher, catalog, currentRaw.products);
   const current = summarizeProductPerformance(currentRaw.products, catalog);
   const previous = summarizeProductPerformance(previousRaw.products, catalog);
-  const chartStartDate = days > 31 ? shiftDate(input.endDate, -30) : input.startDate;
+  const chartStartDate = days === 1 ? shiftDate(input.endDate, -6) : days > 31 ? shiftDate(input.endDate, -30) : input.startDate;
   const daily: any[] = [];
   for (let date = chartStartDate; date <= input.endDate; date = shiftDate(date, 1)) {
     const raw = days === 1 && date === input.startDate ? currentRaw : await fetchProductPages(env, shopCipher, date, date);
@@ -171,7 +209,7 @@ export async function loadProductAnalysis(env: Env, input: { startDate: string; 
   const result = {
     startDate: input.startDate, endDate: input.endDate, previousStartDate, previousEndDate,
     generatedAt: new Date().toISOString(), latestAvailableDate: currentRaw.latestAvailableDate,
-    current, previous, daily,
+    current, previous, daily, chartMode: days === 1 ? 'LAST_7_DAYS' : 'SELECTED_RANGE',
     warnings: days > 31 ? ['Biểu đồ hiển thị 31 ngày gần nhất để bảo đảm giới hạn API.'] : []
   };
   await cachePut(env, key, result, 300).catch(() => undefined);

@@ -338,10 +338,18 @@
       .product-analysis-funnel { display:grid; grid-template-columns:150px minmax(320px,560px); justify-content:center; gap:10px 18px; align-items:center; }
       .product-funnel-rate { color:var(--text-secondary); font-size:12px; text-align:right; }
       .product-funnel-rate strong { display:block; color:var(--text); font-size:18px; }
+      .product-funnel-rate { position:relative; }
+      .product-funnel-arrow { position:absolute; right:-34px; top:-38px; width:40px; height:48px; border-bottom:2px solid #0ea5e9; border-left:2px solid #0ea5e9; }
+      .product-funnel-arrow::after { content:""; position:absolute; right:-1px; bottom:-5px; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); }
+      .product-funnel-arrow.ctor { color:#ef4444; border-color:#ef4444; }
+      .product-funnel-rate small, .product-funnel-value small { display:block; margin-top:3px; font-size:10px; font-weight:700; }
+      .product-funnel-rate small.good { color:var(--success); } .product-funnel-rate small.bad { color:var(--danger); }
       .product-funnel-step { display:flex; align-items:center; justify-content:space-between; min-height:60px; padding:12px 48px; color:#fff; font-weight:700; background:#67c9c6; clip-path:polygon(4% 0,96% 0,90% 100%,10% 100%); }
       .product-funnel-step-2 { width:88%; justify-self:center; background:#35b8b5; }
       .product-funnel-step-3 { width:76%; justify-self:center; background:#0ea5a4; }
       .product-funnel-step strong { font-size:18px; font-variant-numeric:tabular-nums; }
+      .product-funnel-value { text-align:right; }
+      .product-funnel-value small { color:rgba(255,255,255,.9); }
       .product-analysis-table { min-width:1420px; }
       .product-analysis-table th:first-child, .product-analysis-table td:first-child { position:sticky; left:0; z-index:1; min-width:230px; text-align:left; background:var(--surface); }
       .product-analysis-table thead th:first-child { z-index:2; background:var(--surface-muted); }
@@ -354,11 +362,15 @@
       .product-analysis-note { margin:0 0 12px; padding:10px 12px; color:var(--text-secondary); background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-sm); font-size:12px; }
       .product-analysis-state { min-height:220px; display:grid; place-items:center; padding:28px; color:var(--text-muted); text-align:center; border:1px dashed #cbd5e1; border-radius:var(--radius-sm); background:var(--surface-muted); }
       .product-analysis-state strong { display:block; margin-bottom:5px; color:var(--text-secondary); }
+      .product-analysis-state.hidden { display:none; }
       .product-analysis-skeleton { position:relative; overflow:hidden; min-height:16px; border-radius:5px; background:#e2e8f0; }
       .product-analysis-skeleton::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.62),transparent); animation:productAnalysisLoading 1.25s infinite; }
       @keyframes productAnalysisLoading { from { transform:translateX(-100%); } to { transform:translateX(100%); } }
       .product-analysis-modal { width:min(1480px,96vw); }
       .product-analysis-product { display:flex; align-items:center; gap:10px; min-width:260px; white-space:normal; }
+      .product-analysis-product > div { min-width:0; }
+      .product-analysis-product strong, .product-analysis-product small { display:block; }
+      .product-analysis-product small { margin-top:3px; color:var(--text-muted); font-size:10px; }
       .product-analysis-product img, .product-analysis-thumb { width:38px; height:38px; flex:0 0 38px; border-radius:6px; object-fit:cover; background:var(--surface-muted); }
       .product-analysis-thumb { display:grid; place-items:center; color:var(--text-muted); font-size:11px; font-weight:800; }
       .operations-charts .analytics-canvas { height: 250px; }
@@ -472,10 +484,9 @@
       </section>
       <section id="productAnalysisReport" class="hidden">
         <header class="product-analysis-heading"><h2>Số liệu chính</h2><p>Lưu lượng truy cập</p></header>
-        <div id="productAnalysisWarnings" class="product-analysis-note hidden"></div>
         <div id="productAnalysisSummary" class="summary product-analysis-summary"></div>
         <section class="analytics-panel product-analysis-chart">
-          <h2>Lượt nhấp vào sản phẩm và CTR theo ngày</h2>
+          <h2 id="productTrafficChartTitle">Lượt nhấp vào sản phẩm và CTR theo ngày</h2>
           <div class="analytics-canvas"><canvas id="productTrafficChart"></canvas></div>
         </section>
         <section class="product-analysis-funnel-card">
@@ -1165,11 +1176,11 @@
           productAnalysisMetric('Lượt nhấp vào sản phẩm', integer(current.clicks || 0), current.clicks, previous.clicks),
           productAnalysisMetric('CTR', percent(current.ctr), current.ctr, previous.ctr)
         );
-        var warnings = (data.warnings || []).slice();
-        if (data.latestAvailableDate) warnings.push('Dữ liệu TikTok Shop mới nhất: ' + data.latestAvailableDate + '.');
-        var warning = document.getElementById('productAnalysisWarnings'); warning.textContent = warnings.join(' '); warning.classList.toggle('hidden', !warnings.length);
+        document.getElementById('productTrafficChartTitle').textContent = data.chartMode === 'LAST_7_DAYS'
+          ? 'Lượt nhấp vào sản phẩm và CTR trong 7 ngày gần nhất'
+          : 'Lượt nhấp vào sản phẩm và CTR theo ngày';
         renderProductTrafficChart(data.daily || []);
-        renderProductTrafficFunnel(current);
+        renderProductTrafficFunnel(current, previous);
         renderProductPerformanceTable(data);
       }
 
@@ -1183,18 +1194,34 @@
         ]}, options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{position:'top',align:'start'},tooltip:{callbacks:{label:function(context){return context.datasetIndex===1?' CTR: '+percent(context.raw):' Lượt nhấp: '+integer(context.raw);}}}}, scales:{x:{grid:{display:false}},clicks:{type:'linear',position:'left',beginAtZero:true,ticks:{callback:compactNumber}},ctr:{type:'linear',position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{callback:function(value){return percent(value);}}}} } });
       }
 
-      function renderProductTrafficFunnel(metrics) {
+      function productAnalysisChangeSmall(current, previous, light) {
+        var change = document.createElement('small'); var delta = productAnalysisDelta(current, previous);
+        if (delta == null) change.textContent = 'Không có dữ liệu kỳ trước';
+        else {
+          change.className = light ? '' : delta > 0 ? 'good' : delta < 0 ? 'bad' : '';
+          change.textContent = (delta >= 0 ? '↑ ' : '↓ ') + new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2}).format(Math.abs(delta)*100) + '%';
+        }
+        return change;
+      }
+
+      function renderProductTrafficFunnel(metrics, previousMetrics) {
         var funnel = document.getElementById('productTrafficFunnel'); funnel.replaceChildren();
+        previousMetrics = previousMetrics || {};
         var rows = [
-          { rate:'', label:'Lượt hiển thị sản phẩm', value:metrics.impressions || 0 },
-          { rate:'CTR', rateValue:metrics.ctr, label:'Lượt nhấp vào sản phẩm', value:metrics.clicks || 0 },
-          { rate:'CTOR', rateValue:metrics.ctor, label:'Đơn hàng SKU', value:metrics.skuOrders || 0 }
+          { rate:'', label:'Lượt hiển thị sản phẩm', value:metrics.impressions || 0, previousValue:previousMetrics.impressions },
+          { rate:'CTR', rateValue:metrics.ctr, previousRate:previousMetrics.ctr, label:'Lượt nhấp vào sản phẩm', value:metrics.clicks || 0, previousValue:previousMetrics.clicks },
+          { rate:'CTOR', rateValue:metrics.ctor, previousRate:previousMetrics.ctor, label:'Đơn hàng SKU', value:metrics.skuOrders || 0, previousValue:previousMetrics.skuOrders }
         ];
         rows.forEach(function (item, index) {
           var rateBox = document.createElement('div'); rateBox.className = 'product-funnel-rate';
-          if (item.rate) { rateBox.textContent = item.rate; var rateValue = document.createElement('strong'); rateValue.textContent = percent(item.rateValue); rateBox.appendChild(rateValue); }
+          if (item.rate) {
+            var arrow = document.createElement('span'); arrow.className = 'product-funnel-arrow' + (item.rate === 'CTOR' ? ' ctor' : ''); arrow.setAttribute('aria-hidden','true');
+            var rateLabel = document.createElement('span'); rateLabel.textContent = item.rate; var rateValue = document.createElement('strong'); rateValue.textContent = percent(item.rateValue);
+            rateBox.append(arrow, rateLabel, rateValue, productAnalysisChangeSmall(item.rateValue, item.previousRate, false));
+          }
           var step = document.createElement('div'); step.className = 'product-funnel-step product-funnel-step-' + (index + 1);
-          var label = document.createElement('span'); label.textContent = item.label; var value = document.createElement('strong'); value.textContent = integer(item.value); step.append(label, value);
+          var label = document.createElement('span'); label.textContent = item.label; var valueBox = document.createElement('div'); valueBox.className='product-funnel-value';
+          var value = document.createElement('strong'); value.textContent = integer(item.value); valueBox.append(value, productAnalysisChangeSmall(item.value,item.previousValue,true)); step.append(label, valueBox);
           funnel.append(rateBox, step);
         });
       }
@@ -1242,18 +1269,24 @@
       function openProductAnalysisModal(channelKey, labelText) {
         var modal = document.getElementById('productAnalysisModal'); var body = document.getElementById('productAnalysisModalBody'); body.replaceChildren();
         document.getElementById('productAnalysisModalTitle').textContent = labelText;
-        var data = currentProductAnalysisData || {}; var products = ((data.current || {}).products || []).filter(function (product) { return Number(((product.channels || {})[channelKey] || {}).impressions || 0) > 0; }).sort(function (left,right) { return Number(((right.channels||{})[channelKey]||{}).gmv||0)-Number(((left.channels||{})[channelKey]||{}).gmv||0); });
-        document.getElementById('productAnalysisModalMeta').textContent = integer(products.length) + ' sản phẩm có lượt hiển thị trong kênh';
-        if (!products.length) { var empty = document.createElement('div'); empty.className='product-analysis-state'; empty.innerHTML='<div><strong>Chưa có sản phẩm</strong><span>Không có sản phẩm phát sinh lượt hiển thị trong kênh này.</span></div>'; body.appendChild(empty); }
+        var data = currentProductAnalysisData || {}; var previousById = {};
+        ((data.previous || {}).products || []).forEach(function(product){previousById[String(product.id)]=product;});
+        var products = ((data.current || {}).products || []).filter(function (product) { return Number(((product.channels || {})[channelKey] || {}).clicks || 0) > 0; }).sort(function (left,right) { return Number(((right.channels||{})[channelKey]||{}).impressions||0)-Number(((left.channels||{})[channelKey]||{}).impressions||0); });
+        document.getElementById('productAnalysisModalMeta').textContent = integer(products.length) + ' sản phẩm có lượt nhấp trong kênh';
+        if (!products.length) { var empty = document.createElement('div'); empty.className='product-analysis-state'; empty.innerHTML='<div><strong>Chưa có sản phẩm</strong><span>Không có sản phẩm phát sinh lượt nhấp trong kênh này.</span></div>'; body.appendChild(empty); }
         else {
           var wrap=document.createElement('div');wrap.className='table-wrap';var table=document.createElement('table');table.className='product-analysis-table';var head=document.createElement('thead');var headRow=document.createElement('tr');
           ['Sản phẩm','GMV','Đơn hàng','Đơn hàng SKU','Số món bán ra','AOV','Lượt hiển thị sản phẩm','Lượt nhấp vào sản phẩm','CTR','Số lượt thêm vào giỏ','Tỷ lệ thêm vào giỏ','CTOR'].forEach(function(label){var th=document.createElement('th');th.textContent=label;headRow.appendChild(th);});head.appendChild(headRow);table.appendChild(head);var tableBody=document.createElement('tbody');
           products.forEach(function(product){var row=document.createElement('tr');var productCell=document.createElement('td');var productBox=document.createElement('div');productBox.className='product-analysis-product';
             if(product.imageUrl){var image=document.createElement('img');image.src=product.imageUrl;image.alt='';image.loading='lazy';image.addEventListener('error',function(){var fallback=document.createElement('span');fallback.className='product-analysis-thumb';fallback.textContent='SP';image.replaceWith(fallback);});productBox.appendChild(image);}else{var fallback=document.createElement('span');fallback.className='product-analysis-thumb';fallback.textContent='SP';productBox.appendChild(fallback);}
-            var copy=document.createElement('div');var title=document.createElement('strong');title.textContent=product.title;var meta=document.createElement('small');meta.textContent='ID: '+product.id;copy.append(title,meta);productBox.appendChild(copy);productCell.appendChild(productBox);row.appendChild(productCell);var metrics=(product.channels||{})[channelKey]||{};
-            productAnalysisFields.forEach(function(field){var cell=document.createElement('td');cell.textContent=field.format(metrics[field.key]);row.appendChild(cell);});tableBody.appendChild(row);});table.appendChild(tableBody);wrap.appendChild(table);body.appendChild(wrap);
+            var copy=document.createElement('div');var title=document.createElement('strong');title.textContent=product.title;var meta=document.createElement('small');meta.textContent='ID: '+product.id;copy.append(title,meta);productBox.appendChild(copy);productCell.appendChild(productBox);row.appendChild(productCell);var metrics=(product.channels||{})[channelKey]||{};var previousProduct=previousById[String(product.id)]||{};var previousMetrics=(previousProduct.channels||{})[channelKey]||{};
+            productAnalysisFields.forEach(function(field){row.appendChild(productAnalysisPopupCell(metrics[field.key],previousMetrics[field.key],field));});tableBody.appendChild(row);});table.appendChild(tableBody);wrap.appendChild(table);body.appendChild(wrap);
         }
         modal.classList.remove('hidden'); document.body.classList.add('modal-open');
+      }
+
+      function productAnalysisPopupCell(value, previous, field) {
+        var cell=document.createElement('td');cell.className='product-analysis-cell';var main=document.createElement('strong');main.textContent=field.format(value);cell.append(main,productAnalysisChangeSmall(value,previous,false));return cell;
       }
 
       function closeProductAnalysisModal() { document.getElementById('productAnalysisModal').classList.add('hidden'); syncModalOpenState(); }
