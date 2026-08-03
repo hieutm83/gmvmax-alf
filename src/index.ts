@@ -37,7 +37,8 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
   if (request.method === 'GET' && url.pathname === '/api/state') {
     const tokens=await readTokens(env);let advertisers:any[]=[];let connectionError:string|undefined;
     if(tokens){try{advertisers=await listAdvertisers(env,await createSession(env));}catch(error){connectionError=error instanceof Error?error.message:String(error);}}
-    const today=dateInTimezone(new Date(),env.TIMEZONE);return ok({connected:Boolean(tokens),startDate:today,endDate:today,
+    const today=dateInTimezone(new Date(),env.TIMEZONE);const startDate=session.role==='content'?shiftDate(today,-6):today;
+    return ok({connected:Boolean(tokens),startDate,endDate:today,
       adsOAuth:oauthConnectionState(tokens,env.MCP_SCOPE),
       sellerOAuth:await sellerOAuthState(env),
       dashboardRole:session.role,
@@ -52,9 +53,8 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
   if(request.method==='POST'&&url.pathname==='/api/stores'){const advertiserId=validateId(await readJson<any>(request),'Advertiser ID');return ok(await listStores(env,await createSession(env),advertiserId));}
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const rawInput=await readJson<any>(request);
-  const input=session.role==='content'
-    ? {...rawInput,startDate:dateInTimezone(new Date(),env.TIMEZONE),endDate:dateInTimezone(new Date(),env.TIMEZONE)}
-    : rawInput;
+  const contentEndDate=dateInTimezone(new Date(),env.TIMEZONE);
+  const input=session.role==='content'?{...rawInput,startDate:shiftDate(contentEndDate,-6),endDate:contentEndDate}:rawInput;
   if(url.pathname==='/api/report'){
     const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
     const report=await loadMainReport(env,scope,input.forceRefresh===true);

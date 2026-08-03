@@ -51,7 +51,7 @@ npx wrangler secret put TIKTOK_SHOP_SERVICE_ID
 
 - `ADMIN_PASSWORD`: mat khau dashboard cua Admin, co day du quyen quan tri.
 - `DASHBOARD_CEO_PASSWORD`: mat khau dashboard cua CEO, duoc xem tat ca bao cao va chon khoang ngay.
-- `DASHBOARD_CONTENT_PASSWORD`: mat khau dashboard cua Content, chi duoc xem Doanh thu, Quang cao va Content & KOC voi du lieu trong ngay.
+- `DASHBOARD_CONTENT_PASSWORD`: mat khau dashboard cua Content, chi duoc xem Doanh thu, Quang cao va Content & KOC voi du lieu 7 ngay gan nhat.
 - `DASHBOARD_SESSION_SECRET`: chuoi ngau nhien toi thieu 32 ky tu de ky cookie dang nhap 30 ngay. Khong dung chung voi mat khau nguoi dung.
 - `TOKEN_ENCRYPTION_KEY`: chuoi ngau nhien toi thieu 32 ky tu.
 - Ba secret Google co the bo qua neu chua dung backup.
