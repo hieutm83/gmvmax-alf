@@ -324,6 +324,43 @@
       .operations-warning { margin-bottom: 16px; padding: 11px 14px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; }
       .operations-charts { margin-bottom: 20px; }
       .operations-charts .analytics-panel { min-height: 320px; }
+      .product-analysis-heading { margin: 0 0 14px; }
+      .product-analysis-heading h2 { margin: 0; font-size: 16px; }
+      .product-analysis-heading p { margin: 3px 0 0; color: var(--text-muted); font-size: 12px; }
+      .product-analysis-summary .metric:nth-child(1) { --metric-color:#0891b2; }
+      .product-analysis-summary .metric:nth-child(2) { --metric-color:#0f766e; }
+      .product-analysis-summary .metric:nth-child(3) { --metric-color:#2563eb; }
+      .product-analysis-summary .metric:nth-child(4) { --metric-color:#7c3aed; }
+      .product-analysis-chart { min-height: 360px; margin-bottom: 20px; }
+      .product-analysis-chart .analytics-canvas { height: 290px; }
+      .product-analysis-funnel-card { margin-bottom: 20px; padding: 20px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); }
+      .product-analysis-funnel-card h2, .product-analysis-table-title { margin:0 0 16px; font-size:15px; }
+      .product-analysis-funnel { display:grid; grid-template-columns:150px minmax(320px,560px); justify-content:center; gap:10px 18px; align-items:center; }
+      .product-funnel-rate { color:var(--text-secondary); font-size:12px; text-align:right; }
+      .product-funnel-rate strong { display:block; color:var(--text); font-size:18px; }
+      .product-funnel-step { display:flex; align-items:center; justify-content:space-between; min-height:60px; padding:12px 22px; color:#fff; font-weight:700; background:#67c9c6; clip-path:polygon(4% 0,96% 0,90% 100%,10% 100%); }
+      .product-funnel-step-2 { width:88%; justify-self:center; background:#35b8b5; }
+      .product-funnel-step-3 { width:76%; justify-self:center; background:#0ea5a4; }
+      .product-funnel-step strong { font-size:18px; font-variant-numeric:tabular-nums; }
+      .product-analysis-table { min-width:1420px; }
+      .product-analysis-table th:first-child, .product-analysis-table td:first-child { position:sticky; left:0; z-index:1; min-width:230px; text-align:left; background:var(--surface); }
+      .product-analysis-table thead th:first-child { z-index:2; background:var(--surface-muted); }
+      .product-analysis-channel { min-height:0; padding:0; color:var(--primary); background:transparent; border:0; text-align:left; font-weight:700; }
+      .product-analysis-channel:hover { color:var(--primary-hover); background:transparent; }
+      .product-analysis-cell { min-width:112px; }
+      .product-analysis-cell strong { display:block; color:var(--text-secondary); font-size:13px; font-weight:600; }
+      .product-analysis-cell small { display:block; margin-top:3px; color:var(--text-muted); font-size:10px; }
+      .product-analysis-cell small.good { color:var(--success); } .product-analysis-cell small.bad { color:var(--danger); }
+      .product-analysis-note { margin:0 0 12px; padding:10px 12px; color:var(--text-secondary); background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-sm); font-size:12px; }
+      .product-analysis-state { min-height:220px; display:grid; place-items:center; padding:28px; color:var(--text-muted); text-align:center; border:1px dashed #cbd5e1; border-radius:var(--radius-sm); background:var(--surface-muted); }
+      .product-analysis-state strong { display:block; margin-bottom:5px; color:var(--text-secondary); }
+      .product-analysis-skeleton { position:relative; overflow:hidden; min-height:16px; border-radius:5px; background:#e2e8f0; }
+      .product-analysis-skeleton::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.62),transparent); animation:productAnalysisLoading 1.25s infinite; }
+      @keyframes productAnalysisLoading { from { transform:translateX(-100%); } to { transform:translateX(100%); } }
+      .product-analysis-modal { width:min(1480px,96vw); }
+      .product-analysis-product { display:flex; align-items:center; gap:10px; min-width:260px; white-space:normal; }
+      .product-analysis-product img, .product-analysis-thumb { width:38px; height:38px; flex:0 0 38px; border-radius:6px; object-fit:cover; background:var(--surface-muted); }
+      .product-analysis-thumb { display:grid; place-items:center; color:var(--text-muted); font-size:11px; font-weight:800; }
       .operations-charts .analytics-canvas { height: 250px; }
       .operations-table { width: 100%; min-width: 0; table-layout: fixed; }
       .operations-table th, .operations-table td { padding-right: 10px; padding-left: 10px; }
@@ -348,6 +385,7 @@
       @media (max-width: 1250px) { .finance-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } .finance-dual { grid-template-columns:1fr; } }
       @media (max-width: 900px) { .finance-charts { grid-template-columns:1fr; } }
       @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } }
+      @media (max-width:720px) { .product-analysis-funnel { grid-template-columns:88px minmax(240px,1fr); gap:8px; justify-content:start; overflow:auto; } .product-funnel-step { padding:10px 15px; font-size:11px; } .product-analysis-chart .analytics-canvas { height:250px; } }
       @media (max-width: 480px) { .finance-summary { grid-template-columns:1fr; } .finance-breakdown summary { align-items:flex-start; flex-wrap:wrap; } .finance-breakdown .finance-amount { min-width:0; margin-left:auto; } .finance-breakdown .finance-children { padding-left:24px; } }
     </style>
   </head>
@@ -373,6 +411,7 @@
         <button class="report-tab" type="button" data-report-view="operations" aria-selected="false">Đơn Hoàn Hủy &amp; Logistics</button>
         <button class="report-tab" type="button" data-report-view="finance" aria-selected="false">Tài chính</button>
         <button class="report-tab" type="button" data-report-view="content-koc" aria-selected="false">Content &amp; KOC</button>
+        <button class="report-tab" type="button" data-report-view="product-analysis" aria-selected="false">Phân tích sản phẩm</button>
       </nav>
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
@@ -430,6 +469,24 @@
         </div>
         <section class="analytics-panel"><h2 id="contentKocTimelineTitle">Click và GMV theo giờ</h2><div class="analytics-canvas"><canvas id="contentKocProductChart"></canvas></div></section>
         <h2 class="section-title">Chi tiết theo sản phẩm</h2><div class="table-wrap"><table class="operations-table" id="contentKocProductTable"><thead><tr><th class="ck-expand"></th><th class="ck-product">Sản phẩm</th><th class="ck-group">Nhóm</th><th class="ck-number">Video</th><th class="ck-number">GMV</th><th class="ck-number">Chi phí Ads</th><th class="ck-number">Hiển thị</th><th class="ck-number">Click</th><th class="ck-number">ROI</th></tr></thead><tbody id="contentKocProductRows"></tbody></table><div id="contentKocEmpty" class="analytics-unavailable hidden"><div><strong>Chưa có video</strong><span>Không có video khớp khoảng ngày đã chọn.</span></div></div></div>
+      </section>
+      <section id="productAnalysisReport" class="hidden">
+        <header class="product-analysis-heading"><h2>Số liệu chính</h2><p>Lưu lượng truy cập</p></header>
+        <div id="productAnalysisWarnings" class="product-analysis-note hidden"></div>
+        <div id="productAnalysisSummary" class="summary product-analysis-summary"></div>
+        <section class="analytics-panel product-analysis-chart">
+          <h2>Lượt nhấp vào sản phẩm và CTR theo ngày</h2>
+          <div class="analytics-canvas"><canvas id="productTrafficChart"></canvas></div>
+        </section>
+        <section class="product-analysis-funnel-card">
+          <h2>Phân tích lưu lượng truy cập</h2>
+          <div id="productTrafficFunnel" class="product-analysis-funnel"></div>
+        </section>
+        <h2 class="product-analysis-table-title">Phân tích hiệu suất</h2>
+        <div class="table-wrap">
+          <table class="product-analysis-table"><thead><tr><th>Thông tin</th><th>GMV</th><th>Đơn hàng</th><th>Đơn hàng SKU</th><th>Số món bán ra</th><th>AOV</th><th>Lượt hiển thị sản phẩm</th><th>Lượt nhấp vào sản phẩm</th><th>CTR</th><th>Số lượt thêm vào giỏ</th><th>Tỷ lệ thêm vào giỏ</th><th>CTOR</th></tr></thead><tbody id="productPerformanceRows"></tbody></table>
+          <div id="productAnalysisEmpty" class="product-analysis-state hidden"></div>
+        </div>
       </section>
       <section id="revenueReport" class="hidden">
         <div id="revenueContent" class="hidden">
@@ -543,6 +600,12 @@
         </form>
       </section>
     </div>
+    <div id="productAnalysisModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="productAnalysisModalTitle">
+      <section class="modal product-analysis-modal">
+        <header class="modal-header"><div class="modal-title"><h2 id="productAnalysisModalTitle">Chi tiết sản phẩm</h2><span id="productAnalysisModalMeta"></span></div><button id="productAnalysisModalClose" class="modal-close" type="button" aria-label="Đóng">&times;</button></header>
+        <div id="productAnalysisModalBody" class="modal-body"></div>
+      </section>
+    </div>
     <div id="adminModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
       <section class="modal admin-modal">
         <header class="modal-header">
@@ -603,6 +666,8 @@
       var financeDonutChart = null;
       var contentKocProductChart = null;
       var currentContentKocData = null;
+      var productTrafficChart = null;
+      var currentProductAnalysisData = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
@@ -610,12 +675,13 @@
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
-        (['ads', 'revenue', 'operations', 'finance', 'content-koc'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
+        (['ads', 'revenue', 'operations', 'finance', 'content-koc', 'product-analysis'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
       var loadedRevenueScope = '';
       var loadedOperationsScope = '';
       var loadedFinanceScope = '';
       var loadedContentKocScope = '';
+      var loadedProductAnalysisScope = '';
       var videoHoverLinePlugin = {
         id: 'videoHoverLine',
         afterDraw: function (chart) {
@@ -715,10 +781,12 @@
         loadedOperationsScope = '';
         loadedFinanceScope = '';
         loadedContentKocScope = '';
+        loadedProductAnalysisScope = '';
         if (activeReportView === 'revenue') requestRevenueAnalysis(true);
         else if (activeReportView === 'operations') requestOperationsAnalysis(true);
         else if (activeReportView === 'finance') requestFinanceAnalysis(true);
         else if (activeReportView === 'content-koc') requestContentKocAnalysis(true);
+        else if (activeReportView === 'product-analysis') requestProductAnalysis(true);
         else requestReport(true);
       });
 
@@ -802,6 +870,9 @@
             loadedOperationsScope = '';
             loadedFinanceScope = '';
             requestContentKocAnalysis(true);
+          } else if (activeReportView === 'product-analysis') {
+            loadedReportScope = ''; loadedRevenueScope = ''; loadedOperationsScope = ''; loadedFinanceScope = ''; loadedContentKocScope = '';
+            requestProductAnalysis(true);
           } else {
             loadedRevenueScope = '';
             loadedOperationsScope = '';
@@ -895,7 +966,7 @@
       }
 
       function setReportView(view, updateUrl) {
-        activeReportView = ['ads', 'revenue', 'operations', 'finance', 'content-koc'].indexOf(view) !== -1 ? view : 'revenue';
+        activeReportView = ['ads', 'revenue', 'operations', 'finance', 'content-koc', 'product-analysis'].indexOf(view) !== -1 ? view : 'revenue';
         if (updateUrl && window.location.pathname !== '/') history.replaceState({ view:activeReportView }, '', '/' + window.location.search);
         document.querySelectorAll('[data-report-view]').forEach(function (tab) {
           var selected = tab.dataset.reportView === activeReportView;
@@ -907,6 +978,7 @@
         document.getElementById('operationsReport').classList.toggle('hidden', activeReportView !== 'operations');
         document.getElementById('financeReport').classList.toggle('hidden', activeReportView !== 'finance');
         document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
+        document.getElementById('productAnalysisReport').classList.toggle('hidden', activeReportView !== 'product-analysis');
         if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
@@ -919,6 +991,10 @@
         } else if (activeReportView === 'content-koc') {
           var contentKocKey = JSON.stringify(reportScope());
           if (loadedContentKocScope !== contentKocKey) requestContentKocAnalysis(false);
+        } else if (activeReportView === 'product-analysis') {
+          var productAnalysisKey = JSON.stringify(reportScope());
+          if (sellerOAuthConnected && loadedProductAnalysisScope !== productAnalysisKey) requestProductAnalysis(false);
+          else if (!sellerOAuthConnected) renderProductAnalysisConnectionRequired();
         } else {
           var adsKey = JSON.stringify(reportScope());
           if (loadedReportScope !== adsKey) requestReport(false);
@@ -992,6 +1068,197 @@
           .withFailureHandler(showError)
           .loadContentKocAnalysis(Object.assign({}, scope, { forceRefresh: force === true }));
       }
+
+      function requestProductAnalysis(force) {
+        if (button.disabled || !sellerOAuthConnected) {
+          if (!sellerOAuthConnected) renderProductAnalysisConnectionRequired();
+          return;
+        }
+        var scope = reportScope();
+        var key = JSON.stringify(scope);
+        if (!force && loadedProductAnalysisScope === key) return;
+        if (!currentProductAnalysisData) renderProductAnalysisSkeleton();
+        setLoading(true); hideError();
+        google.script.run
+          .withSuccessHandler(function (data) {
+            setLoading(false); loadedProductAnalysisScope = key; renderProductAnalysis(data);
+          })
+          .withFailureHandler(function (error) {
+            setLoading(false); renderProductAnalysisError(error);
+          })
+          .loadProductAnalysis(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function productAnalysisMetric(labelText, valueText, current, previous, inverse) {
+        var box = document.createElement('div'); box.className = 'metric';
+        var label = document.createElement('span'); label.textContent = labelText;
+        var value = document.createElement('strong'); value.textContent = valueText;
+        box.append(label, value);
+        var change = document.createElement('span');
+        change.className = 'metric-change neutral';
+        var delta = productAnalysisDelta(current, previous);
+        if (delta == null) change.textContent = 'Không có dữ liệu kỳ trước';
+        else {
+          var improved = inverse ? delta < 0 : delta > 0;
+          change.className = 'metric-change ' + (Math.abs(delta) < .00005 ? 'neutral' : improved ? 'good' : 'bad');
+          change.textContent = (delta >= 0 ? '↑ ' : '↓ ') + new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(Math.abs(delta) * 100) + '% so với kỳ trước';
+        }
+        box.appendChild(change); return box;
+      }
+
+      function productAnalysisDelta(current, previous) {
+        current = Number(current || 0); previous = Number(previous || 0);
+        return previous === 0 ? null : (current - previous) / Math.abs(previous);
+      }
+
+      function renderProductAnalysisSkeleton() {
+        var summary = document.getElementById('productAnalysisSummary'); summary.replaceChildren();
+        ['Số lượng khách hàng ước tính','Lượt hiển thị sản phẩm','Lượt nhấp vào sản phẩm','CTR'].forEach(function (labelText) {
+          var box = document.createElement('div'); box.className = 'metric';
+          var label = document.createElement('span'); label.textContent = labelText;
+          var value = document.createElement('div'); value.className = 'product-analysis-skeleton'; value.style.width = '46%'; value.style.height = '30px';
+          var change = document.createElement('div'); change.className = 'product-analysis-skeleton'; change.style.width = '68%'; change.style.marginTop = '12px';
+          box.append(label, value, change); summary.appendChild(box);
+        });
+        var funnel = document.getElementById('productTrafficFunnel'); funnel.replaceChildren();
+        var state = document.createElement('div'); state.className = 'product-analysis-state'; state.style.gridColumn = '1 / -1'; state.innerHTML = '<div><strong>Đang tải dữ liệu sản phẩm</strong><span>Khung báo cáo sẽ tự cập nhật khi dữ liệu sẵn sàng.</span></div>'; funnel.appendChild(state);
+        var body = document.getElementById('productPerformanceRows'); body.replaceChildren();
+        for (var index = 0; index < 4; index += 1) { var row = document.createElement('tr'); for (var cellIndex = 0; cellIndex < 12; cellIndex += 1) { var cell = document.createElement('td'); var line = document.createElement('div'); line.className = 'product-analysis-skeleton'; line.style.width = cellIndex ? '74px' : '170px'; cell.appendChild(line); row.appendChild(cell); } body.appendChild(row); }
+        document.getElementById('productAnalysisEmpty').classList.add('hidden');
+      }
+
+      function renderProductAnalysisConnectionRequired() {
+        renderProductAnalysisUnavailableSummary();
+        document.getElementById('productPerformanceRows').replaceChildren();
+        document.getElementById('productAnalysisEmpty').classList.add('hidden');
+        var state = document.createElement('div'); state.className = 'product-analysis-state'; state.style.gridColumn = '1 / -1';
+        state.innerHTML = '<div><strong>Cần kết nối TikTok Shop Seller</strong><span>Mở Quản trị và kết nối Seller để đọc Shop Analytics.</span></div>';
+        document.getElementById('productTrafficFunnel').replaceChildren(state);
+      }
+
+      function renderProductAnalysisError(error) {
+        var message = error && error.message ? error.message : String(error);
+        renderProductAnalysisUnavailableSummary();
+        var state = document.createElement('div'); state.className = 'product-analysis-state'; state.style.gridColumn = '1 / -1';
+        var content = document.createElement('div'); var title = document.createElement('strong'); title.textContent = 'Không tải được dữ liệu sản phẩm';
+        var detail = document.createElement('span'); detail.textContent = message; content.append(title, detail); state.appendChild(content);
+        document.getElementById('productTrafficFunnel').replaceChildren(state);
+        document.getElementById('productPerformanceRows').replaceChildren();
+        var empty = document.getElementById('productAnalysisEmpty'); empty.textContent = message; empty.classList.remove('hidden');
+      }
+
+      function renderProductAnalysisUnavailableSummary() {
+        document.getElementById('productAnalysisSummary').replaceChildren(
+          productAnalysisMetric('Số lượng khách hàng ước tính', '-', 0, 0),
+          productAnalysisMetric('Lượt hiển thị sản phẩm', '-', 0, 0),
+          productAnalysisMetric('Lượt nhấp vào sản phẩm', '-', 0, 0),
+          productAnalysisMetric('CTR', '-', 0, 0)
+        );
+      }
+
+      function renderProductAnalysis(data) {
+        currentProductAnalysisData = data || {};
+        var current = (data.current || {}).total || {}; var previous = (data.previous || {}).total || {};
+        document.getElementById('productAnalysisSummary').replaceChildren(
+          productAnalysisMetric('Số lượng khách hàng ước tính', integer(current.estimatedCustomers || 0), current.estimatedCustomers, previous.estimatedCustomers),
+          productAnalysisMetric('Lượt hiển thị sản phẩm', integer(current.impressions || 0), current.impressions, previous.impressions),
+          productAnalysisMetric('Lượt nhấp vào sản phẩm', integer(current.clicks || 0), current.clicks, previous.clicks),
+          productAnalysisMetric('CTR', percent(current.ctr), current.ctr, previous.ctr)
+        );
+        var warnings = (data.warnings || []).slice();
+        if (data.latestAvailableDate) warnings.push('Dữ liệu TikTok Shop mới nhất: ' + data.latestAvailableDate + '.');
+        var warning = document.getElementById('productAnalysisWarnings'); warning.textContent = warnings.join(' '); warning.classList.toggle('hidden', !warnings.length);
+        renderProductTrafficChart(data.daily || []);
+        renderProductTrafficFunnel(current);
+        renderProductPerformanceTable(data);
+      }
+
+      function renderProductTrafficChart(daily) {
+        if (productTrafficChart) productTrafficChart.destroy();
+        var canvas = document.getElementById('productTrafficChart');
+        if (typeof Chart === 'undefined') return;
+        productTrafficChart = new Chart(canvas, { type:'line', data:{ labels:daily.map(function (point) { return new Intl.DateTimeFormat('vi-VN',{day:'2-digit',month:'2-digit'}).format(new Date(point.date+'T00:00:00Z')); }), datasets:[
+          { label:'Lượt nhấp vào sản phẩm', data:daily.map(function(point){return Number(point.clicks||0);}), borderColor:'#0ea5a4', backgroundColor:'#0ea5a4', yAxisID:'clicks', borderWidth:2, pointRadius:2, pointHoverRadius:3, tension:.2 },
+          { label:'CTR', data:daily.map(function(point){return point.ctr == null ? null : Number(point.ctr);}), borderColor:'#2563eb', backgroundColor:'#2563eb', yAxisID:'ctr', borderWidth:2, pointRadius:2, pointHoverRadius:3, tension:.2 }
+        ]}, options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{position:'top',align:'start'},tooltip:{callbacks:{label:function(context){return context.datasetIndex===1?' CTR: '+percent(context.raw):' Lượt nhấp: '+integer(context.raw);}}}}, scales:{x:{grid:{display:false}},clicks:{type:'linear',position:'left',beginAtZero:true,ticks:{callback:compactNumber}},ctr:{type:'linear',position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{callback:function(value){return percent(value);}}}} } });
+      }
+
+      function renderProductTrafficFunnel(metrics) {
+        var funnel = document.getElementById('productTrafficFunnel'); funnel.replaceChildren();
+        var rows = [
+          { rate:'', label:'Lượt hiển thị sản phẩm', value:metrics.impressions || 0 },
+          { rate:'CTR', rateValue:metrics.ctr, label:'Lượt nhấp vào sản phẩm', value:metrics.clicks || 0 },
+          { rate:'CTOR', rateValue:metrics.ctor, label:'Đơn hàng SKU', value:metrics.skuOrders || 0 }
+        ];
+        rows.forEach(function (item, index) {
+          var rateBox = document.createElement('div'); rateBox.className = 'product-funnel-rate';
+          if (item.rate) { rateBox.textContent = item.rate; var rateValue = document.createElement('strong'); rateValue.textContent = percent(item.rateValue); rateBox.appendChild(rateValue); }
+          var step = document.createElement('div'); step.className = 'product-funnel-step product-funnel-step-' + (index + 1);
+          var label = document.createElement('span'); label.textContent = item.label; var value = document.createElement('strong'); value.textContent = integer(item.value); step.append(label, value);
+          funnel.append(rateBox, step);
+        });
+      }
+
+      var productAnalysisChannels = [
+        { key:'affiliate', label:'Liên kết' }, { key:'sellerProductCard', label:'Thẻ sản phẩm của người bán' },
+        { key:'sellerVideo', label:'Video của người bán' }, { key:'sellerLive', label:'Buổi LIVE của người bán' }
+      ];
+      var productAnalysisFields = [
+        {key:'gmv',format:function(value){return compactMoney(value||0);},share:true}, {key:'orders',format:integer,share:true},
+        {key:'skuOrders',format:integer,share:true}, {key:'soldItems',format:integer,share:true},
+        {key:'aov',format:function(value){return value==null?'-':compactMoney(value);}}, {key:'impressions',format:integer,share:true},
+        {key:'clicks',format:integer,share:true}, {key:'ctr',format:percent}, {key:'addCartCount',format:integer,share:true},
+        {key:'addCartRate',format:percent}, {key:'ctor',format:percent}
+      ];
+
+      function productAnalysisValueCell(value, previous, total, field) {
+        var cell = document.createElement('td'); cell.className = 'product-analysis-cell';
+        var main = document.createElement('strong'); main.textContent = field.format(value); cell.appendChild(main);
+        if (field.share && Number(total || 0) > 0) { var share = document.createElement('small'); share.textContent = 'Đóng góp ' + percent(Number(value || 0) / Number(total)); cell.appendChild(share); }
+        var delta = productAnalysisDelta(value, previous); var change = document.createElement('small');
+        if (delta == null) { change.textContent = 'Không có dữ liệu kỳ trước'; }
+        else { change.className = delta > 0 ? 'good' : delta < 0 ? 'bad' : ''; change.textContent = (delta >= 0 ? '↑ ' : '↓ ') + new Intl.NumberFormat('vi-VN',{maximumFractionDigits:2}).format(Math.abs(delta)*100) + '%'; }
+        cell.appendChild(change); return cell;
+      }
+
+      function renderProductPerformanceTable(data) {
+        var body = document.getElementById('productPerformanceRows'); body.replaceChildren();
+        var current = data.current || {}; var previous = data.previous || {}; var total = current.total || {};
+        productAnalysisChannels.forEach(function (channel) {
+          var metrics = (current.channels || {})[channel.key] || {}; var previousMetrics = (previous.channels || {})[channel.key] || {};
+          var row = document.createElement('tr'); var nameCell = document.createElement('td');
+          var buttonElement = document.createElement('button'); buttonElement.type = 'button'; buttonElement.className = 'product-analysis-channel'; buttonElement.textContent = channel.label;
+          buttonElement.addEventListener('click', function () { openProductAnalysisModal(channel.key, channel.label); });
+          var contribution = document.createElement('small'); contribution.style.display = 'block'; contribution.style.marginTop = '3px'; contribution.style.color = 'var(--text-muted)';
+          contribution.textContent = Number(total.gmv || 0) > 0 ? 'Đóng góp ' + percent(Number(metrics.gmv || 0) / Number(total.gmv)) : 'Đóng góp 0%';
+          nameCell.append(buttonElement, contribution); row.appendChild(nameCell);
+          productAnalysisFields.forEach(function (field) { row.appendChild(productAnalysisValueCell(metrics[field.key], previousMetrics[field.key], total[field.key], field)); });
+          body.appendChild(row);
+        });
+        var hasData = Number(total.impressions || 0) > 0 || Number(total.clicks || 0) > 0 || Number(total.gmv || 0) > 0;
+        var empty = document.getElementById('productAnalysisEmpty'); empty.textContent = 'Không có dữ liệu sản phẩm trong khoảng ngày đã chọn.'; empty.classList.toggle('hidden', hasData);
+      }
+
+      function openProductAnalysisModal(channelKey, labelText) {
+        var modal = document.getElementById('productAnalysisModal'); var body = document.getElementById('productAnalysisModalBody'); body.replaceChildren();
+        document.getElementById('productAnalysisModalTitle').textContent = labelText;
+        var data = currentProductAnalysisData || {}; var products = ((data.current || {}).products || []).filter(function (product) { return Number(((product.channels || {})[channelKey] || {}).impressions || 0) > 0; }).sort(function (left,right) { return Number(((right.channels||{})[channelKey]||{}).gmv||0)-Number(((left.channels||{})[channelKey]||{}).gmv||0); });
+        document.getElementById('productAnalysisModalMeta').textContent = integer(products.length) + ' sản phẩm có lượt hiển thị trong kênh';
+        if (!products.length) { var empty = document.createElement('div'); empty.className='product-analysis-state'; empty.innerHTML='<div><strong>Chưa có sản phẩm</strong><span>Không có sản phẩm phát sinh lượt hiển thị trong kênh này.</span></div>'; body.appendChild(empty); }
+        else {
+          var wrap=document.createElement('div');wrap.className='table-wrap';var table=document.createElement('table');table.className='product-analysis-table';var head=document.createElement('thead');var headRow=document.createElement('tr');
+          ['Sản phẩm','GMV','Đơn hàng','Đơn hàng SKU','Số món bán ra','AOV','Lượt hiển thị sản phẩm','Lượt nhấp vào sản phẩm','CTR','Số lượt thêm vào giỏ','Tỷ lệ thêm vào giỏ','CTOR'].forEach(function(label){var th=document.createElement('th');th.textContent=label;headRow.appendChild(th);});head.appendChild(headRow);table.appendChild(head);var tableBody=document.createElement('tbody');
+          products.forEach(function(product){var row=document.createElement('tr');var productCell=document.createElement('td');var productBox=document.createElement('div');productBox.className='product-analysis-product';
+            if(product.imageUrl){var image=document.createElement('img');image.src=product.imageUrl;image.alt='';image.loading='lazy';image.addEventListener('error',function(){var fallback=document.createElement('span');fallback.className='product-analysis-thumb';fallback.textContent='SP';image.replaceWith(fallback);});productBox.appendChild(image);}else{var fallback=document.createElement('span');fallback.className='product-analysis-thumb';fallback.textContent='SP';productBox.appendChild(fallback);}
+            var copy=document.createElement('div');var title=document.createElement('strong');title.textContent=product.title;var meta=document.createElement('small');meta.textContent='ID: '+product.id;copy.append(title,meta);productBox.appendChild(copy);productCell.appendChild(productBox);row.appendChild(productCell);var metrics=(product.channels||{})[channelKey]||{};
+            productAnalysisFields.forEach(function(field){var cell=document.createElement('td');cell.textContent=field.format(metrics[field.key]);row.appendChild(cell);});tableBody.appendChild(row);});table.appendChild(tableBody);wrap.appendChild(table);body.appendChild(wrap);
+        }
+        modal.classList.remove('hidden'); document.body.classList.add('modal-open');
+      }
+
+      function closeProductAnalysisModal() { document.getElementById('productAnalysisModal').classList.add('hidden'); syncModalOpenState(); }
+      document.getElementById('productAnalysisModalClose').addEventListener('click', closeProductAnalysisModal);
+      document.getElementById('productAnalysisModal').addEventListener('click', function(event){if(event.target===event.currentTarget)closeProductAnalysisModal();});
 
       function contentKocMetric(labelText, valueText, className) {
         var box = document.createElement('div'); box.className = 'metric metric-' + className;
@@ -2127,6 +2394,7 @@
         if (event.key === 'Escape') {
           closeCreativeModal();
           closeVideoStatsModal();
+          closeProductAnalysisModal();
           closeAdminModals();
           return;
         }
@@ -2370,7 +2638,7 @@
       }
 
       function syncModalOpenState() {
-        var hasOpenModal = ['creativeModal', 'videoStatsModal', 'adminAuthModal', 'adminModal']
+        var hasOpenModal = ['creativeModal', 'videoStatsModal', 'productAnalysisModal', 'adminAuthModal', 'adminModal']
           .some(function (id) { return !document.getElementById(id).classList.contains('hidden'); });
         document.body.classList.toggle('modal-open', hasOpenModal);
       }
