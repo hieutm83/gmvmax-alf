@@ -38,6 +38,9 @@
         return { ok: false, error: 'Phản hồi API không hợp lệ.' };
       }).then(function (payload) {
         if (!response.ok || payload.ok === false) {
+          if (response.status === 401) {
+            window.location.replace('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search));
+          }
           throw new Error(payload.error || ('HTTP ' + response.status));
         }
         return payload.data;

@@ -12,6 +12,9 @@ export interface Env {
   TIMEZONE: string;
   PUBLIC_BASE_URL: string;
   ADMIN_PASSWORD: string;
+  DASHBOARD_CEO_PASSWORD?: string;
+  DASHBOARD_CONTENT_PASSWORD?: string;
+  DASHBOARD_SESSION_SECRET?: string;
   TOKEN_ENCRYPTION_KEY: string;
   ZALO_BOT_TOKEN?: string;
   ZALO_GROUP_CHAT_ID?: string;

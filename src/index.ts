@@ -12,6 +12,9 @@ import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZ
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { monitorOrderBot, ORDER_BOT_SLOTS, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
+import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
+  createDashboardSession, dashboardRoleForPassword, dashboardSessionCookie, dashboardSessionFromRequest,
+  recordDashboardLoginFailure, type DashboardRole, type DashboardSession } from './dashboard-auth';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
 function validateScope(input: any): any {
@@ -28,13 +31,15 @@ function validateSellerScope(input: any): any {
   };
 }
 
-async function routeApi(request: Request, env: Env, url: URL): Promise<Response> {
+async function routeApi(request: Request, env: Env, url: URL, session: DashboardSession): Promise<Response> {
+  assertDashboardApiAccess(session.role, url.pathname, request.method);
   if (request.method === 'GET' && url.pathname === '/api/state') {
     const tokens=await readTokens(env);let advertisers:any[]=[];let connectionError:string|undefined;
     if(tokens){try{advertisers=await listAdvertisers(env,await createSession(env));}catch(error){connectionError=error instanceof Error?error.message:String(error);}}
     const today=dateInTimezone(new Date(),env.TIMEZONE);return ok({connected:Boolean(tokens),startDate:today,endDate:today,
       adsOAuth:{connected:Boolean(tokens),expiresAt:tokens?.expiresAt||null,scope:tokens?.scope||env.MCP_SCOPE,storage:'Encrypted D1'},
       sellerOAuth:await sellerOAuthState(env),
+      dashboardRole:session.role,
       defaultAdvertiserId:env.DEFAULT_ADVERTISER_ID,defaultStoreCode:env.DEFAULT_STORE_CODE,advertisers,connectionError});
   }
   if(request.method==='GET'&&url.pathname==='/api/oauth/connect')return ok(await createAuthorizationUrl(env,url.origin));
@@ -44,7 +49,10 @@ async function routeApi(request: Request, env: Env, url: URL): Promise<Response>
   if(request.method==='POST'&&url.pathname==='/api/admin/verify'){const value=await readJson<any>(request);return ok(String(value||'')===env.ADMIN_PASSWORD);}
   if(request.method==='POST'&&url.pathname==='/api/stores'){const advertiserId=validateId(await readJson<any>(request),'Advertiser ID');return ok(await listStores(env,await createSession(env),advertiserId));}
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
-  const input=await readJson<any>(request);
+  const rawInput=await readJson<any>(request);
+  const input=session.role==='content'
+    ? {...rawInput,startDate:dateInTimezone(new Date(),env.TIMEZONE),endDate:dateInTimezone(new Date(),env.TIMEZONE)}
+    : rawInput;
   if(url.pathname==='/api/report'){
     const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
     const report=await loadMainReport(env,scope,input.forceRefresh===true);
@@ -183,6 +191,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
 
 async function assetResponse(request:Request,env:Env):Promise<Response>{
   const assetUrl=new URL(request.url);
+  if(assetUrl.pathname==='/login')assetUrl.pathname='/login.html';
   const reportPaths=new Set(['/doanh-thu','/quang-cao','/hoan-huy-logistics','/tai-chinh','/content-koc']);
   if(reportPaths.has(assetUrl.pathname)){assetUrl.pathname='/';return Response.redirect(assetUrl.toString(),302);}
   const isHtml=assetUrl.pathname==='/'||assetUrl.pathname.endsWith('.html');
@@ -192,6 +201,36 @@ async function assetResponse(request:Request,env:Env):Promise<Response>{
   if(isHtml){headers.set('Content-Type','text/html; charset=UTF-8');headers.set('Cache-Control','no-store');}
   if(assetUrl.pathname.endsWith('.js'))headers.set('Content-Type','application/javascript; charset=UTF-8');
   return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+
+async function dashboardLogin(request:Request,env:Env):Promise<Response>{
+  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
+  const fingerprint=await assertDashboardLoginAllowed(request,env);
+  const input=await readJson<{password?:string}>(request);
+  const role=await dashboardRoleForPassword(env,String(input?.password||''));
+  if(!role){await recordDashboardLoginFailure(env,fingerprint);throw new HttpError(401,'Mã khóa không đúng.');}
+  await clearDashboardLoginFailures(env,fingerprint);
+  const token=await createDashboardSession(env,role);
+  return new Response(JSON.stringify({ok:true,data:{role}}),{status:200,headers:{
+    'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+    'Set-Cookie':dashboardSessionCookie(token)
+  }});
+}
+
+function dashboardLogout():Response{
+  return new Response(JSON.stringify({ok:true}),{status:200,headers:{
+    'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':clearDashboardSessionCookie()
+  }});
+}
+
+function dashboardLoginRedirect(url:URL):Response{
+  const login=new URL('/login',url.origin);
+  login.searchParams.set('next',`${url.pathname}${url.search}`);
+  return Response.redirect(login.toString(),302);
+}
+
+function requireAdminRole(role:DashboardRole):void{
+  if(role!=='admin')throw new HttpError(403,'Chỉ quản trị viên được thực hiện thao tác này.');
 }
 
 async function operationsBotWebhook(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
@@ -226,20 +265,31 @@ export default {
   async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
     const url=new URL(request.url);
     try{
-      if(url.pathname==='/auth/connect'&&request.method==='GET')return Response.redirect(await createAuthorizationUrl(env,url.origin),302);
-      if(url.pathname==='/auth/callback'){
-        if(url.searchParams.has('app_key'))return handleSellerOAuthCallback(env,url);
-        return handleOAuthCallback(env,url);
-      }
-      if(url.pathname==='/oauth/callback')return handleOAuthCallback(env,url);
-      if(url.pathname==='/seller/auth/connect'&&request.method==='GET')return Response.redirect(await createSellerAuthorizationUrl(env),302);
-      if(url.pathname==='/seller/auth/callback'&&request.method==='GET')return handleSellerOAuthCallback(env,url);
       if(url.pathname==='/tiktok/webhook')return await tiktokShopWebhook(request,env);
       if(url.pathname==='/webhooks/zalo-operations'&&request.method==='POST')return operationsBotWebhook(request,env,ctx);
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
       const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
       if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);
-      if(url.pathname.startsWith('/api/'))return await routeApi(request,env,url);
+      if(url.pathname==='/auth/login')return dashboardLogin(request,env);
+      if(url.pathname==='/login'&&request.method==='GET')return assetResponse(request,env);
+      if(url.pathname==='/FAVICON.png'&&request.method==='GET')return assetResponse(request,env);
+
+      const session=await dashboardSessionFromRequest(request,env);
+      if(!session){
+        if(url.pathname.startsWith('/api/')||request.method!=='GET')throw new HttpError(401,'Phiên đăng nhập đã hết hạn.');
+        return dashboardLoginRedirect(url);
+      }
+      if(url.pathname==='/auth/logout')return dashboardLogout();
+      if(url.pathname==='/auth/connect'&&request.method==='GET'){requireAdminRole(session.role);return Response.redirect(await createAuthorizationUrl(env,url.origin),302);}
+      if(url.pathname==='/auth/callback'){
+        requireAdminRole(session.role);
+        if(url.searchParams.has('app_key'))return handleSellerOAuthCallback(env,url);
+        return handleOAuthCallback(env,url);
+      }
+      if(url.pathname==='/oauth/callback'){requireAdminRole(session.role);return handleOAuthCallback(env,url);}
+      if(url.pathname==='/seller/auth/connect'&&request.method==='GET'){requireAdminRole(session.role);return Response.redirect(await createSellerAuthorizationUrl(env),302);}
+      if(url.pathname==='/seller/auth/callback'&&request.method==='GET'){requireAdminRole(session.role);return handleSellerOAuthCallback(env,url);}
+      if(url.pathname.startsWith('/api/'))return await routeApi(request,env,url,session);
       return assetResponse(request,env);
     }catch(error){const status=error instanceof HttpError?error.status:500;return json({ok:false,error:error instanceof Error?error.message:String(error)},status);}
   },

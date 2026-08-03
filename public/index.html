@@ -23,8 +23,13 @@
       *, *::before, *::after { box-sizing: border-box; }
       body, button, input, select { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       body { min-width: 320px; margin: 0; color: var(--text); background: var(--background); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-      body > header { position: sticky; top: 0; z-index: 30; padding: 16px 24px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--border); backdrop-filter: blur(18px); }
+      body > header { position: sticky; top: 0; z-index: 30; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 24px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--border); backdrop-filter: blur(18px); }
       h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0; }
+      .session-actions { display:flex; align-items:center; gap:10px; }
+      .session-role { color:var(--text-muted); font-size:11px; font-weight:700; text-transform:uppercase; }
+      .session-logout { min-height:34px; padding:0 12px; color:var(--text-secondary); background:var(--surface); border-color:var(--border); font-size:12px; }
+      .session-logout:hover { color:var(--primary); background:var(--primary-soft); border-color:#bfdbfe; }
+      .role-date-locked { pointer-events:none; opacity:.65; }
       main { width: min(1400px, 100%); margin: 0 auto; padding: 24px; }
       .toolbar { display: grid; grid-template-columns: minmax(260px, 1.65fr) minmax(170px, .9fr) 132px 132px max-content minmax(190px, .8fr); align-items: end; gap: 14px; margin-bottom: 24px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
       .toolbar .account-field { min-width: 0; }
@@ -404,7 +409,7 @@
     </style>
   </head>
   <body>
-    <header><h1>TikTok Report</h1></header>
+    <header><h1>TikTok Report</h1><div class="session-actions"><span id="sessionRole" class="session-role"></span><button id="logoutButton" class="session-logout" type="button">Đăng xuất</button></div></header>
     <main>
       <div id="connectPanel" class="notice hidden">
         <span id="connectMessage">Kết nối tài khoản TikTok for Business để đọc báo cáo.</span>
@@ -685,6 +690,7 @@
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
       var currentFinanceData = null;
+      var dashboardRole = '';
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
@@ -729,6 +735,8 @@
       var defaultStoreCode = 'VNLC33LWAS';
 
       google.script.run.withSuccessHandler(function (state) {
+        dashboardRole = state.dashboardRole || 'content';
+        applyDashboardRole();
         document.getElementById('startDate').value = state.startDate;
         document.getElementById('endDate').value = state.endDate;
         defaultAdvertiserId = state.defaultAdvertiserId || defaultAdvertiserId;
@@ -742,10 +750,31 @@
           setAdvertisers(state.advertisers);
           if (state.advertisers.length) loadStores();
           else showError({ message: 'Không tìm thấy tài khoản quảng cáo được cấp quyền.' });
-        } else {
+        } else if (dashboardRole === 'admin') {
           prepareConnectLink();
+        } else {
+          document.getElementById('connectMessage').textContent = 'TikTok Ads chưa được kết nối. Vui lòng liên hệ quản trị viên.';
+          document.getElementById('connectButton').classList.add('hidden');
         }
       }).getInitialState();
+
+      function dashboardAllowedViews() {
+        return dashboardRole === 'content' ? ['revenue','ads','content-koc'] : ['revenue','ads','operations','finance','content-koc','product-analysis'];
+      }
+
+      function applyDashboardRole() {
+        var allowed = dashboardAllowedViews();
+        document.querySelectorAll('[data-report-view]').forEach(function(tab){tab.classList.toggle('hidden',allowed.indexOf(tab.dataset.reportView)===-1);});
+        if (allowed.indexOf(activeReportView) === -1) activeReportView = allowed[0];
+        var contentLocked = dashboardRole === 'content';
+        ['startDate','endDate'].forEach(function(id){var field=document.getElementById(id);field.readOnly=contentLocked;field.classList.toggle('role-date-locked',contentLocked);field.setAttribute('aria-readonly',String(contentLocked));});
+        document.getElementById('sessionRole').textContent = dashboardRole === 'admin' ? 'Admin' : dashboardRole === 'ceo' ? 'CEO' : 'Content';
+        document.getElementById('sellerConnectButton').classList.toggle('hidden', dashboardRole !== 'admin');
+      }
+
+      document.getElementById('logoutButton').addEventListener('click',function(){
+        fetch('/auth/logout',{method:'POST'}).finally(function(){location.replace('/login');});
+      });
 
       function renderRevenueOAuthState(oauth) {
         sellerOAuthConfigured = Boolean(oauth && oauth.configured);
@@ -795,6 +824,7 @@
         }
         connect.classList.remove('disabled');
         connect.setAttribute('aria-disabled', 'false');
+        connect.classList.toggle('hidden', dashboardRole !== 'admin');
         document.getElementById('sellerConnectRequired').classList.toggle('hidden', sellerOAuthConnected);
         document.getElementById('revenueContent').classList.toggle('hidden', !sellerOAuthConnected);
       }
@@ -823,6 +853,7 @@
       });
 
       function openAdminAuthModal() {
+        if (dashboardRole !== 'admin') return;
         document.getElementById('adminAuthError').textContent = '';
         document.getElementById('adminPassword').value = '';
         document.getElementById('adminAuthModal').classList.remove('hidden');
@@ -991,7 +1022,8 @@
       }
 
       function setReportView(view, updateUrl) {
-        activeReportView = ['ads', 'revenue', 'operations', 'finance', 'content-koc', 'product-analysis'].indexOf(view) !== -1 ? view : 'revenue';
+        var allowedViews = dashboardAllowedViews();
+        activeReportView = allowedViews.indexOf(view) !== -1 ? view : allowedViews[0];
         if (updateUrl && window.location.pathname !== '/') history.replaceState({ view:activeReportView }, '', '/' + window.location.search);
         document.querySelectorAll('[data-report-view]').forEach(function (tab) {
           var selected = tab.dataset.reportView === activeReportView;
@@ -2450,7 +2482,7 @@
         }
         var target = event.target;
         var isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
-        if (!isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'i') {
+        if (dashboardRole === 'admin' && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'i') {
           event.preventDefault();
           openAdminAuthModal();
         }
