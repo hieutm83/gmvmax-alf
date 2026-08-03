@@ -1,5 +1,6 @@
 import type { Env, TaskMessage } from './types';
-import { OAuthCoordinator, createAuthorizationUrl, disconnect, getAccessToken, handleOAuthCallback, readTokens } from './oauth';
+import { OAuthCoordinator, createAuthorizationUrl, disconnect, getAccessToken, handleOAuthCallback, keepAccessTokenFresh,
+  oauthConnectionState, readTokens, refreshAccessToken } from './oauth';
 import { createSession, listAdvertisers, listStores, resolveDefaultStoreId } from './mcp';
 import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { backupDate } from './sheets';
@@ -37,13 +38,14 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
     const tokens=await readTokens(env);let advertisers:any[]=[];let connectionError:string|undefined;
     if(tokens){try{advertisers=await listAdvertisers(env,await createSession(env));}catch(error){connectionError=error instanceof Error?error.message:String(error);}}
     const today=dateInTimezone(new Date(),env.TIMEZONE);return ok({connected:Boolean(tokens),startDate:today,endDate:today,
-      adsOAuth:{connected:Boolean(tokens),expiresAt:tokens?.expiresAt||null,scope:tokens?.scope||env.MCP_SCOPE,storage:'Encrypted D1'},
+      adsOAuth:oauthConnectionState(tokens,env.MCP_SCOPE),
       sellerOAuth:await sellerOAuthState(env),
       dashboardRole:session.role,
       defaultAdvertiserId:env.DEFAULT_ADVERTISER_ID,defaultStoreCode:env.DEFAULT_STORE_CODE,advertisers,connectionError});
   }
   if(request.method==='GET'&&url.pathname==='/api/oauth/connect')return ok(await createAuthorizationUrl(env,url.origin));
   if(request.method==='GET'&&url.pathname==='/api/finance-sku-cost')return ok(await loadSkuUnitCosts(env));
+  if(request.method==='POST'&&url.pathname==='/api/oauth/refresh')return ok(await refreshAccessToken(env));
   if(request.method==='POST'&&url.pathname==='/api/oauth/disconnect'){await disconnect(env);return ok(true);}
   if(request.method==='POST'&&url.pathname==='/api/seller/disconnect'){await disconnectSeller(env);return ok(true);}
   if(request.method==='POST'&&url.pathname==='/api/admin/verify'){const value=await readJson<any>(request);return ok(String(value||'')===env.ADMIN_PASSWORD);}
@@ -299,6 +301,8 @@ export default {
     const localParts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:env.TIMEZONE,hour:'2-digit',minute:'2-digit',hour12:false})
       .formatToParts(now).map((part)=>[part.type,part.value]));
     const localMinute=Number(localParts.minute);const slotTime=`${String(localHour).padStart(2,'0')}:${String(localMinute).padStart(2,'0')}`;
+    if(localMinute%15===0)ctx.waitUntil(keepAccessTokenFresh(env).catch((error)=>
+      console.error('TikTok Ads MCP proactive token refresh failed',error instanceof Error?error.message:String(error))));
     ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&ORDER_BOT_SLOTS[slotTime])
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',reportDate:localDate,reportTime:slotTime}));

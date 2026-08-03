@@ -3,6 +3,7 @@
 
   var routes = {
     getInitialState: ['GET', '/api/state'],
+    refreshTikTokToken: ['POST', '/api/oauth/refresh'],
     disconnectTikTok: ['POST', '/api/oauth/disconnect'],
     verifyAdminPassword: ['POST', '/api/admin/verify'],
     getGmvMaxStores: ['POST', '/api/stores'],

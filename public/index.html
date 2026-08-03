@@ -286,6 +286,13 @@
       .revenue-auth .button { min-height: 38px; flex: 0 0 auto; color: var(--primary); background: var(--surface); border-color: var(--border); font-size: 12px; }
       .revenue-auth .button:hover { color: #fff; background: var(--primary); border-color: var(--primary); }
       .revenue-auth .button.disabled { pointer-events: none; color: var(--text-muted); background: var(--surface-muted); opacity: .7; }
+      .revenue-auth.oauth-warning { border-left-color: #f59e0b; }
+      .revenue-auth.oauth-warning .revenue-auth-dot { background: #f59e0b; box-shadow: 0 0 0 4px #fef3c7; }
+      .revenue-auth.oauth-danger { border-left-color: var(--danger); }
+      .revenue-auth.oauth-danger .revenue-auth-dot { background: var(--danger); box-shadow: 0 0 0 4px #fee2e2; }
+      .oauth-card-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+      .oauth-card-actions .button { padding: 0 12px; }
+      .oauth-card-actions .button[disabled] { pointer-events: none; opacity: .6; }
       .seller-required { min-height: 220px; margin-top: 16px; }
       .analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
       .analytics-panel { min-width: 0; min-height: 340px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
@@ -403,7 +410,7 @@
       @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid { grid-template-columns: 1fr; } }
       @media (max-width: 1250px) { .finance-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } .finance-dual { grid-template-columns:1fr; } }
       @media (max-width: 900px) { .finance-charts { grid-template-columns:1fr; } }
-      @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } }
+      @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } .admin-body .revenue-auth { align-items:flex-start; flex-direction:column; } .oauth-card-actions { width:100%; justify-content:flex-start; } }
       @media (max-width:720px) { .product-analysis-funnel { grid-template-columns:76px 42px minmax(240px,1fr); gap:8px 0; justify-content:start; overflow:auto; } .product-funnel-step { padding:10px 26px; font-size:11px; } .product-funnel-arrow-svg { width:42px; } .product-analysis-chart .analytics-canvas { height:250px; } }
       @media (max-width: 480px) { .finance-summary { grid-template-columns:1fr; } .finance-breakdown summary { align-items:flex-start; flex-wrap:wrap; } .finance-breakdown .finance-amount { min-width:0; margin-left:auto; } .finance-breakdown .finance-children { padding-left:24px; } }
     </style>
@@ -633,7 +640,14 @@
         <div class="admin-body">
           <div class="admin-actions">
             <label class="live-toggle"><input id="autoRefresh" type="checkbox" checked>Tự cập nhật 5 phút</label>
-            <button id="disconnectButton" class="button secondary" type="button">Ngắt kết nối</button>
+          </div>
+          <div id="adsAuthCard" class="revenue-auth">
+            <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="adsAuthTitle">TikTok Ads MCP</strong><span id="adsAuthMeta">Đang kiểm tra kết nối TikTok Ads.</span></div></div>
+            <div class="oauth-card-actions">
+              <button id="adsRefreshButton" class="button secondary" type="button">Làm mới token</button>
+              <a id="adsReconnectButton" class="button" href="/auth/connect" target="_top">Kết nối lại Ads</a>
+              <button id="disconnectButton" class="button secondary" type="button">Ngắt TikTok Ads</button>
+            </div>
           </div>
           <div class="revenue-auth">
             <div class="revenue-auth-copy"><span class="revenue-auth-dot" aria-hidden="true"></span><div><strong id="revenueAuthTitle">TikTok Shop Seller OAuth</strong><span id="revenueAuthMeta">Đang kiểm tra kết nối Seller.</span></div></div>
@@ -689,6 +703,7 @@
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
+      var currentAdsOAuth = null;
       var currentFinanceData = null;
       var dashboardRole = '';
       var initialParams = new URLSearchParams(window.location.search);
@@ -741,6 +756,7 @@
         document.getElementById('endDate').value = state.endDate;
         defaultAdvertiserId = state.defaultAdvertiserId || defaultAdvertiserId;
         defaultStoreCode = state.defaultStoreCode || defaultStoreCode;
+        renderAdsOAuthState(state.adsOAuth || {});
         renderRevenueOAuthState(state.sellerOAuth || {});
         document.getElementById('connectPanel').classList.toggle('hidden', state.connected);
         form.classList.toggle('hidden', !state.connected);
@@ -775,6 +791,39 @@
       document.getElementById('logoutButton').addEventListener('click',function(){
         fetch('/auth/logout',{method:'POST'}).finally(function(){location.replace('/login');});
       });
+
+      function oauthDateTime(value) {
+        return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+      }
+
+      function renderAdsOAuthState(oauth) {
+        currentAdsOAuth = oauth || {};
+        var card = document.getElementById('adsAuthCard');
+        var status = oauth.status || (oauth.connected ? 'connected' : 'disconnected');
+        card.classList.toggle('oauth-warning', status === 'expiring' || status === 'refresh-required');
+        card.classList.toggle('oauth-danger', status === 'expired' || status === 'disconnected');
+        var title = 'Đã kết nối TikTok Ads MCP';
+        if (status === 'disconnected') title = 'Chưa kết nối TikTok Ads MCP';
+        else if (status === 'refresh-required') title = 'Access token TikTok Ads đã hết hạn';
+        else if (status === 'expired') title = 'Kết nối TikTok Ads MCP đã hết hạn';
+        else if (status === 'expiring') title = 'Access token TikTok Ads sắp hết hạn';
+        document.getElementById('adsAuthTitle').textContent = title;
+
+        var detail = oauth.connected ? 'Token được mã hóa và lưu riêng trong Cloudflare D1' : 'Cần ủy quyền TikTok for Business để đọc dữ liệu quảng cáo';
+        if (oauth.expiresAt) detail += ' · access token hết hạn ' + oauthDateTime(oauth.expiresAt);
+        if (oauth.canRefresh) detail += ' · hệ thống tự làm mới trước khi hết hạn';
+        else if (oauth.connected && !oauth.refreshAvailable) detail += ' · chưa có refresh token, cần kết nối lại';
+        if (oauth.refreshExpiresAt) detail += ' · quyền làm mới hết hạn ' + oauthDateTime(oauth.refreshExpiresAt);
+        if (oauth.scope) detail += ' · ' + oauth.scope;
+        document.getElementById('adsAuthMeta').textContent = detail + '.';
+
+        var refresh = document.getElementById('adsRefreshButton');
+        refresh.disabled = !oauth.canRefresh;
+        refresh.title = oauth.canRefresh ? 'Yêu cầu MCP cấp access token mới ngay bây giờ' : 'Không có refresh token hợp lệ; hãy kết nối lại TikTok Ads';
+        var reconnect = document.getElementById('adsReconnectButton');
+        reconnect.textContent = oauth.connected ? 'Ủy quyền lại' : 'Kết nối Ads';
+        document.getElementById('disconnectButton').disabled = !oauth.connected;
+      }
 
       function renderRevenueOAuthState(oauth) {
         sellerOAuthConfigured = Boolean(oauth && oauth.configured);
@@ -850,6 +899,26 @@
       });
       document.getElementById('disconnectButton').addEventListener('click', function () {
         google.script.run.withSuccessHandler(function () { window.top.location.reload(); }).disconnectTikTok();
+      });
+      document.getElementById('adsRefreshButton').addEventListener('click', function () {
+        var refresh = document.getElementById('adsRefreshButton');
+        var original = refresh.textContent;
+        refresh.disabled = true;
+        refresh.textContent = 'Đang làm mới…';
+        google.script.run
+          .withSuccessHandler(function (oauth) {
+            refresh.textContent = original;
+            renderAdsOAuthState(oauth || {});
+          })
+          .withFailureHandler(function (error) {
+            refresh.disabled = false;
+            refresh.textContent = original;
+            var card = document.getElementById('adsAuthCard');
+            card.classList.add('oauth-danger');
+            document.getElementById('adsAuthTitle').textContent = 'Không làm mới được TikTok Ads MCP';
+            document.getElementById('adsAuthMeta').textContent = (error && error.message) || String(error);
+          })
+          .refreshTikTokToken({});
       });
 
       function openAdminAuthModal() {

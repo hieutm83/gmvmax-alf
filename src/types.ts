@@ -59,6 +59,8 @@ export interface OAuthTokenSet {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+  refreshExpiresAt?: number;
+  issuedAt?: number;
   clientId?: string;
   tokenType?: string;
   scope?: string;

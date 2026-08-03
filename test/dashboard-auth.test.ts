@@ -30,6 +30,7 @@ describe('dashboard authentication', () => {
     expect(() => assertDashboardApiAccess('content', '/api/content-koc-analysis', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('content', '/api/finance-analysis', 'POST')).toThrow();
     expect(() => assertDashboardApiAccess('ceo', '/api/finance-analysis', 'POST')).not.toThrow();
+    expect(() => assertDashboardApiAccess('ceo', '/api/oauth/refresh', 'POST')).toThrow();
     expect(() => assertDashboardApiAccess('ceo', '/api/finance-sku-cost', 'POST')).toThrow();
     expect(() => assertDashboardApiAccess('admin', '/api/finance-sku-cost', 'POST')).not.toThrow();
   });

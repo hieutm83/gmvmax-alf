@@ -121,7 +121,7 @@ const CONTENT_API_PATHS = new Set([
   '/api/product-videos', '/api/creative-summaries', '/api/comparison', '/api/video-stats', '/api/video-metadata'
 ]);
 const ADMIN_API_PATHS = new Set([
-  '/api/oauth/connect', '/api/oauth/disconnect', '/api/seller/disconnect', '/api/admin/verify'
+  '/api/oauth/connect', '/api/oauth/refresh', '/api/oauth/disconnect', '/api/seller/disconnect', '/api/admin/verify'
 ]);
 
 export function assertDashboardApiAccess(role: DashboardRole, path: string, method: string): void {

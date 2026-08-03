@@ -4,6 +4,37 @@ import { formEncode, randomBase64Url, sha256Base64Url } from './utils';
 
 const TOKEN_KEY = 'oauth_tokens';
 const CLIENT_KEY = 'oauth_client';
+const ACCESS_TOKEN_EXPIRY_WARNING_MS = 30 * 60_000;
+
+export type OAuthConnectionState = {
+  connected: boolean;
+  status: 'disconnected' | 'connected' | 'expiring' | 'refresh-required' | 'expired';
+  expiresAt: number | null;
+  refreshExpiresAt: number | null;
+  refreshAvailable: boolean;
+  canRefresh: boolean;
+  issuedAt: number | null;
+  scope: string;
+  storage: 'Encrypted D1';
+};
+
+export function oauthConnectionState(tokens: OAuthTokenSet | null, fallbackScope: string,
+  now = Date.now()): OAuthConnectionState {
+  if (!tokens) return { connected: false, status: 'disconnected', expiresAt: null, refreshExpiresAt: null,
+    refreshAvailable: false, canRefresh: false, issuedAt: null, scope: fallbackScope, storage: 'Encrypted D1' };
+  const expiresAt = Number(tokens.expiresAt) || 0;
+  const refreshExpiresAt = Number(tokens.refreshExpiresAt) || 0;
+  const refreshAvailable = Boolean(tokens.refreshToken);
+  const refreshExpired = Boolean(refreshExpiresAt && refreshExpiresAt <= now);
+  const canRefresh = refreshAvailable && !refreshExpired;
+  const accessExpired = Boolean(expiresAt && expiresAt <= now);
+  let status: OAuthConnectionState['status'] = 'connected';
+  if (accessExpired) status = canRefresh ? 'refresh-required' : 'expired';
+  else if (expiresAt && expiresAt - now <= ACCESS_TOKEN_EXPIRY_WARNING_MS) status = 'expiring';
+  return { connected: true, status, expiresAt: expiresAt || null, refreshExpiresAt: refreshExpiresAt || null,
+    refreshAvailable, canRefresh, issuedAt: Number(tokens.issuedAt) || null,
+    scope: tokens.scope || fallbackScope, storage: 'Encrypted D1' };
+}
 
 async function setting(env: Env, key: string): Promise<string | null> {
   const row = await env.DB.prepare('SELECT value FROM app_settings WHERE key = ?').bind(key).first<{ value: string }>();
@@ -87,11 +118,16 @@ export async function handleOAuthCallback(env: Env, url: URL): Promise<Response>
 
 async function saveTokens(env: Env, raw: Record<string, any>, previous?: OAuthTokenSet, clientId?: string): Promise<OAuthTokenSet> {
   if (!raw.access_token) throw new Error('OAuth did not return access_token.');
+  const now = Date.now();
+  const accessTtl = Number(raw.expires_in) || 0;
+  const refreshTtl = Number(raw.refresh_token_expires_in ?? raw.refresh_expires_in ?? raw.refresh_token_expire_in) || 0;
   const tokens: OAuthTokenSet = {
     accessToken: String(raw.access_token), refreshToken: String(raw.refresh_token || previous?.refreshToken || ''),
-    expiresAt: raw.expires_in ? Date.now() + Math.max(Number(raw.expires_in) - 60, 60) * 1000 : 0,
+    expiresAt: accessTtl ? now + Math.max(accessTtl - 60, 60) * 1000 : 0,
+    refreshExpiresAt: refreshTtl ? now + Math.max(refreshTtl - 60, 60) * 1000 : previous?.refreshExpiresAt,
+    issuedAt: now,
     clientId: clientId || previous?.clientId,
-    tokenType: raw.token_type, scope: raw.scope
+    tokenType: raw.token_type || previous?.tokenType, scope: raw.scope || previous?.scope
   };
   await putSetting(env, TOKEN_KEY, await encryptTokens(env, tokens));
   return tokens;
@@ -111,6 +147,19 @@ export async function getAccessToken(env: Env, force = false): Promise<string> {
   const body = await response.json<{ accessToken?: string; error?: string }>();
   if (!response.ok || !body.accessToken) throw new Error(body.error || 'Khong refresh duoc TikTok token.');
   return body.accessToken;
+}
+
+export async function refreshAccessToken(env: Env): Promise<OAuthConnectionState> {
+  await getAccessToken(env, true);
+  return oauthConnectionState(await readTokens(env), env.MCP_SCOPE);
+}
+
+export async function keepAccessTokenFresh(env: Env, minimumValidityMs = ACCESS_TOKEN_EXPIRY_WARNING_MS): Promise<boolean> {
+  const tokens = await readTokens(env);
+  if (!tokens || !tokens.expiresAt || tokens.expiresAt > Date.now() + minimumValidityMs) return false;
+  if (!tokens.refreshToken || (tokens.refreshExpiresAt && tokens.refreshExpiresAt <= Date.now())) return false;
+  await getAccessToken(env, true);
+  return true;
 }
 
 export async function disconnect(env: Env): Promise<void> {
