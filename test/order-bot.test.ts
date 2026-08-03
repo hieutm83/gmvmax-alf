@@ -8,6 +8,15 @@ describe('order bot', () => {
     expect(isOrderBotReportDay('2026-08-03')).toBe(true);
   });
 
+  it('uses the requested :56 report schedule for both cutoffs', () => {
+    expect(Object.keys(ORDER_BOT_SLOTS)).toEqual([
+      '07:56', '08:56', '09:56', '10:56', '11:56',
+      '14:56', '15:56', '16:56', '17:56', '18:56'
+    ]);
+    expect(ORDER_BOT_SLOTS['11:56'].oldLabel).toBe('Đơn cần gửi trước 12h');
+    expect(ORDER_BOT_SLOTS['14:56'].oldLabel).toBe('Đơn cần gửi trước 19h');
+  });
+
   it('uses the report date in env timezone for both cutoffs', () => {
     expect(new Date(zonedDateTimeEpoch('2026-07-31', '00:01', 'Asia/Bangkok')).toISOString()).toBe('2026-07-30T17:01:00.000Z');
     expect(new Date(zonedDateTimeEpoch('2026-07-31', '18:00', 'Asia/Bangkok')).toISOString()).toBe('2026-07-31T11:00:00.000Z');
@@ -26,13 +35,14 @@ describe('order bot', () => {
   });
 
   it('always prints both fixed groups for a non-empty status', () => {
-    const text = formatOrderBotReport('2026-07-31', ORDER_BOT_SLOTS['10:30'], [{
+    const text = formatOrderBotReport('2026-07-31', ORDER_BOT_SLOTS['10:56'], [{
       label: 'Số đơn chờ vận chuyển', total: 1, oldTotal: 0, newTotal: 1,
       oldBreakdown: [], newBreakdown: [{ sellerSku: 'TTD', qty: 1, orders: 1 }]
     }], new Date('2026-07-31T03:30:00Z'), 'Asia/Bangkok');
     expect(text).toContain('Đơn cần gửi trước 12h: 0 đơn');
     expect(text).toContain('Đơn mới: 1 đơn\n- TTD: 1 đơn');
     expect(text).toContain('Cập nhật: 10:30:00');
+    expect(text).toContain('Cập nhật: 10:30:00\n-----------------------------------');
     expect(text.endsWith('-----------------------------------')).toBe(true);
     expect(text.endsWith('\n\n-----------------------------------')).toBe(false);
   });
@@ -48,14 +58,14 @@ describe('order bot', () => {
         oldBreakdown: [{ sellerSku: '1 TTD', qty: 1, orders: 1 }], newBreakdown: []
       }
     ];
-    const text = formatOrderBotReport('2026-08-01', ORDER_BOT_SLOTS['08:30'], summaries,
+    const text = formatOrderBotReport('2026-08-01', ORDER_BOT_SLOTS['08:56'], summaries,
       new Date('2026-08-01T01:30:59Z'), 'Asia/Bangkok');
     expect(text).toContain('- 1 TTD: 1 đơn\n-----------------------------------\nSố đơn chờ thu gom');
   });
 
   it('summarizes overflow only when a Zalo-size fallback is requested', () => {
     const rows = Array.from({ length: 22 }, (_, index) => ({ sellerSku: `SKU-${index}`, qty: 1, orders: 1 }));
-    const text = formatOrderBotReport('2026-07-31', ORDER_BOT_SLOTS['16:30'], [{
+    const text = formatOrderBotReport('2026-07-31', ORDER_BOT_SLOTS['16:56'], [{
       label: 'Số đơn chờ thu gom', total: 22, oldTotal: 22, newTotal: 0,
       oldBreakdown: rows, newBreakdown: []
     }], new Date('2026-07-31T09:30:00Z'), 'Asia/Bangkok', 20);
@@ -63,7 +73,7 @@ describe('order bot', () => {
   });
 
   it('does not prefix item quantity when the SKU name already contains it', () => {
-    const text = formatOrderBotReport('2026-08-01', ORDER_BOT_SLOTS['08:30'], [{
+    const text = formatOrderBotReport('2026-08-01', ORDER_BOT_SLOTS['08:56'], [{
       label: 'Số đơn chờ thu gom', total: 2, oldTotal: 2, newTotal: 0,
       oldBreakdown: [{ sellerSku: '1 TTD', qty: 1, orders: 2 }], newBreakdown: []
     }], new Date('2026-08-01T01:30:59Z'), 'Asia/Bangkok');
@@ -82,6 +92,10 @@ describe('order bot', () => {
       'Đơn mới: 0 đơn'
     ].join('\n');
     const styles = buildOrderBotStyles(text);
+    const title = 'Báo cáo vận đơn TikTok Shop 03/08/2026';
+    const fullReport = `${title}\n${text}`;
+    const fullStyles = buildOrderBotStyles(fullReport);
+    expect(fullStyles).toContainEqual({ start: title.length + 1, len: text.length, st: ['f_13'] });
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '12 đơn' && style.st.includes('c_db342e') && style.st.includes('b'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TKA: 2 đơn' && style.st.includes('f_13'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '2 đơn' && style.st.includes('b'))).toBe(true);

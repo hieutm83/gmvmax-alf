@@ -28,12 +28,15 @@ export interface OrderStatusSummary {
   newBreakdown: OrderSkuBreakdown[];
 }
 
+const BEFORE_NOON_SLOTS = ['07:56', '08:56', '09:56', '10:56', '11:56'];
+const BEFORE_19H_SLOTS = ['14:56', '15:56', '16:56', '17:56', '18:56'];
+
 export const ORDER_BOT_SLOTS: Record<string, OrderBotSlot> = Object.fromEntries([
-  '08:30', '09:30', '10:30', '11:30', '12:30', '15:30', '16:30', '17:30', '18:30', '19:30'
+  ...BEFORE_NOON_SLOTS, ...BEFORE_19H_SLOTS
 ].map((time) => [time, {
   time,
-  cutoffTime: time < '15:00' ? '00:01' : '18:00',
-  oldLabel: time < '15:00' ? 'Đơn cần gửi trước 12h' : 'Đơn cần gửi trước 19h'
+  cutoffTime: BEFORE_NOON_SLOTS.includes(time) ? '00:01' : '18:00',
+  oldLabel: BEFORE_NOON_SLOTS.includes(time) ? 'Đơn cần gửi trước 12h' : 'Đơn cần gửi trước 19h'
 }])) as Record<string, OrderBotSlot>;
 
 export function isOrderBotReportDay(localDate: string): boolean {
@@ -116,8 +119,7 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
   }).format(updatedAt);
   const lines = [
     `Báo cáo vận đơn TikTok Shop ${localDate.split('-').reverse().join('/')}`,
-    `Cập nhật: ${updatedTime}`,
-    ''
+    `Cập nhật: ${updatedTime}`
   ];
   summaries.forEach((summary) => {
     lines.push(SEPARATOR);
@@ -147,6 +149,8 @@ export function buildOrderBotStyles(text: string): OrderTextStyle[] {
     if (start >= 0 && len > 0) styles.push({ start, len, st });
   };
   const lines = text.split('\n');
+  const titleEnd = text.indexOf('\n');
+  if (titleEnd >= 0 && titleEnd + 1 < text.length) add(titleEnd + 1, text.length - titleEnd - 1, 'f_13');
   let offset = 0;
   for (const line of lines) {
     if (/^Đơn cần gửi trước/.test(line) || /^Đơn mới:/.test(line)) {
@@ -206,8 +210,9 @@ async function sendOrderBotMessage(env: Env, text: string, styles = buildOrderBo
 
 export function formatCancellationAlert(incident: any, timezone: string): { text: string; styles: OrderTextStyle[] } {
   const cancelledAt = timestampMillis(incident?.cancelledAt || incident?.updatedAt);
-  const time = cancelledAt ? new Intl.DateTimeFormat('vi-VN', {
-    timeZone: timezone, hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric', year: '2-digit', hour12: false
+  const time = cancelledAt ? new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone, day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
   }).format(new Date(cancelledAt)).replace(',', '') : 'Không xác định';
   const text = [
     'Đơn hủy',
@@ -263,7 +268,7 @@ export async function monitorOrderBot(env: Env, reportDate: string): Promise<voi
       Number(counts.IN_TRANSIT) > Number(previous.IN_TRANSIT || 0);
     if (movedToTransit) {
       const hour = hourInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
-      await sendOrderBotReport(env, reportDate, hour < 15 ? '10:30' : '16:30', true);
+      await sendOrderBotReport(env, reportDate, hour < 14 ? '10:56' : '16:56', true);
     }
     for (const incident of cancellations.slice().sort((a: any, b: any) => timestampMillis(a.cancelledAt) - timestampMillis(b.cancelledAt))) {
       const id = cancellationId(incident); if (!id) continue;
