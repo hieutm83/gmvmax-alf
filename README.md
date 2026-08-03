@@ -35,6 +35,9 @@ Tao tung secret, khong commit gia tri vao GitHub:
 
 ```powershell
 npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put DASHBOARD_CEO_PASSWORD
+npx wrangler secret put DASHBOARD_CONTENT_PASSWORD
+npx wrangler secret put DASHBOARD_SESSION_SECRET
 npx wrangler secret put TOKEN_ENCRYPTION_KEY
 npx wrangler secret put ZALO_BOT_TOKEN
 npx wrangler secret put ZALO_GROUP_CHAT_ID
@@ -46,7 +49,10 @@ npx wrangler secret put TIKTOK_SHOP_APP_SECRET
 npx wrangler secret put TIKTOK_SHOP_SERVICE_ID
 ```
 
-- `ADMIN_PASSWORD`: dat mot mat khau rieng, khong ghi gia tri that vao source code.
+- `ADMIN_PASSWORD`: mat khau dashboard cua Admin, co day du quyen quan tri.
+- `DASHBOARD_CEO_PASSWORD`: mat khau dashboard cua CEO, duoc xem tat ca bao cao va chon khoang ngay.
+- `DASHBOARD_CONTENT_PASSWORD`: mat khau dashboard cua Content, chi duoc xem Doanh thu, Quang cao va Content & KOC voi du lieu trong ngay.
+- `DASHBOARD_SESSION_SECRET`: chuoi ngau nhien toi thieu 32 ky tu de ky cookie dang nhap 30 ngay. Khong dung chung voi mat khau nguoi dung.
 - `TOKEN_ENCRYPTION_KEY`: chuoi ngau nhien toi thieu 32 ky tu.
 - Ba secret Google co the bo qua neu chua dung backup.
 - `TIKTOK_SHOP_APP_KEY` duoc cau hinh trong `wrangler.toml`; App Secret phai luu bang Cloudflare Secret.
