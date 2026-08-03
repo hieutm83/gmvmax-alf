@@ -261,18 +261,23 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     // payment, ready-to-ship, request-cancel and final cancel timestamps.
     const cancellationRequestedAt = timestampMillis(item.create_time) ||
       timestampMillis(order?.request_cancel_time) || fallbackCancelledAt;
-    const cancellationApprovedAt = timestampMillis(item.update_time) || fallbackCancelledAt;
     const cancelStatus = String(item.cancel_status || '').toUpperCase();
+    // For a completed buyer cancellation, the order's cancel_time is the
+    // platform approval/status transition while the cancellation record's
+    // update_time is the later refund-completion event.
+    const cancellationApprovedAt = cancelStatus === 'CANCELLATION_REQUEST_COMPLETE'
+      ? timestampMillis(order?.cancel_time) || timestampMillis(item.update_time) || fallbackCancelledAt
+      : timestampMillis(item.update_time) || fallbackCancelledAt;
     const paidAt = timestampMillis(order?.paid_time || order?.payment?.paid_time || order?.payment?.payment_time);
     const readyToShipAt = timestampMillis(order?.rts_time);
     const refundCompletedAt = cancelStatus === 'CANCELLATION_REQUEST_COMPLETE'
-      ? timestampMillis(order?.cancel_time) || fallbackCancelledAt : 0;
+      ? timestampMillis(item.update_time) || timestampMillis(order?.cancel_time) || fallbackCancelledAt : 0;
     incidents.push({ id: String(item.cancel_id || orderId), orderId, rmaId: String(item.cancel_id || ''), type: 'Hủy đơn',
       group: role,
       reason, status: CANCELLATION_STATUS_LABELS[cancelStatus] || cancelStatus, actionCode: '',
       collectionTime: orderTimestamp(order, 'collection_time'), deliveryTime: orderTimestamp(order, 'delivery_time'),
       packageStatus: packageStatus(order),
-      cancelledAt: timestampMillis(order?.cancel_time) || cancellationApprovedAt, updatedAt: fallbackCancelledAt,
+      cancelledAt: refundCompletedAt || timestampMillis(order?.cancel_time) || cancellationApprovedAt,
       orderHistory: {
         cancellationRequestedAt,
         cancellationApprovedAt,
