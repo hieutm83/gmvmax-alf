@@ -335,13 +335,14 @@
       .product-analysis-chart .analytics-canvas { height: 290px; }
       .product-analysis-funnel-card { margin-bottom: 20px; padding: 20px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); }
       .product-analysis-funnel-card h2, .product-analysis-table-title { margin:0 0 16px; font-size:15px; }
-      .product-analysis-funnel { display:grid; grid-template-columns:150px minmax(320px,560px); justify-content:center; gap:10px 18px; align-items:center; }
-      .product-funnel-rate { color:var(--text-secondary); font-size:12px; text-align:right; }
+      .product-analysis-funnel { display:grid; grid-template-columns:120px 58px minmax(320px,560px); justify-content:center; gap:10px 0; align-items:center; }
+      .product-funnel-rate { color:var(--text-secondary); font-size:12px; text-align:right; padding-right:8px; }
       .product-funnel-rate strong { display:block; color:var(--text); font-size:18px; }
-      .product-funnel-rate { position:relative; }
-      .product-funnel-arrow { position:absolute; right:-34px; top:-38px; width:40px; height:48px; border-bottom:2px solid #0ea5e9; border-left:2px solid #0ea5e9; }
-      .product-funnel-arrow::after { content:""; position:absolute; right:-1px; bottom:-5px; width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); }
-      .product-funnel-arrow.ctor { color:#ef4444; border-color:#ef4444; }
+      .product-funnel-arrow-slot { position:relative; align-self:stretch; min-height:60px; color:#0ea5e9; }
+      .product-funnel-arrow-slot.ctor { color:#ef4444; }
+      .product-funnel-arrow-line::before { content:""; position:absolute; left:13px; top:-31px; width:2px; height:54px; background:currentColor; transform:rotate(-16deg); transform-origin:top center; }
+      .product-funnel-arrow-line::after { content:""; position:absolute; left:18px; top:20px; width:27px; border-top:2px solid currentColor; }
+      .product-funnel-arrow-tip { position:absolute; left:38px; top:16px; width:8px; height:8px; border-top:2px solid currentColor; border-right:2px solid currentColor; transform:rotate(45deg); }
       .product-funnel-rate small, .product-funnel-value small { display:block; margin-top:3px; font-size:10px; font-weight:700; }
       .product-funnel-rate small.good { color:var(--success); } .product-funnel-rate small.bad { color:var(--danger); }
       .product-funnel-step { display:flex; align-items:center; justify-content:space-between; min-height:60px; padding:12px 48px; color:#fff; font-weight:700; background:#67c9c6; clip-path:polygon(4% 0,96% 0,90% 100%,10% 100%); }
@@ -350,6 +351,7 @@
       .product-funnel-step strong { font-size:18px; font-variant-numeric:tabular-nums; }
       .product-funnel-value { text-align:right; }
       .product-funnel-value small { color:rgba(255,255,255,.9); }
+      .product-funnel-value small.good { color:#bbf7d0; } .product-funnel-value small.bad { color:#fecaca; }
       .product-analysis-table { min-width:1420px; }
       .product-analysis-table th:first-child, .product-analysis-table td:first-child { position:sticky; left:0; z-index:1; min-width:230px; text-align:left; background:var(--surface); }
       .product-analysis-table thead th:first-child { z-index:2; background:var(--surface-muted); }
@@ -397,7 +399,7 @@
       @media (max-width: 1250px) { .finance-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } .finance-dual { grid-template-columns:1fr; } }
       @media (max-width: 900px) { .finance-charts { grid-template-columns:1fr; } }
       @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } }
-      @media (max-width:720px) { .product-analysis-funnel { grid-template-columns:88px minmax(240px,1fr); gap:8px; justify-content:start; overflow:auto; } .product-funnel-step { padding:10px 15px; font-size:11px; } .product-analysis-chart .analytics-canvas { height:250px; } }
+      @media (max-width:720px) { .product-analysis-funnel { grid-template-columns:76px 42px minmax(240px,1fr); gap:8px 0; justify-content:start; overflow:auto; } .product-funnel-step { padding:10px 26px; font-size:11px; } .product-funnel-arrow-line::before { left:9px; } .product-funnel-arrow-line::after { left:14px; width:20px; } .product-funnel-arrow-tip { left:28px; } .product-analysis-chart .analytics-canvas { height:250px; } }
       @media (max-width: 480px) { .finance-summary { grid-template-columns:1fr; } .finance-breakdown summary { align-items:flex-start; flex-wrap:wrap; } .finance-breakdown .finance-amount { min-width:0; margin-left:auto; } .finance-breakdown .finance-children { padding-left:24px; } }
     </style>
   </head>
@@ -709,6 +711,18 @@
           context.strokeStyle = 'rgba(71, 85, 105, .7)';
           context.stroke();
           context.restore();
+        }
+      };
+      var productLegendGapPlugin = {
+        id: 'productLegendGap',
+        beforeInit: function (chart) {
+          if (!chart.legend || chart.legend._productGapApplied) return;
+          var originalFit = chart.legend.fit;
+          chart.legend.fit = function () {
+            originalFit.call(this);
+            this.height += 14;
+          };
+          chart.legend._productGapApplied = true;
         }
       };
       var defaultAdvertiserId = '7535665207776231441';
@@ -1191,7 +1205,7 @@
         productTrafficChart = new Chart(canvas, { type:'line', data:{ labels:daily.map(function (point) { return new Intl.DateTimeFormat('vi-VN',{day:'2-digit',month:'2-digit'}).format(new Date(point.date+'T00:00:00Z')); }), datasets:[
           { label:'Lượt nhấp vào sản phẩm', data:daily.map(function(point){return Number(point.clicks||0);}), borderColor:'#0ea5a4', backgroundColor:'#0ea5a4', yAxisID:'clicks', borderWidth:2, pointRadius:2, pointHoverRadius:3, tension:.2 },
           { label:'CTR', data:daily.map(function(point){return point.ctr == null ? null : Number(point.ctr);}), borderColor:'#2563eb', backgroundColor:'#2563eb', yAxisID:'ctr', borderWidth:2, pointRadius:2, pointHoverRadius:3, tension:.2 }
-        ]}, options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{position:'top',align:'start'},tooltip:{callbacks:{label:function(context){return context.datasetIndex===1?' CTR: '+percent(context.raw):' Lượt nhấp: '+integer(context.raw);}}}}, scales:{x:{grid:{display:false}},clicks:{type:'linear',position:'left',beginAtZero:true,ticks:{callback:compactNumber}},ctr:{type:'linear',position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{callback:function(value){return percent(value);}}}} } });
+        ]}, plugins:[productLegendGapPlugin], options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{legend:{position:'top',align:'center',labels:{usePointStyle:true,pointStyle:'line',boxWidth:16,boxHeight:2,padding:18,font:{size:10}}},tooltip:{callbacks:{label:function(context){return context.datasetIndex===1?' CTR: '+percent(context.raw):' Lượt nhấp: '+integer(context.raw);}}}}, scales:{x:{grid:{display:false}},clicks:{type:'linear',position:'left',beginAtZero:true,ticks:{callback:compactNumber}},ctr:{type:'linear',position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{callback:function(value){return percent(value);}}}} } });
       }
 
       function productAnalysisChangeSmall(current, previous, light) {
@@ -1214,15 +1228,18 @@
         ];
         rows.forEach(function (item, index) {
           var rateBox = document.createElement('div'); rateBox.className = 'product-funnel-rate';
+          var arrowSlot = document.createElement('div'); arrowSlot.className = 'product-funnel-arrow-slot' + (item.rate === 'CTOR' ? ' ctor' : '');
           if (item.rate) {
-            var arrow = document.createElement('span'); arrow.className = 'product-funnel-arrow' + (item.rate === 'CTOR' ? ' ctor' : ''); arrow.setAttribute('aria-hidden','true');
             var rateLabel = document.createElement('span'); rateLabel.textContent = item.rate; var rateValue = document.createElement('strong'); rateValue.textContent = percent(item.rateValue);
-            rateBox.append(arrow, rateLabel, rateValue, productAnalysisChangeSmall(item.rateValue, item.previousRate, false));
+            var arrowLine = document.createElement('span'); arrowLine.className = 'product-funnel-arrow-line'; arrowLine.setAttribute('aria-hidden','true');
+            var arrowTip = document.createElement('i'); arrowTip.className = 'product-funnel-arrow-tip'; arrowTip.setAttribute('aria-hidden','true');
+            arrowSlot.append(arrowLine, arrowTip);
+            rateBox.append(rateLabel, rateValue, productAnalysisChangeSmall(item.rateValue, item.previousRate, false));
           }
           var step = document.createElement('div'); step.className = 'product-funnel-step product-funnel-step-' + (index + 1);
           var label = document.createElement('span'); label.textContent = item.label; var valueBox = document.createElement('div'); valueBox.className='product-funnel-value';
-          var value = document.createElement('strong'); value.textContent = integer(item.value); valueBox.append(value, productAnalysisChangeSmall(item.value,item.previousValue,true)); step.append(label, valueBox);
-          funnel.append(rateBox, step);
+          var value = document.createElement('strong'); value.textContent = integer(item.value); valueBox.append(value, productAnalysisChangeSmall(item.value,item.previousValue,false)); step.append(label, valueBox);
+          funnel.append(rateBox, arrowSlot, step);
         });
       }
 
