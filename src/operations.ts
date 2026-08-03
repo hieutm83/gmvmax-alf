@@ -256,9 +256,17 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     if (role === 'SYSTEM') addCount(systemCancelReasons, reason);
     const order = orderById.get(orderId);
     const fallbackCancelledAt = timestampMillis(latestTimestamp(item.update_time, item.create_time));
-    const cancellationRequestedAt = timestampMillis(item.create_time) || fallbackCancelledAt;
-    const cancellationApprovedAt = timestampMillis(item.update_time) || timestampMillis(order?.cancel_time) || fallbackCancelledAt;
+    // The cancellation search response only contains the request/update times.
+    // Get Order Detail carries the rest of the Seller Center timeline, including
+    // payment, ready-to-ship, request-cancel and final cancel timestamps.
+    const cancellationRequestedAt = timestampMillis(item.create_time) ||
+      timestampMillis(order?.request_cancel_time) || fallbackCancelledAt;
+    const cancellationApprovedAt = timestampMillis(item.update_time) || fallbackCancelledAt;
     const cancelStatus = String(item.cancel_status || '').toUpperCase();
+    const paidAt = timestampMillis(order?.paid_time || order?.payment?.paid_time || order?.payment?.payment_time);
+    const readyToShipAt = timestampMillis(order?.rts_time);
+    const refundCompletedAt = cancelStatus === 'CANCELLATION_REQUEST_COMPLETE'
+      ? timestampMillis(order?.cancel_time) || fallbackCancelledAt : 0;
     incidents.push({ id: String(item.cancel_id || orderId), orderId, rmaId: String(item.cancel_id || ''), type: 'Hủy đơn',
       group: role,
       reason, status: CANCELLATION_STATUS_LABELS[cancelStatus] || cancelStatus, actionCode: '',
@@ -268,6 +276,9 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
       orderHistory: {
         cancellationRequestedAt,
         cancellationApprovedAt,
+        refundCompletedAt,
+        paidAt,
+        readyToShipAt,
         orderCreatedAt: timestampMillis(order?.create_time)
       } });
   }

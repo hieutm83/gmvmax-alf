@@ -9,6 +9,9 @@ describe('order bot cancellation alert', () => {
       orderHistory: {
         cancellationRequestedAt: Date.parse('2026-08-02T11:09:56Z'),
         cancellationApprovedAt: Date.parse('2026-08-02T11:09:56Z'),
+        refundCompletedAt: Date.parse('2026-08-02T11:38:39Z'),
+        readyToShipAt: Date.parse('2026-08-02T11:06:08Z'),
+        paidAt: Date.parse('2026-08-02T11:03:10Z'),
         orderCreatedAt: Date.parse('2026-08-02T11:02:54Z')
       }
     }, 'Asia/Bangkok');
@@ -19,11 +22,17 @@ describe('order bot cancellation alert', () => {
       'Nhóm / Khởi tạo: BUYER',
       'Lý do chi tiết: Không còn nhu cầu',
       'Lịch sử đơn hàng',
+      '• Hoàn tất hoàn tiền',
+      '  02/08/2026 18:38:39',
       '• Yêu cầu hủy được gửi bởi khách hàng',
       '  Không còn nhu cầu',
       '  02/08/2026 18:09:56',
       '• Được TikTok Shop tự động phê duyệt theo chính sách hiện hành',
       '  02/08/2026 18:09:56',
+      '• Đơn hàng sẵn sàng vận chuyển',
+      '  02/08/2026 18:06:08',
+      '• Đơn hàng đã thanh toán',
+      '  02/08/2026 18:03:10',
       '• Đơn hàng do khách hàng tạo',
       '  02/08/2026 18:02:54'
     ].join('\n'));
@@ -39,7 +48,7 @@ describe('order bot cancellation alert', () => {
       && style.st.includes('i') && style.st.includes('c_db342e'));
     expect(reasonStyle).toBeDefined();
     const dateStyles = result.styles.filter((style) => /^\s+02\/08\/2026/.test(result.text.slice(style.start, style.start + style.len)));
-    expect(dateStyles).toHaveLength(3);
+    expect(dateStyles).toHaveLength(6);
     expect(dateStyles.every((style) => style.st.includes('f_13') && style.st.includes('i') && !style.st.includes('b'))).toBe(true);
   });
 });

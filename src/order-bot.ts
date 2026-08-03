@@ -229,6 +229,9 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
   const history = incident?.orderHistory || {};
   const requestedAt = history.cancellationRequestedAt || cancelledAt;
   const approvedAt = history.cancellationApprovedAt || cancelledAt;
+  const refundCompletedAt = timestampMillis(history.refundCompletedAt);
+  const paidAt = timestampMillis(history.paidAt);
+  const readyToShipAt = timestampMillis(history.readyToShipAt);
   const orderCreatedAt = history.orderCreatedAt;
   const initiator = String(incident?.group || '').toUpperCase();
   const requestLabel = initiator === 'SELLER'
@@ -236,6 +239,20 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
     : initiator === 'SYSTEM' || initiator === 'OPERATOR'
       ? 'Yêu cầu hủy được tạo bởi TikTok Shop'
       : 'Yêu cầu hủy được gửi bởi khách hàng';
+  const historyLines: string[] = [];
+  if (refundCompletedAt) {
+    historyLines.push('• Hoàn tất hoàn tiền', `  ${formatTime(refundCompletedAt)}`);
+  }
+  historyLines.push(
+    `• ${requestLabel}`,
+    `  ${String(incident?.reason || 'Không xác định')}`,
+    `  ${formatTime(requestedAt)}`,
+    '• Được TikTok Shop tự động phê duyệt theo chính sách hiện hành',
+    `  ${formatTime(approvedAt)}`
+  );
+  if (readyToShipAt) historyLines.push('• Đơn hàng sẵn sàng vận chuyển', `  ${formatTime(readyToShipAt)}`);
+  if (paidAt) historyLines.push('• Đơn hàng đã thanh toán', `  ${formatTime(paidAt)}`);
+  historyLines.push('• Đơn hàng do khách hàng tạo', `  ${formatTime(orderCreatedAt)}`);
   const text = [
     'Đơn hủy',
     `Mã đơn: ${String(incident?.orderId || '')}`,
@@ -243,13 +260,7 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
     `Nhóm / Khởi tạo: ${String(incident?.group || 'Không xác định')}`,
     `Lý do chi tiết: ${String(incident?.reason || 'Không xác định')}`,
     'Lịch sử đơn hàng',
-    `• ${requestLabel}`,
-    `  ${String(incident?.reason || 'Không xác định')}`,
-    `  ${formatTime(requestedAt)}`,
-    '• Được TikTok Shop tự động phê duyệt theo chính sách hiện hành',
-    `  ${formatTime(approvedAt)}`,
-    '• Đơn hàng do khách hàng tạo',
-    `  ${formatTime(orderCreatedAt)}`
+    ...historyLines
   ].join('\n');
   const titleLength = 'Đơn hủy'.length;
   const styles: OrderTextStyle[] = [
