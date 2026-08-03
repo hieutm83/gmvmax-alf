@@ -96,6 +96,10 @@ describe('order bot', () => {
     const fullReport = `${title}\n${text}`;
     const fullStyles = buildOrderBotStyles(fullReport);
     expect(fullStyles).toContainEqual({ start: title.length + 1, len: text.length, st: ['f_13'] });
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn cần gửi trước 19h:'
+      && style.st.includes('u') && style.st.includes('c_15a85f'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn cần gửi trước 19h: 12 đơn'
+      && style.st.includes('f_13') && style.st.includes('i'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '12 đơn' && style.st.includes('c_db342e') && style.st.includes('b'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TKA: 2 đơn' && style.st.includes('f_13'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '2 đơn' && style.st.includes('b'))).toBe(true);

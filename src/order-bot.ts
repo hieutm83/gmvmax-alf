@@ -5,6 +5,7 @@ import { hourInTimezone } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 const RED = 'c_db342e';
+const GREEN = 'c_15a85f';
 const SEPARATOR = '-----------------------------------';
 const STATUS_DEFINITIONS = [
   { code: 'AWAITING_SHIPMENT', label: 'Số đơn chờ vận chuyển' },
@@ -153,7 +154,13 @@ export function buildOrderBotStyles(text: string): OrderTextStyle[] {
   if (titleEnd >= 0 && titleEnd + 1 < text.length) add(titleEnd + 1, text.length - titleEnd - 1, 'f_13');
   let offset = 0;
   for (const line of lines) {
-    if (/^Đơn cần gửi trước/.test(line) || /^Đơn mới:/.test(line)) {
+    if (/^Đơn cần gửi trước/.test(line)) {
+      add(offset, line.length, 'f_13', 'i');
+      const labelEnd = line.indexOf(':') + 1;
+      if (labelEnd > 0) add(offset, labelEnd, 'u', GREEN);
+      const groupTotal = line.match(/(\d+\s+đơn)$/);
+      if (groupTotal) add(offset + line.lastIndexOf(groupTotal[1]), groupTotal[1].length, RED);
+    } else if (/^Đơn mới:/.test(line)) {
       add(offset, line.length, 'f_13', 'i');
       const groupTotal = line.match(/(\d+\s+đơn)$/);
       if (groupTotal) add(offset + line.lastIndexOf(groupTotal[1]), groupTotal[1].length, RED);
