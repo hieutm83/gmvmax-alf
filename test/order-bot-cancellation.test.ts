@@ -35,5 +35,11 @@ describe('order bot cancellation alert', () => {
     });
     expect(result.styles.some((style) => result.text.slice(style.start, style.start + style.len) === 'Lịch sử đơn hàng'
       && style.st.includes('b'))).toBe(true);
+    const reasonStyle = result.styles.find((style) => result.text.slice(style.start, style.start + style.len) === '  Không còn nhu cầu'
+      && style.st.includes('i') && style.st.includes('c_db342e'));
+    expect(reasonStyle).toBeDefined();
+    const dateStyles = result.styles.filter((style) => /^\s+02\/08\/2026/.test(result.text.slice(style.start, style.start + style.len)));
+    expect(dateStyles).toHaveLength(3);
+    expect(dateStyles.every((style) => style.st.includes('f_13') && style.st.includes('i') && !style.st.includes('b'))).toBe(true);
   });
 });

@@ -132,7 +132,7 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
         const remaining = new Set(summary.oldBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
         lines.push(`... và ${remaining} SKU khác`);
       }
-      lines.push('', `Đơn mới: ${summary.newTotal} đơn`);
+      lines.push(`Đơn mới: ${summary.newTotal} đơn`);
       summary.newBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.sellerSku}: ${row.orders} đơn`));
       if (summary.newBreakdown.length > maxBreakdownLines) {
         const remaining = new Set(summary.newBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
@@ -162,6 +162,8 @@ export function buildOrderBotStyles(text: string): OrderTextStyle[] {
       if (groupTotal) add(offset + line.lastIndexOf(groupTotal[1]), groupTotal[1].length, RED);
     } else if (/^Đơn mới:/.test(line)) {
       add(offset, line.length, 'f_13', 'i');
+      const labelEnd = line.indexOf(':') + 1;
+      if (labelEnd > 0) add(offset, labelEnd, 'u', GREEN);
       const groupTotal = line.match(/(\d+\s+đơn)$/);
       if (groupTotal) add(offset + line.lastIndexOf(groupTotal[1]), groupTotal[1].length, RED);
     }
@@ -256,9 +258,14 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
   ];
   let offset = 0;
   for (const line of text.split('\n')) {
-    const separator = line.indexOf(':');
-    if (separator > 0) styles.push({ start: offset, len: separator + 1, st: ['b'] });
+    const topLabel = line.match(/^(Mã đơn|Loại sự cố|Nhóm \/ Khởi tạo|Lý do chi tiết):/);
+    if (topLabel) styles.push({ start: offset, len: topLabel[0].length, st: ['b'] });
     if (line === 'Lịch sử đơn hàng' || line.startsWith('• ')) styles.push({ start: offset, len: line.length, st: ['b'] });
+    if (line.startsWith('  ')) {
+      const detailStyles = ['f_13', 'i'];
+      if (!/^\s+\d{2}\/\d{2}\/\d{4}\s/.test(line)) detailStyles.push(RED);
+      styles.push({ start: offset, len: line.length, st: detailStyles });
+    }
     offset += line.length + 1;
   }
   return { text, styles };

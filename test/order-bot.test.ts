@@ -41,6 +41,7 @@ describe('order bot', () => {
     }], new Date('2026-07-31T03:30:00Z'), 'Asia/Bangkok');
     expect(text).toContain('Đơn cần gửi trước 12h: 0 đơn');
     expect(text).toContain('Đơn mới: 1 đơn\n- TTD: 1 đơn');
+    expect(text).not.toContain('\n\nĐơn mới:');
     expect(text).toContain('Cập nhật: 10:30:00');
     expect(text).toContain('Cập nhật: 10:30:00\n-----------------------------------');
     expect(text.endsWith('-----------------------------------')).toBe(true);
@@ -104,6 +105,8 @@ describe('order bot', () => {
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '- 1 TKA: 2 đơn' && style.st.includes('f_13'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '2 đơn' && style.st.includes('b'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn mới: 0 đơn' && style.st.includes('i') && !style.st.includes('c_db342e'))).toBe(true);
+    expect(styles.some((style) => text.slice(style.start, style.start + style.len) === 'Đơn mới:'
+      && style.st.includes('u') && style.st.includes('c_15a85f'))).toBe(true);
     expect(styles.some((style) => text.slice(style.start, style.start + style.len) === '0 đơn' && style.st.includes('c_db342e'))).toBe(true);
   });
 });
