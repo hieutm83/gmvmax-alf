@@ -210,17 +210,37 @@ async function sendOrderBotMessage(env: Env, text: string, styles = buildOrderBo
 
 export function formatCancellationAlert(incident: any, timezone: string): { text: string; styles: OrderTextStyle[] } {
   const cancelledAt = timestampMillis(incident?.cancelledAt || incident?.updatedAt);
-  const time = cancelledAt ? new Intl.DateTimeFormat('en-GB', {
+  const formatTime = (value: unknown): string => {
+    const timestamp = timestampMillis(value);
+    return timestamp ? new Intl.DateTimeFormat('en-GB', {
     timeZone: timezone, day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  }).format(new Date(cancelledAt)).replace(',', '') : 'Không xác định';
+    }).format(new Date(timestamp)).replace(',', '') : 'Không xác định';
+  };
+  const history = incident?.orderHistory || {};
+  const requestedAt = history.cancellationRequestedAt || cancelledAt;
+  const approvedAt = history.cancellationApprovedAt || cancelledAt;
+  const orderCreatedAt = history.orderCreatedAt;
+  const initiator = String(incident?.group || '').toUpperCase();
+  const requestLabel = initiator === 'SELLER'
+    ? 'Yêu cầu hủy được gửi bởi nhà bán hàng'
+    : initiator === 'SYSTEM' || initiator === 'OPERATOR'
+      ? 'Yêu cầu hủy được tạo bởi TikTok Shop'
+      : 'Yêu cầu hủy được gửi bởi khách hàng';
   const text = [
     'Đơn hủy',
     `Mã đơn: ${String(incident?.orderId || '')}`,
     `Loại sự cố: ${String(incident?.type || 'Hủy đơn')}`,
     `Nhóm / Khởi tạo: ${String(incident?.group || 'Không xác định')}`,
     `Lý do chi tiết: ${String(incident?.reason || 'Không xác định')}`,
-    `Thời gian hủy: ${time}`
+    'Lịch sử đơn hàng',
+    `• ${requestLabel}`,
+    `  ${String(incident?.reason || 'Không xác định')}`,
+    `  ${formatTime(requestedAt)}`,
+    '• Được TikTok Shop tự động phê duyệt theo chính sách hiện hành',
+    `  ${formatTime(approvedAt)}`,
+    '• Đơn hàng do khách hàng tạo',
+    `  ${formatTime(orderCreatedAt)}`
   ].join('\n');
   const titleLength = 'Đơn hủy'.length;
   const styles: OrderTextStyle[] = [
@@ -231,6 +251,7 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
   for (const line of text.split('\n')) {
     const separator = line.indexOf(':');
     if (separator > 0) styles.push({ start: offset, len: separator + 1, st: ['b'] });
+    if (line === 'Lịch sử đơn hàng' || line.startsWith('• ')) styles.push({ start: offset, len: line.length, st: ['b'] });
     offset += line.length + 1;
   }
   return { text, styles };

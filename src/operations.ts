@@ -256,13 +256,20 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     if (role === 'SYSTEM') addCount(systemCancelReasons, reason);
     const order = orderById.get(orderId);
     const fallbackCancelledAt = timestampMillis(latestTimestamp(item.update_time, item.create_time));
+    const cancellationRequestedAt = timestampMillis(item.create_time) || fallbackCancelledAt;
+    const cancellationApprovedAt = timestampMillis(item.update_time) || timestampMillis(order?.cancel_time) || fallbackCancelledAt;
     const cancelStatus = String(item.cancel_status || '').toUpperCase();
     incidents.push({ id: String(item.cancel_id || orderId), orderId, rmaId: String(item.cancel_id || ''), type: 'Hủy đơn',
       group: role,
       reason, status: CANCELLATION_STATUS_LABELS[cancelStatus] || cancelStatus, actionCode: '',
       collectionTime: orderTimestamp(order, 'collection_time'), deliveryTime: orderTimestamp(order, 'delivery_time'),
       packageStatus: packageStatus(order),
-      cancelledAt: timestampMillis(order?.cancel_time) || fallbackCancelledAt, updatedAt: fallbackCancelledAt });
+      cancelledAt: timestampMillis(order?.cancel_time) || cancellationApprovedAt, updatedAt: fallbackCancelledAt,
+      orderHistory: {
+        cancellationRequestedAt,
+        cancellationApprovedAt,
+        orderCreatedAt: timestampMillis(order?.create_time)
+      } });
   }
 
   for (const item of returns) {
