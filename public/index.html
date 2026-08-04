@@ -248,7 +248,8 @@
       .content-koc-video-table th:nth-child(2),.content-koc-video-table td:nth-child(2) { width:7%;text-align:center; }
       .content-koc-video-table th:not(:first-child):not(:nth-child(2)),.content-koc-video-table td:not(:first-child):not(:nth-child(2)) { width:5.75%;text-align:right; }
       .content-koc-video-title { display:-webkit-box; min-height:30px; max-width:100%; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-height:15px; text-overflow:ellipsis; }
-      .content-koc-modal .modal-body { overflow:auto; }
+      .content-koc-modal { height:auto; max-height:88dvh; }
+      .content-koc-modal .modal-body { flex:0 1 auto; max-height:calc(88dvh - 68px); overflow:auto; }
       .content-koc-modal .content-koc-video-table { min-width:1180px; }
       @media (max-width:960px) { .content-koc-summaries { grid-template-columns:1fr; } }
       .finance-amount.expense { color:#dc2626 !important; }
@@ -312,16 +313,20 @@
       .gmv-source-table th:first-child, .gmv-source-table td:first-child { width:32%; min-width:170px; }
       .gmv-source-table th:not(:first-child), .gmv-source-table td:not(:first-child) { width:auto; min-width:105px; }
       .gmv-source-table td { height: 46px; }
-      .cost-source-table { min-width:920px; }
-      .cost-source-table th:first-child,.cost-source-table td:first-child { width:22%; min-width:0; }
-      .cost-source-table th:nth-child(2),.cost-source-table td:nth-child(2),.cost-source-table th:nth-child(3),.cost-source-table td:nth-child(3) { width:12%; min-width:0; }
-      .cost-source-table th:nth-child(n+4),.cost-source-table td:nth-child(n+4) { width:9%; min-width:0; }
-      .cost-source-table th,.cost-source-table td { padding-right:7px; padding-left:7px; overflow:hidden; text-overflow:ellipsis; }
+      .cost-source-table { width:100%; min-width:0; table-layout:fixed; font-size:9.5px; }
+      .cost-source-table th:first-child,.cost-source-table td:first-child { width:24%; min-width:0; }
+      .cost-source-table th:nth-child(n+2),.cost-source-table td:nth-child(n+2) { width:9.5%; min-width:0; }
+      .cost-source-table th,.cost-source-table td { padding-right:3px; padding-left:3px; overflow:hidden; text-overflow:ellipsis; }
+      .cost-source-table th { padding-top:8px; padding-bottom:8px; font-size:8px; line-height:1.2; white-space:normal; }
       .cost-analysis-panel .table-wrap { min-height: 250px; }
       .cost-source-table td { height: 68px; }
       .cost-source-table td:not(:first-child) { font-weight:500; }
       .gmv-source-row td { color: var(--text); font-weight: 800; background: #f8fafc; }
       .gmv-source-label { display: inline-flex; align-items: center; gap: 8px; }
+      .cost-source-table .gmv-source-label { display:grid; grid-template-columns:9px minmax(0,1fr); align-items:start; gap:6px; }
+      .cost-source-copy { display:grid; min-width:0; gap:3px; }
+      .cost-source-name { overflow:hidden; text-overflow:ellipsis; }
+      .cost-source-table .gmv-contribution { display:block; line-height:1.25; }
       .gmv-source-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; }
       .gmv-source-child { padding-left: 30px; color: var(--text-secondary); }
       .gmv-contribution { color: var(--text-muted); font-size: 11px; font-weight: 500; }
@@ -2139,9 +2144,9 @@
           var row = document.createElement('tr'); row.className = 'gmv-source-row';
           var labelCell = document.createElement('td'); var labelWrap = document.createElement('span'); labelWrap.className = 'gmv-source-label';
           var dot = document.createElement('span'); dot.className = 'gmv-source-dot'; dot.style.background = source.color; labelWrap.appendChild(dot);
-          labelWrap.appendChild(document.createTextNode(source.label));
-          var contribution = document.createElement('span'); contribution.className = 'gmv-contribution'; contribution.textContent = ' (Đóng góp ' + number(value / total * 100) + '%)';
-          labelWrap.appendChild(contribution); labelCell.appendChild(labelWrap);
+          var labelCopy=document.createElement('span');labelCopy.className='cost-source-copy';var sourceName=document.createElement('span');sourceName.className='cost-source-name';sourceName.textContent=source.label;labelCopy.appendChild(sourceName);
+          var contribution = document.createElement('span'); contribution.className = 'gmv-contribution'; contribution.textContent = '(Đóng góp ' + number(value / total * 100) + '%)';
+          labelCopy.appendChild(contribution);labelWrap.appendChild(labelCopy); labelCell.appendChild(labelWrap);
           var valueCell = document.createElement('td'); valueCell.textContent = compactMoney(value);
           var grossRevenueCell=document.createElement('td');grossRevenueCell.textContent=compactMoney(sourceMetrics.grossRevenue||0);
           var roiCell=document.createElement('td');roiCell.textContent=number(sourceMetrics.roi||0);
@@ -2201,12 +2206,13 @@
             y: { beginAtZero: true, ticks: { color: '#64748b', precision: 0 }, grid: { color: 'rgba(148,163,184,.22)' } } } })
         });
         var provinceColors = ['#2563eb','#059669','#f59e0b','#7c3aed','#0891b2','#e11d48','#4f46e5','#65a30d','#0284c7','#0d9488'];
+        var provinceTotal=provinces.reduce(function(sum,item){return sum+Number(item.revenue||0);},0);
         revenueProvinceChart = new Chart(document.getElementById('revenueProvinceChart'), {
           type: 'doughnut',
           data: { labels: provinces.map(function (item) { return item.name; }), datasets: [{ data: provinces.map(function (item) { return item.revenue; }), backgroundColor: provinceColors, borderWidth: 2, borderColor: '#fff' }] },
           options: { responsive: true, maintainAspectRatio: false, cutout: '56%', plugins: {
-            legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 10 } } },
-            tooltip: { callbacks: { label: function (context) { return context.label + ': ' + moneyWhole(context.raw); } } }
+            legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 7, boxHeight:7, padding:5, color: '#475569', font: { family: 'Inter', size: 9 }, generateLabels:function(chart){return chart.data.labels.map(function(label,index){var revenue=Number(chart.data.datasets[0].data[index]||0);return{text:label+' ('+percent(provinceTotal?revenue/provinceTotal:0)+')',fillStyle:provinceColors[index],strokeStyle:'#fff',lineWidth:2,pointStyle:'circle',hidden:!chart.getDataVisibility(index),index:index};});} } },
+            tooltip: { callbacks: { label: function (context) { var share=provinceTotal?Number(context.raw)/provinceTotal:0;return context.label + ': ' + moneyWhole(context.raw)+' ('+percent(share)+')'; } } }
           } }
         });
       }
