@@ -281,7 +281,8 @@
       .koc-product-table th:nth-child(6) { width:14%; }
       .koc-product-table th:nth-child(7) { width:11%; }
       .koc-product-table th:nth-child(8) { width:7%; }
-      .koc-product-table th:nth-child(2),.koc-product-table td:nth-child(2) { text-align:left; }
+      .koc-product-table th:nth-child(2),.koc-product-table .koc-creator-cell { text-align:left; }
+      .koc-product-table th:nth-child(3),.koc-product-table .koc-order-cell { text-align:center; }
       .koc-product-name { font-weight:700; color:#0f172a; line-height:1.5; }
       .koc-creator-link,.koc-detail-button { border:0; padding:0; background:transparent; color:#2563eb; font:inherit; font-weight:700; cursor:pointer; }
       .koc-creator-link { display:flex; min-height:28px; align-items:center; text-decoration:none; }
@@ -291,9 +292,19 @@
       .koc-delta.good { color:#059669; } .koc-delta.bad { color:#dc2626; } .koc-delta.neutral { color:#94a3b8; }
       .koc-detail-modal { height:auto; max-height:82dvh; }
       .koc-detail-modal .modal-body { overflow:auto; }
-      .koc-detail-table { min-width:1320px; table-layout:fixed; font-size:10px; }
-      .koc-detail-table th,.koc-detail-table td { padding:9px 6px; }
-      .koc-detail-table th:first-child,.koc-detail-table td:first-child { width:25%; min-width:260px; text-align:left; white-space:normal; }
+      .operations-table.koc-detail-table { width:100%; min-width:1120px; table-layout:fixed; font-size:10px; }
+      .operations-table.koc-detail-table th,.operations-table.koc-detail-table td { width:4.66%; min-width:0; padding:9px 5px; overflow:hidden; text-overflow:ellipsis; }
+      .operations-table.koc-detail-table th { line-height:1.25; white-space:normal; }
+      .operations-table.koc-detail-table td { white-space:nowrap; }
+      .operations-table.koc-detail-table th:first-child,.operations-table.koc-detail-table td:first-child { width:25%; min-width:0; text-align:left; white-space:normal; }
+      .operations-table.koc-detail-table th:nth-child(2),.operations-table.koc-detail-table td:nth-child(2) { width:7%; }
+      .operations-table.koc-detail-table th:nth-child(3),.operations-table.koc-detail-table td:nth-child(3) { width:5%; }
+      .operations-table.koc-detail-table th:nth-child(4),.operations-table.koc-detail-table td:nth-child(4) { width:8%; min-width:0; white-space:nowrap; }
+      .operations-table.koc-detail-table th:nth-child(5),.operations-table.koc-detail-table td:nth-child(5) { width:5%; min-width:0; white-space:nowrap; }
+      .operations-table.koc-detail-table th:nth-child(6),.operations-table.koc-detail-table td:nth-child(6) { width:7%; min-width:0; white-space:nowrap; }
+      .operations-table.koc-detail-table th:nth-child(7),.operations-table.koc-detail-table td:nth-child(7),
+      .operations-table.koc-detail-table th:nth-child(8),.operations-table.koc-detail-table td:nth-child(8),
+      .operations-table.koc-detail-table th:nth-child(9),.operations-table.koc-detail-table td:nth-child(9) { width:5%; }
       .koc-video-link { display:-webkit-box; overflow:hidden; color:#2563eb; font-weight:700; line-height:1.4; text-decoration:none; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
       .koc-video-account { display:block; margin-top:3px; color:var(--text-muted); font-size:9px; }
       @media (max-width:760px) { .koc-summary { grid-template-columns:1fr; } }
@@ -1824,8 +1835,8 @@
         var productRows=document.getElementById('kocProductRows');productRows.replaceChildren();
         (data.products||[]).forEach(function(product){(product.creators||[]).forEach(function(creator,index){var row=document.createElement('tr');
           if(index===0){var productCell=document.createElement('td');productCell.rowSpan=product.creators.length;productCell.className='koc-product-name';productCell.textContent=product.productName;row.appendChild(productCell);}
-          var creatorCell=document.createElement('td');var creatorName=document.createElement('a');creatorName.className='koc-creator-link';creatorName.href='https://www.tiktok.com/@'+encodeURIComponent(creator.creatorUsername);creatorName.target='_blank';creatorName.rel='noopener noreferrer';creatorName.textContent=creator.creatorUsername;creatorCell.appendChild(creatorName);row.appendChild(creatorCell);
-          var orderCell=document.createElement('td');orderCell.textContent=integer(creator.orders);row.appendChild(orderCell);
+          var creatorCell=document.createElement('td');creatorCell.className='koc-creator-cell';var creatorName=document.createElement('a');creatorName.className='koc-creator-link';creatorName.href='https://www.tiktok.com/@'+encodeURIComponent(creator.creatorUsername);creatorName.target='_blank';creatorName.rel='noopener noreferrer';creatorName.textContent=creator.creatorUsername;creatorCell.appendChild(creatorName);row.appendChild(creatorCell);
+          var orderCell=document.createElement('td');orderCell.className='koc-order-cell';orderCell.textContent=integer(creator.orders);row.appendChild(orderCell);
           var rateCell=document.createElement('td');rateCell.appendChild(kocRateNode(creator.cancellationRate));row.appendChild(rateCell);
           var gmvCell=document.createElement('td');gmvCell.textContent=compactMoney(creator.gmv);row.appendChild(gmvCell);
           var shareCell=document.createElement('td');var share=document.createElement('div');share.className='koc-share';var track=document.createElement('span');track.className='koc-share-track';var fill=document.createElement('span');fill.className='koc-share-fill';fill.style.width=Math.min(100,Number(creator.gmvShare||0)*100)+'%';track.appendChild(fill);var shareText=document.createElement('span');shareText.textContent=percent(creator.gmvShare||0);share.append(track,shareText);shareCell.appendChild(share);row.appendChild(shareCell);
