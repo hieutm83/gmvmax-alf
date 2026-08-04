@@ -318,10 +318,10 @@ export default {
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-weekly-prepare',saturdayDate:localDate,stage:0}));
     if(localDate.endsWith('-01')&&localHour===10&&[35,40,45].includes(localMinute)&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-monthly-prepare',firstDayOfMonth:localDate,stage:0}));
-    // Retry the hourly dispatch at +5/+10/+15. scheduled_reports is the
-    // idempotency key, so a successful slot is not sent twice while a missed
-    // Cron tick or deployment around minute 00 is recovered automatically.
-    if(![0,5,10,15].includes(localMinute))return;
+    // Retry every five minutes. scheduled_reports is the idempotency key, so a
+    // successful hourly slot is not sent twice while transient failures and
+    // deployments at the top of an hour recover automatically.
+    if(localMinute%5!==0)return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
     ctx.waitUntil(env.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour,
