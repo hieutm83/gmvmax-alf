@@ -10,6 +10,7 @@ import { loadFinanceAnalysis, loadFinancePeriodSummary, loadSkuUnitCosts, saveSk
 import { loadContentKocAnalysis } from './content-koc';
 import { loadProductAnalysis } from './product-analysis';
 import { loadKocAnalysis } from './koc-analysis';
+import { loadCustomerServiceAnalysis } from './customer-service';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { latestDueOrderBotSlot, monitorOrderBot, sendOrderBotReport } from './order-bot';
@@ -23,6 +24,17 @@ function validateScope(input: any): any {
   return { ...input, advertiserId: validateId(input?.advertiserId, 'Advertiser ID'),
     storeId: String(input?.storeId || '').trim(), startDate: validateDate(input?.startDate, 'startDate'),
     endDate: validateDate(input?.endDate, 'endDate') };
+}
+
+async function validateAdsScope(env: Env, input: any): Promise<any> {
+  const scope = validateScope(input);
+  // The dashboard exposes the human-readable shop code, while GMV Max report
+  // tools require the numeric store_id. Resolve the configured code at the API
+  // boundary so every ads/product/video endpoint uses the same canonical ID.
+  if (!scope.storeId || scope.storeId === env.DEFAULT_STORE_CODE) {
+    scope.storeId = await resolveDefaultStoreId(env);
+  }
+  return scope;
 }
 
 function validateSellerScope(input: any): any {
@@ -57,7 +69,7 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
   const contentEndDate=dateInTimezone(new Date(),env.TIMEZONE);
   const input=session.role==='content'?{...rawInput,startDate:shiftDate(contentEndDate,-6),endDate:contentEndDate}:rawInput;
   if(url.pathname==='/api/report'){
-    const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
+    const scope=await validateAdsScope(env,input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
     const report=await loadMainReport(env,scope,input.forceRefresh===true);
     const today=dateInTimezone(new Date(),env.TIMEZONE);if(scope.startDate===scope.endDate&&scope.endDate<today){
       await env.DB.prepare(`INSERT INTO daily_metrics(advertiser_id,store_id,report_date,summary_json,products_json) VALUES(?,?,?,?,?)
@@ -84,6 +96,10 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadOperationsAnalysis(env,scope));
   }
+  if(url.pathname==='/api/customer-service-analysis'){
+    const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    return ok(await loadCustomerServiceAnalysis(env,scope));
+  }
   if(url.pathname==='/api/finance-analysis'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadFinanceAnalysis(env,scope));
@@ -97,11 +113,11 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
     return ok(await loadFinancePeriodSummary(env,scope));
   }
   if(url.pathname==='/api/finance-sku-cost')return ok(await saveSkuUnitCost(env,input));
-  if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,validateScope(input)));
-  if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,validateScope(input)));
-  if(url.pathname==='/api/comparison')return ok(await loadComparison(env,{advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),startDate:validateDate(input.startDate||input.endDate,'startDate'),endDate:validateDate(input.endDate,'endDate')}));
-  if(url.pathname==='/api/video-stats')return ok(await loadVideoStats(env,{...input,advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),itemId:validateId(input.itemId,'Post ID'),endDate:validateDate(input.endDate,'endDate')}));
-  if(url.pathname==='/api/video-metadata')return ok(await loadVideoMetadata(env,{...input,advertiserId:validateId(input.advertiserId,'Advertiser ID'),storeId:String(input.storeId),itemId:validateId(input.itemId,'Post ID'),endDate:validateDate(input.endDate,'endDate')}));
+  if(url.pathname==='/api/product-videos')return ok(await loadProductVideos(env,await validateAdsScope(env,input)));
+  if(url.pathname==='/api/creative-summaries')return ok(await loadCreativeSummaries(env,await validateAdsScope(env,input)));
+  if(url.pathname==='/api/comparison')return ok(await loadComparison(env,await validateAdsScope(env,{...input,startDate:input.startDate||input.endDate})));
+  if(url.pathname==='/api/video-stats'){const scope=await validateAdsScope(env,{...input,startDate:input.startDate||input.endDate});return ok(await loadVideoStats(env,{...scope,itemId:validateId(input.itemId,'Post ID')}));}
+  if(url.pathname==='/api/video-metadata'){const scope=await validateAdsScope(env,{...input,startDate:input.startDate||input.endDate});return ok(await loadVideoMetadata(env,{...scope,itemId:validateId(input.itemId,'Post ID')}));}
   throw new HttpError(404,'API route not found.');
 }
 
