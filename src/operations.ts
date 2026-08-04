@@ -188,13 +188,28 @@ function orderSellerSkus(order: any): string[] {
   ).trim()).filter(Boolean)));
 }
 
-function orderProvince(order: any): string {
+function recipientDistricts(order: any): any[] {
   const address = order?.recipient_address || {};
   const regions = address.district_info || address.district_info_list || address.district_infos || [];
+  return Array.isArray(regions) ? regions : [];
+}
+
+function hasRecipientProvince(order: any): boolean {
+  const address = order?.recipient_address || {};
+  return Boolean(address.state || address.province || address.region_name || recipientDistricts(order).some((item: any) =>
+    /^(L1|LEVEL_1)$/i.test(String(item?.address_level || item?.level || '')) ||
+    /PROVINCE|STATE|TINH|THANH PHO|TỈNH|THÀNH PHỐ/i.test(String(item?.address_level_name || item?.address_type || ''))
+  ));
+}
+
+export function orderProvince(order: any): string {
+  const address = order?.recipient_address || {};
+  const regions = recipientDistricts(order);
   const province = regions.find((item: any) => /^(L1|LEVEL_1)$/i.test(String(item?.address_level || item?.level || ''))) ||
-    regions.find((item: any) => /PROVINCE|STATE|TỈNH|THÀNH PHỐ/i.test(String(item?.address_level_name || item?.address_type || ''))) ||
+    regions.find((item: any) => /PROVINCE|STATE|TINH|THANH PHO|TỈNH|THÀNH PHỐ/i.test(String(item?.address_level_name || item?.address_type || ''))) ||
     regions.find((item: any) => !/^L0$/i.test(String(item?.address_level || item?.level || ''))) || regions[0];
-  return String(province?.address_name || province?.name || address.state || address.province || 'Không xác định');
+  return String(province?.address_name || province?.name || province?.region_name ||
+    address.state || address.province || address.region_name || 'Không xác định');
 }
 
 export function calculateCancellationRate(cancellations: unknown, totalOrders: unknown): number {
@@ -230,11 +245,17 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
 
   const eventOrderIds = Array.from(new Set([...cancellations, ...returns]
     .map((item) => String(item.order_id || '')).filter(Boolean)));
-  const missingOrderIds = eventOrderIds.filter((id) => !orderById.has(id));
-  if (missingOrderIds.length) {
+  // List results may omit recipient_address even when the order exists. Fetch
+  // details for incomplete event rows so alerts match the Seller Center data.
+  const detailOrderIds = eventOrderIds.filter((id) => {
+    const order = orderById.get(id);
+    return !order || !hasRecipientProvince(order);
+  });
+  if (detailOrderIds.length) {
     try {
-      for (const order of await orderDetails(env, missingOrderIds, cipher)) {
-        orderById.set(String(order.id || order.order_id || ''), order);
+      for (const detail of await orderDetails(env, detailOrderIds, cipher)) {
+        const id = String(detail.id || detail.order_id || '');
+        orderById.set(id, { ...(orderById.get(id) || {}), ...detail });
       }
     } catch (error) {
       warnings.push(`Chi tiết đơn hàng: ${errorMessage(error)}`);
