@@ -309,20 +309,23 @@ export default {
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',...dueOrderBotSlot}));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
-    if(localHour===8&&localMinute===5&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
+    if(localHour===8&&[5,10,15].includes(localMinute)&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
       const yesterday=shiftDate(localDate,-1);
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
     }
     const localWeekday=new Date(`${localDate}T00:00:00Z`).getUTCDay();
-    if(localWeekday===6&&localHour===10&&localMinute===30&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
+    if(localWeekday===6&&localHour===10&&[30,35,40].includes(localMinute)&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-weekly-prepare',saturdayDate:localDate,stage:0}));
-    if(localDate.endsWith('-01')&&localHour===10&&localMinute===35&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
+    if(localDate.endsWith('-01')&&localHour===10&&[35,40,45].includes(localMinute)&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-monthly-prepare',firstDayOfMonth:localDate,stage:0}));
-    if(localMinute!==0)return;
+    // Retry the hourly dispatch at +5/+10/+15. scheduled_reports is the
+    // idempotency key, so a successful slot is not sent twice while a missed
+    // Cron tick or deployment around minute 00 is recovered automatically.
+    if(![0,5,10,15].includes(localMinute))return;
     const reportHour=localHour===0?24:localHour;
     const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
     ctx.waitUntil(env.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour,
-      backupDate:localHour===8?shiftDate(localDate,-1):undefined}));
+      backupDate:localHour===8&&localMinute===0?shiftDate(localDate,-1):undefined}));
   },
   async queue(batch:MessageBatch<TaskMessage>,env:Env):Promise<void>{
     for(const message of batch.messages){
