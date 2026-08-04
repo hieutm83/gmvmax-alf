@@ -1,7 +1,7 @@
 import type { Env } from './types';
 import { authorizedShop, shopRequest } from './seller';
 import { loadOperationsAnalysis } from './operations';
-import { hourInTimezone } from './utils';
+import { hourInTimezone, shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 const RED = 'c_db342e';
@@ -14,8 +14,8 @@ const STATUS_DEFINITIONS = [
 
 export interface OrderBotSlot {
   time: string;
-  cutoffTime: '00:01' | '18:00';
-  oldLabel: 'Đơn cần gửi trước 12h' | 'Đơn cần gửi trước 19h';
+  cutoffTime: '00:01' | '18:00' | '19:00';
+  oldLabel: string;
 }
 
 export interface OrderSkuBreakdown { sellerSku: string; qty: number; orders: number; }
@@ -29,8 +29,8 @@ export interface OrderStatusSummary {
   newBreakdown: OrderSkuBreakdown[];
 }
 
-const BEFORE_NOON_SLOTS = ['07:56', '08:56', '09:56', '10:56', '11:56'];
-const BEFORE_19H_SLOTS = ['14:56', '15:56', '16:56', '17:56', '18:56'];
+const BEFORE_NOON_SLOTS = Array.from({ length: 11 }, (_, index) => `${String(index + 1).padStart(2, '0')}:56`);
+const BEFORE_19H_SLOTS = Array.from({ length: 12 }, (_, index) => `${String(index + 12).padStart(2, '0')}:56`);
 
 export const ORDER_BOT_SLOTS: Record<string, OrderBotSlot> = Object.fromEntries([
   ...BEFORE_NOON_SLOTS, ...BEFORE_19H_SLOTS
@@ -41,7 +41,21 @@ export const ORDER_BOT_SLOTS: Record<string, OrderBotSlot> = Object.fromEntries(
 }])) as Record<string, OrderBotSlot>;
 
 export function isOrderBotReportDay(localDate: string): boolean {
-  return new Date(`${localDate}T00:00:00Z`).getUTCDay() !== 0;
+  return /^\d{4}-\d{2}-\d{2}$/.test(localDate);
+}
+
+export function resolveOrderBotSchedule(localDate: string, slotTime: string): {
+  slot: OrderBotSlot; cutoffDate: string; newLabel: string;
+} {
+  const slot = ORDER_BOT_SLOTS[slotTime];
+  if (!slot) throw new Error(`Invalid order bot slot: ${slotTime}`);
+  const isSunday = new Date(`${localDate}T00:00:00Z`).getUTCDay() === 0;
+  if (!isSunday) return { slot, cutoffDate: localDate, newLabel: 'Đơn mới' };
+  return {
+    slot: { ...slot, cutoffTime: '19:00', oldLabel: 'Đơn tồn trước 19h thứ 7' },
+    cutoffDate: shiftDate(localDate, -1),
+    newLabel: 'Đơn cần gửi trước 12h thứ 2'
+  };
 }
 
 function timestampMillis(value: unknown): number {
@@ -114,7 +128,7 @@ export function summarizeOrderStatus(label: string, orders: any[], cutoffEpoch: 
 }
 
 export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summaries: OrderStatusSummary[], updatedAt: Date,
-  timezone: string, maxBreakdownLines = Number.POSITIVE_INFINITY): string {
+  timezone: string, maxBreakdownLines = Number.POSITIVE_INFINITY, newLabel = 'Đơn mới'): string {
   const updatedTime = new Intl.DateTimeFormat('en-GB', {
     timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
   }).format(updatedAt);
@@ -132,7 +146,7 @@ export function formatOrderBotReport(localDate: string, slot: OrderBotSlot, summ
         const remaining = new Set(summary.oldBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
         lines.push(`... và ${remaining} SKU khác`);
       }
-      lines.push(`Đơn mới: ${summary.newTotal} đơn`);
+      lines.push(`${newLabel}: ${summary.newTotal} đơn`);
       summary.newBreakdown.slice(0, maxBreakdownLines).forEach((row) => lines.push(`- ${row.sellerSku}: ${row.orders} đơn`));
       if (summary.newBreakdown.length > maxBreakdownLines) {
         const remaining = new Set(summary.newBreakdown.slice(maxBreakdownLines).map((row) => row.sellerSku)).size;
@@ -154,13 +168,13 @@ export function buildOrderBotStyles(text: string): OrderTextStyle[] {
   if (titleEnd >= 0 && titleEnd + 1 < text.length) add(titleEnd + 1, text.length - titleEnd - 1, 'f_13');
   let offset = 0;
   for (const line of lines) {
-    if (/^Đơn cần gửi trước/.test(line)) {
+    if (/^(Đơn cần gửi trước|Đơn tồn trước)/.test(line)) {
       add(offset, line.length, 'f_13', 'i');
       const labelEnd = line.indexOf(':') + 1;
       if (labelEnd > 0) add(offset, labelEnd, 'u', GREEN);
       const groupTotal = line.match(/(\d+\s+đơn)$/);
       if (groupTotal) add(offset + line.lastIndexOf(groupTotal[1]), groupTotal[1].length, RED);
-    } else if (/^Đơn mới:/.test(line)) {
+    } else if (/^(Đơn mới|Đơn cần gửi trước 12h thứ 2):/.test(line)) {
       add(offset, line.length, 'f_13', 'i');
       const labelEnd = line.indexOf(':') + 1;
       if (labelEnd > 0) add(offset, labelEnd, 'u', GREEN);
@@ -258,7 +272,8 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
     `Mã đơn: ${String(incident?.orderId || '')}`,
     `Loại sự cố: ${String(incident?.type || 'Hủy đơn')}`,
     `Nhóm / Khởi tạo: ${String(incident?.group || 'Không xác định')}`,
-    `Lý do chi tiết: ${String(incident?.reason || 'Không xác định')}`,
+    `Seller SKU: ${(Array.isArray(incident?.sellerSkus) ? incident.sellerSkus : []).join(', ') || 'Không xác định'}`,
+    `Địa chỉ: ${String(incident?.province || 'Không xác định')}`,
     'Lịch sử đơn hàng',
     ...historyLines
   ].join('\n');
@@ -269,7 +284,7 @@ export function formatCancellationAlert(incident: any, timezone: string): { text
   ];
   let offset = 0;
   for (const line of text.split('\n')) {
-    const topLabel = line.match(/^(Mã đơn|Loại sự cố|Nhóm \/ Khởi tạo|Lý do chi tiết):/);
+    const topLabel = line.match(/^(Mã đơn|Loại sự cố|Nhóm \/ Khởi tạo|Seller SKU|Địa chỉ):/);
     if (topLabel) styles.push({ start: offset, len: topLabel[0].length, st: ['b'] });
     if (line === 'Lịch sử đơn hàng' || line.startsWith('• ')) styles.push({ start: offset, len: line.length, st: ['b'] });
     if (line.startsWith('  ')) {
@@ -348,8 +363,8 @@ export async function sendLatestCancellationTest(env: Env, reportDate: string): 
 }
 
 export async function sendOrderBotReport(env: Env, localDate: string, slotTime: string, force = false): Promise<void> {
-  const slot = ORDER_BOT_SLOTS[slotTime];
-  if (!slot) throw new Error(`Invalid order bot slot: ${slotTime}`);
+  const schedule = resolveOrderBotSchedule(localDate, slotTime);
+  const slot = schedule.slot;
   if (!isOrderBotReportDay(localDate)) return;
   if (!force) {
     const existing = await env.DB.prepare('SELECT status FROM order_bot_reports WHERE report_date=? AND report_time=?')
@@ -360,11 +375,11 @@ export async function sendOrderBotReport(env: Env, localDate: string, slotTime: 
   if (!shop) throw new Error('Seller OAuth chưa được ủy quyền.');
   const shopCipher = String(shop.cipher || shop.shop_cipher || shop.id || '');
   if (!shopCipher) throw new Error('Không tìm thấy shop_cipher.');
-  const cutoffEpoch = zonedDateTimeEpoch(localDate, slot.cutoffTime, env.TIMEZONE || 'Asia/Bangkok');
+  const cutoffEpoch = zonedDateTimeEpoch(schedule.cutoffDate, slot.cutoffTime, env.TIMEZONE || 'Asia/Bangkok');
   const statusOrders = await Promise.all(STATUS_DEFINITIONS.map((status) => currentOrders(env, shopCipher, status.code)));
   const summaries = STATUS_DEFINITIONS.map((status, index) => summarizeOrderStatus(status.label, statusOrders[index], cutoffEpoch));
   const updatedAt = new Date();
-  const text = formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok');
+  const text = formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok', Number.POSITIVE_INFINITY, schedule.newLabel);
   let messageId: string;
   try {
     messageId = await sendOrderBotMessage(env, text);
@@ -372,7 +387,7 @@ export async function sendOrderBotReport(env: Env, localDate: string, slotTime: 
     if (!/length|too long|too large|message size|limit exceeded/i.test(error instanceof Error ? error.message : String(error))) throw error;
     console.warn('Order bot message exceeded Zalo limit; retrying with 20 breakdown lines per group.');
     messageId = await sendOrderBotMessage(env,
-      formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok', 20));
+      formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok', 20, schedule.newLabel));
   }
   await env.DB.prepare(`INSERT INTO order_bot_reports(report_date,report_time,status,message_id,payload)
     VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_time) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,

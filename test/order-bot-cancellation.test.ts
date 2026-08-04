@@ -5,6 +5,7 @@ describe('order bot cancellation alert', () => {
   it('matches the compact cancellation reference format', () => {
     const result = formatCancellationAlert({
       orderId: '585294842698564880', type: 'Hủy đơn', group: 'BUYER', reason: 'Không còn nhu cầu',
+      sellerSkus: ['1 TTD'], province: 'Đồng Tháp',
       cancelledAt: Date.parse('2026-08-02T11:09:56Z'),
       orderHistory: {
         cancellationRequestedAt: Date.parse('2026-08-02T11:09:56Z'),
@@ -20,7 +21,8 @@ describe('order bot cancellation alert', () => {
       'Mã đơn: 585294842698564880',
       'Loại sự cố: Hủy đơn',
       'Nhóm / Khởi tạo: BUYER',
-      'Lý do chi tiết: Không còn nhu cầu',
+      'Seller SKU: 1 TTD',
+      'Địa chỉ: Đồng Tháp',
       'Lịch sử đơn hàng',
       '• Hoàn tất hoàn tiền',
       '  02/08/2026 18:38:39',
@@ -44,6 +46,10 @@ describe('order bot cancellation alert', () => {
     });
     expect(result.styles.some((style) => result.text.slice(style.start, style.start + style.len) === 'Lịch sử đơn hàng'
       && style.st.includes('b'))).toBe(true);
+    expect(result.styles.some((style) => result.text.slice(style.start, style.start + style.len) === 'Địa chỉ:'
+      && style.st.includes('b'))).toBe(true);
+    expect(result.styles.some((style) => result.text.slice(style.start, style.start + style.len) === 'Đồng Tháp'
+      && style.st.includes('b'))).toBe(false);
     const reasonStyle = result.styles.find((style) => result.text.slice(style.start, style.start + style.len) === '  Không còn nhu cầu'
       && style.st.includes('i') && style.st.includes('c_db342e'));
     expect(reasonStyle).toBeDefined();

@@ -1,20 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrderBotStyles, formatOrderBotReport, isOrderBotReportDay, ORDER_BOT_SLOTS, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
+import { buildOrderBotStyles, formatOrderBotReport, isOrderBotReportDay, ORDER_BOT_SLOTS, resolveOrderBotSchedule, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
 
 describe('order bot', () => {
-  it('sends Monday through Saturday and skips Sunday', () => {
+  it('sends every day including Sunday', () => {
     expect(isOrderBotReportDay('2026-08-01')).toBe(true);
-    expect(isOrderBotReportDay('2026-08-02')).toBe(false);
+    expect(isOrderBotReportDay('2026-08-02')).toBe(true);
     expect(isOrderBotReportDay('2026-08-03')).toBe(true);
   });
 
   it('uses the requested :56 report schedule for both cutoffs', () => {
-    expect(Object.keys(ORDER_BOT_SLOTS)).toEqual([
-      '07:56', '08:56', '09:56', '10:56', '11:56',
-      '14:56', '15:56', '16:56', '17:56', '18:56'
-    ]);
+    expect(Object.keys(ORDER_BOT_SLOTS)).toEqual(Array.from({ length: 23 }, (_, index) => `${String(index + 1).padStart(2, '0')}:56`));
     expect(ORDER_BOT_SLOTS['11:56'].oldLabel).toBe('Đơn cần gửi trước 12h');
     expect(ORDER_BOT_SLOTS['14:56'].oldLabel).toBe('Đơn cần gửi trước 19h');
+  });
+
+  it('rolls Sunday orders after Saturday 19:00 into the Monday noon group', () => {
+    const schedule = resolveOrderBotSchedule('2026-08-02', '18:56');
+    expect(schedule.cutoffDate).toBe('2026-08-01');
+    expect(schedule.slot.cutoffTime).toBe('19:00');
+    expect(schedule.slot.oldLabel).toBe('Đơn tồn trước 19h thứ 7');
+    expect(schedule.newLabel).toBe('Đơn cần gửi trước 12h thứ 2');
   });
 
   it('uses the report date in env timezone for both cutoffs', () => {

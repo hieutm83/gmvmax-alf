@@ -181,6 +181,22 @@ function packageStatus(order: any): string {
     .map((value) => String(value || '').toUpperCase()).find(Boolean) || '';
 }
 
+function orderSellerSkus(order: any): string[] {
+  const items = Array.isArray(order?.line_items) ? order.line_items : Array.isArray(order?.items) ? order.items : [];
+  return Array.from(new Set(items.map((item: any) => String(
+    item?.seller_sku || item?.sku_name || item?.sku_id || ''
+  ).trim()).filter(Boolean)));
+}
+
+function orderProvince(order: any): string {
+  const address = order?.recipient_address || {};
+  const regions = address.district_info || address.district_info_list || address.district_infos || [];
+  const province = regions.find((item: any) => /^(L1|LEVEL_1)$/i.test(String(item?.address_level || item?.level || ''))) ||
+    regions.find((item: any) => /PROVINCE|STATE|TỈNH|THÀNH PHỐ/i.test(String(item?.address_level_name || item?.address_type || ''))) ||
+    regions.find((item: any) => !/^L0$/i.test(String(item?.address_level || item?.level || ''))) || regions[0];
+  return String(province?.address_name || province?.name || address.state || address.province || 'Không xác định');
+}
+
 export function calculateCancellationRate(cancellations: unknown, totalOrders: unknown): number {
   const total = numberValue(totalOrders);
   return total > 0 ? numberValue(cancellations) / total : 0;
@@ -275,6 +291,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     incidents.push({ id: String(item.cancel_id || orderId), orderId, rmaId: String(item.cancel_id || ''), type: 'Hủy đơn',
       group: role,
       reason, status: CANCELLATION_STATUS_LABELS[cancelStatus] || cancelStatus, actionCode: '',
+      sellerSkus: orderSellerSkus(order), province: orderProvince(order),
       collectionTime: orderTimestamp(order, 'collection_time'), deliveryTime: orderTimestamp(order, 'delivery_time'),
       packageStatus: packageStatus(order),
       cancelledAt: refundCompletedAt || timestampMillis(order?.cancel_time) || cancellationApprovedAt,
