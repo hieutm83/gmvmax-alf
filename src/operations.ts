@@ -218,7 +218,7 @@ export function calculateCancellationRate(cancellations: unknown, totalOrders: u
 }
 
 export async function loadOperationsAnalysis(env: Env, input: any): Promise<any> {
-  const key = stableKey('seller-operations-v10-comparison', { startDate: input.startDate, endDate: input.endDate, skipComparison: input.skipComparison === true });
+  const key = stableKey('seller-operations-v11-comparison-breakdowns', { startDate: input.startDate, endDate: input.endDate, skipComparison: input.skipComparison === true });
   const cached = input.forceRefresh === true ? null : await cacheGet<any>(env, key);
   if (cached) return cached;
 
@@ -369,7 +369,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     startDate: previousStartDate, endDate: previousEndDate, forceRefresh: input.forceRefresh === true, skipComparison: true
   }).catch((error) => { warnings.push(`Kỳ trước: ${errorMessage(error)}`); return null; });
   const result = {
-    schemaVersion: 'operations-v9-comparison',
+    schemaVersion: 'operations-v11-comparison-breakdowns',
     generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate,
     shop: { name: shop.name || shop.shop_name, code: shop.code || shop.shop_code }, warnings,
     totals: {
@@ -393,6 +393,11 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     funnel,
     incidents,
     previous: previous ? previous.totals : null,
+    previousBreakdowns: previous ? {
+      cancelReasons: previous.cancelReasons || [],
+      returnReasons: previous.returnReasons || [],
+      failedReasons: previous.failedReasons || []
+    } : null,
     previousStartDate,
     previousEndDate
   };
