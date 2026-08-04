@@ -313,11 +313,12 @@
       .gmv-source-table th:first-child, .gmv-source-table td:first-child { width:32%; min-width:170px; }
       .gmv-source-table th:not(:first-child), .gmv-source-table td:not(:first-child) { width:auto; min-width:105px; }
       .gmv-source-table td { height: 46px; }
-      .cost-source-table { width:100%; min-width:0; table-layout:fixed; font-size:9.5px; }
-      .cost-source-table th:first-child,.cost-source-table td:first-child { width:24%; min-width:0; }
-      .cost-source-table th:nth-child(n+2),.cost-source-table td:nth-child(n+2) { width:9.5%; min-width:0; }
-      .cost-source-table th,.cost-source-table td { padding-right:3px; padding-left:3px; overflow:hidden; text-overflow:ellipsis; }
-      .cost-source-table th { padding-top:8px; padding-bottom:8px; font-size:8px; line-height:1.2; white-space:normal; }
+      .cost-analysis-panel .gmv-analysis-grid { grid-template-columns:minmax(280px,.68fr) minmax(0,1.62fr); gap:20px; }
+      .cost-source-table { width:100%; min-width:0; table-layout:fixed; font-size:11px; }
+      .cost-source-table th:first-child,.cost-source-table td:first-child { width:25%; min-width:0; }
+      .cost-source-table th:nth-child(n+2),.cost-source-table td:nth-child(n+2) { width:9.375%; min-width:0; }
+      .cost-source-table th,.cost-source-table td { padding-right:4px; padding-left:4px; overflow:hidden; text-overflow:ellipsis; }
+      .cost-source-table th { padding-top:9px; padding-bottom:9px; font-size:9px; line-height:1.2; white-space:normal; }
       .cost-analysis-panel .table-wrap { min-height: 250px; }
       .cost-source-table td { height: 68px; }
       .cost-source-table td:not(:first-child) { font-weight:500; }
@@ -326,7 +327,7 @@
       .cost-source-table .gmv-source-label { display:grid; grid-template-columns:9px minmax(0,1fr); align-items:start; gap:6px; }
       .cost-source-copy { display:grid; min-width:0; gap:3px; }
       .cost-source-name { overflow:hidden; text-overflow:ellipsis; }
-      .cost-source-table .gmv-contribution { display:block; line-height:1.25; }
+      .cost-source-table .gmv-contribution { display:block; font-size:10px; line-height:1.3; }
       .gmv-source-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; }
       .gmv-source-child { padding-left: 30px; color: var(--text-secondary); }
       .gmv-contribution { color: var(--text-muted); font-size: 11px; font-weight: 500; }
@@ -413,7 +414,7 @@
       .admin-body .seller-required { min-height: 0; margin: 0; padding: 16px; }
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
-      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid, .cost-analysis-panel .gmv-analysis-grid { grid-template-columns: 1fr; } }
       @media (max-width: 1250px) { .finance-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } .finance-dual { grid-template-columns:1fr; } }
       @media (max-width: 900px) { .finance-charts { grid-template-columns:1fr; } }
       @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } .admin-body .revenue-auth { align-items:flex-start; flex-direction:column; } .oauth-card-actions { width:100%; justify-content:flex-start; } }
@@ -2211,7 +2212,7 @@
           type: 'doughnut',
           data: { labels: provinces.map(function (item) { return item.name; }), datasets: [{ data: provinces.map(function (item) { return item.revenue; }), backgroundColor: provinceColors, borderWidth: 2, borderColor: '#fff' }] },
           options: { responsive: true, maintainAspectRatio: false, cutout: '56%', plugins: {
-            legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 7, boxHeight:7, padding:5, color: '#475569', font: { family: 'Inter', size: 9 }, generateLabels:function(chart){return chart.data.labels.map(function(label,index){var revenue=Number(chart.data.datasets[0].data[index]||0);return{text:label+' ('+percent(provinceTotal?revenue/provinceTotal:0)+')',fillStyle:provinceColors[index],strokeStyle:'#fff',lineWidth:2,pointStyle:'circle',hidden:!chart.getDataVisibility(index),index:index};});} } },
+            legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 9, boxHeight:9, padding:7, color: '#475569', font: { family: 'Inter', size: 11, weight:'600' }, generateLabels:function(chart){return chart.data.labels.map(function(label,index){var revenue=Number(chart.data.datasets[0].data[index]||0);return{text:label+' ('+percent(provinceTotal?revenue/provinceTotal:0)+')',fillStyle:provinceColors[index],strokeStyle:'#fff',lineWidth:2,pointStyle:'circle',hidden:!chart.getDataVisibility(index),index:index};});} } },
             tooltip: { callbacks: { label: function (context) { var share=provinceTotal?Number(context.raw)/provinceTotal:0;return context.label + ': ' + moneyWhole(context.raw)+' ('+percent(share)+')'; } } }
           } }
         });
