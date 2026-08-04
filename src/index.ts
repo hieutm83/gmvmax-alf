@@ -9,6 +9,7 @@ import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
 import { loadFinanceAnalysis, loadFinancePeriodSummary, loadSkuUnitCosts, saveSkuUnitCost } from './finance';
 import { loadContentKocAnalysis } from './content-koc';
 import { loadProductAnalysis } from './product-analysis';
+import { loadKocAnalysis } from './koc-analysis';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { latestDueOrderBotSlot, monitorOrderBot, sendOrderBotReport } from './order-bot';
@@ -70,6 +71,10 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
   if(url.pathname==='/api/content-koc-analysis'){
     const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadContentKocAnalysis(env,{...scope,forceRefresh:input.forceRefresh===true}));
+  }
+  if(url.pathname==='/api/koc-analysis'){
+    const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    return ok(await loadKocAnalysis(env,scope));
   }
   if(url.pathname==='/api/product-analysis'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');

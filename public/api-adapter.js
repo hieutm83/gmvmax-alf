@@ -11,6 +11,7 @@
     loadReport: ['POST', '/api/report'],
     loadRevenueAnalysis: ['POST', '/api/revenue-analysis'],
     loadContentKocAnalysis: ['POST', '/api/content-koc-analysis'],
+    loadKocAnalysis: ['POST', '/api/koc-analysis'],
     loadProductAnalysis: ['POST', '/api/product-analysis'],
     loadOperationsAnalysis: ['POST', '/api/operations-analysis'],
     loadFinanceAnalysis: ['POST', '/api/finance-analysis'],
