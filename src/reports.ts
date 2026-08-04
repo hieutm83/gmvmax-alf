@@ -204,7 +204,7 @@ export async function loadProductVideos(env: Env, input: any): Promise<any> {
 }
 
 export async function loadCreativeSummaries(env: Env, input: any): Promise<any> {
-  const key=stableKey('summary-v2-source-metrics',{...input,forceRefresh:undefined}); if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
+  const key=stableKey('summary-v3-source-orders',{...input,forceRefresh:undefined}); if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
   const session=await createSession(env); const contexts=input.allContexts||input.products||[];
   const rows:McpRow[]=[];const exactContexts=Array.from(new Map<string,ProductContext>(contexts.map((context:ProductContext)=>[`${context.campaignId}:${context.itemGroupId}`,context])).values());
   for(let offset=0;offset<exactContexts.length;offset+=4){
@@ -222,7 +222,7 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     .catch(() => new Set<string>());
   const ids=new Set<string>();let traffic=0,impressions=0;const map=new Map<string,any>();
   const costAttribution:any={total:0,productCard:0,seller:0,affiliate:0,metrics:{
-    productCard:{cost:0,grossRevenue:0,impressions:0,clicks:0},seller:{cost:0,grossRevenue:0,impressions:0,clicks:0},affiliate:{cost:0,grossRevenue:0,impressions:0,clicks:0}
+    productCard:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0},seller:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0},affiliate:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0}
   }};
   for(const row of rows){const m=row.metrics||{},id=rowId(row,'item_id'),k=`${rowId(row,'campaign_id')}:${rowId(row,'item_group_id')}`;
     const cost=numberValue(m.cost);
@@ -235,6 +235,7 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     costAttribution.metrics[source].grossRevenue+=numberValue(m.gross_revenue);
     costAttribution.metrics[source].impressions+=numberValue(m.product_impressions);
     costAttribution.metrics[source].clicks+=numberValue(m.product_clicks);
+    costAttribution.metrics[source].orders+=numberValue(m.orders);
     const entry=map.get(k)||{creativeCount:0,traffic:0,itemIds:[]}; impressions+=numberValue(m.product_impressions);traffic+=numberValue(m.product_clicks);
     if(numberValue(m.cost)||numberValue(m.orders)||numberValue(m.product_impressions)){if(id){ids.add(id);if(!entry.itemIds.includes(id))entry.itemIds.push(id);}entry.creativeCount++;entry.traffic+=numberValue(m.product_clicks);}map.set(k,entry);}
   for(const source of Object.values<any>(costAttribution.metrics))source.roi=source.cost?source.grossRevenue/source.cost:0;
