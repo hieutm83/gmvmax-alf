@@ -17,7 +17,7 @@ describe('order bot', () => {
   it('catches up a delayed :56 slot without consuming a future slot', () => {
     expect(latestDueOrderBotSlot('2026-08-04', 10, 56)).toEqual({ reportDate: '2026-08-04', reportTime: '10:56' });
     expect(latestDueOrderBotSlot('2026-08-04', 11, 5)).toEqual({ reportDate: '2026-08-04', reportTime: '10:56' });
-    expect(latestDueOrderBotSlot('2026-08-04', 11, 11)).toBeNull();
+    expect(latestDueOrderBotSlot('2026-08-04', 11, 11)).toEqual({ reportDate: '2026-08-04', reportTime: '10:56' });
     expect(latestDueOrderBotSlot('2026-08-04', 0, 5)).toEqual({ reportDate: '2026-08-03', reportTime: '23:56' });
   });
 

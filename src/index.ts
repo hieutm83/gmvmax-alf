@@ -305,11 +305,11 @@ export default {
       console.error('TikTok Ads MCP proactive token refresh failed',error instanceof Error?error.message:String(error))));
     ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
     const dueOrderBotSlot=latestDueOrderBotSlot(localDate,localHour,localMinute);
-    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&dueOrderBotSlot)
+    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&dueOrderBotSlot&&(localMinute===56||localMinute%5===0))
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',...dueOrderBotSlot}));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
-    if(localHour===8&&[5,10,15].includes(localMinute)&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
+    if(localHour===8&&localMinute>=5&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
       const yesterday=shiftDate(localDate,-1);
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
     }

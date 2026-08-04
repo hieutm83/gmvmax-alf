@@ -49,7 +49,6 @@ export function latestDueOrderBotSlot(localDate: string, localHour: number, loca
   if (localMinute >= 56 && localHour >= 1 && localHour <= 23) {
     return { reportDate: localDate, reportTime: `${String(localHour).padStart(2, '0')}:56` };
   }
-  if (localMinute > 10) return null;
   const previousHour = localHour - 1;
   if (previousHour >= 1) {
     return { reportDate: localDate, reportTime: `${String(previousHour).padStart(2, '0')}:56` };
