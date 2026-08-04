@@ -1,7 +1,7 @@
 import type { Env } from './types';
 import { authorizedShop, shopRequest } from './seller';
 import { loadOperationsAnalysis } from './operations';
-import { hourInTimezone, shiftDate } from './utils';
+import { shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 const RED = 'c_db342e';
@@ -42,6 +42,19 @@ export const ORDER_BOT_SLOTS: Record<string, OrderBotSlot> = Object.fromEntries(
 
 export function isOrderBotReportDay(localDate: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(localDate);
+}
+
+export function latestDueOrderBotSlot(localDate: string, localHour: number, localMinute: number):
+  { reportDate: string; reportTime: string } | null {
+  if (localMinute >= 56 && localHour >= 1 && localHour <= 23) {
+    return { reportDate: localDate, reportTime: `${String(localHour).padStart(2, '0')}:56` };
+  }
+  if (localMinute > 10) return null;
+  const previousHour = localHour - 1;
+  if (previousHour >= 1) {
+    return { reportDate: localDate, reportTime: `${String(previousHour).padStart(2, '0')}:56` };
+  }
+  return { reportDate: shiftDate(localDate, -1), reportTime: '23:56' };
 }
 
 export function resolveOrderBotSchedule(localDate: string, slotTime: string): {
@@ -325,12 +338,6 @@ export async function monitorOrderBot(env: Env, reportDate: string): Promise<voi
         VALUES(?,?,?,?)`).bind(id, String(incident.orderId || ''), 'SEEN', JSON.stringify(incident)).run();
     }
   } else {
-    const movedToTransit = Number(counts.AWAITING_COLLECTION) < Number(previous.AWAITING_COLLECTION || 0) &&
-      Number(counts.IN_TRANSIT) > Number(previous.IN_TRANSIT || 0);
-    if (movedToTransit) {
-      const hour = hourInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
-      await sendOrderBotReport(env, reportDate, hour < 14 ? '10:56' : '16:56', true);
-    }
     for (const incident of cancellations.slice().sort((a: any, b: any) => timestampMillis(a.cancelledAt) - timestampMillis(b.cancelledAt))) {
       const id = cancellationId(incident); if (!id) continue;
       const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO order_bot_cancellation_events(cancellation_id,order_id,status,payload)

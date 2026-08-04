@@ -11,7 +11,7 @@ import { loadContentKocAnalysis } from './content-koc';
 import { loadProductAnalysis } from './product-analysis';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
-import { monitorOrderBot, ORDER_BOT_SLOTS, sendOrderBotReport } from './order-bot';
+import { latestDueOrderBotSlot, monitorOrderBot, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
   createDashboardSession, dashboardRoleForPassword, dashboardSessionCookie, dashboardSessionFromRequest,
@@ -300,12 +300,13 @@ export default {
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);
     const localParts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:env.TIMEZONE,hour:'2-digit',minute:'2-digit',hour12:false})
       .formatToParts(now).map((part)=>[part.type,part.value]));
-    const localMinute=Number(localParts.minute);const slotTime=`${String(localHour).padStart(2,'0')}:${String(localMinute).padStart(2,'0')}`;
+    const localMinute=Number(localParts.minute);
     if(localMinute%15===0)ctx.waitUntil(keepAccessTokenFresh(env).catch((error)=>
       console.error('TikTok Ads MCP proactive token refresh failed',error instanceof Error?error.message:String(error))));
     ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
-    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&ORDER_BOT_SLOTS[slotTime])
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',reportDate:localDate,reportTime:slotTime}));
+    const dueOrderBotSlot=latestDueOrderBotSlot(localDate,localHour,localMinute);
+    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&dueOrderBotSlot)
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',...dueOrderBotSlot}));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
     if(localHour===8&&localMinute===5&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
