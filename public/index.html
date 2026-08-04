@@ -281,15 +281,21 @@
       .koc-product-table th:nth-child(6) { width:14%; }
       .koc-product-table th:nth-child(7) { width:11%; }
       .koc-product-table th:nth-child(8) { width:7%; }
+      .koc-product-table th:nth-child(2),.koc-product-table td:nth-child(2) { text-align:left; }
       .koc-product-name { font-weight:700; color:#0f172a; line-height:1.5; }
       .koc-creator-link,.koc-detail-button { border:0; padding:0; background:transparent; color:#2563eb; font:inherit; font-weight:700; cursor:pointer; }
+      .koc-creator-link { display:flex; min-height:28px; align-items:center; text-decoration:none; }
       .koc-share { display:grid; grid-template-columns:minmax(54px,1fr) auto; align-items:center; gap:7px; }
       .koc-share-track { height:5px; overflow:hidden; border-radius:3px; background:#edf2f7; }
       .koc-share-fill { display:block; height:100%; border-radius:3px; background:#fb923c; }
       .koc-delta.good { color:#059669; } .koc-delta.bad { color:#dc2626; } .koc-delta.neutral { color:#94a3b8; }
       .koc-detail-modal { height:auto; max-height:82dvh; }
       .koc-detail-modal .modal-body { overflow:auto; }
-      .koc-detail-table { min-width:760px; font-size:11px; }
+      .koc-detail-table { min-width:1320px; table-layout:fixed; font-size:10px; }
+      .koc-detail-table th,.koc-detail-table td { padding:9px 6px; }
+      .koc-detail-table th:first-child,.koc-detail-table td:first-child { width:25%; min-width:260px; text-align:left; white-space:normal; }
+      .koc-video-link { display:-webkit-box; overflow:hidden; color:#2563eb; font-weight:700; line-height:1.4; text-decoration:none; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+      .koc-video-account { display:block; margin-top:3px; color:var(--text-muted); font-size:9px; }
       @media (max-width:760px) { .koc-summary { grid-template-columns:1fr; } }
       .finance-amount.expense { color:#dc2626 !important; }
       .finance-table tfoot td { padding:12px; border-top:2px solid var(--border); background:#f8fafc; font-weight:800; }
@@ -1791,11 +1797,15 @@
       function openKocDetail(product,creator){
         var modal=document.getElementById('kocDetailModal');
         document.getElementById('kocDetailModalTitle').textContent=product.productName;
-        document.getElementById('kocDetailModalMeta').textContent='@'+creator.creatorUsername+' · '+integer(creator.orders)+' đơn · '+percent(creator.cancellationRate)+' hủy';
+        var videos=creator.videos||[];
+        document.getElementById('kocDetailModalMeta').textContent='@'+creator.creatorUsername+' · '+integer(videos.length)+' video có đơn · '+integer(creator.orders)+' đơn Affiliate';
         var wrap=document.createElement('div');wrap.className='table-wrap';var table=document.createElement('table');table.className='operations-table koc-detail-table';
-        var head=document.createElement('thead');var headRow=document.createElement('tr');['Mã đơn','Nguồn','Số lượng','Giá trị','Trạng thái','Ngày tạo'].forEach(function(label){var th=document.createElement('th');th.textContent=label;headRow.appendChild(th);});head.appendChild(headRow);table.appendChild(head);
-        var body=document.createElement('tbody');(creator.details||[]).forEach(function(detail){var row=document.createElement('tr');var labels={VIDEO:'Video',LIVE:'Phát trực tiếp',PRE_LIVE:'Phát trực tiếp',SHOP:'Trưng bày',PROMOTION_PAGE:'Trưng bày',LINKSHARE:'Link chia sẻ'};
-          [detail.orderId,labels[detail.contentType]||detail.contentType,integer(detail.quantity),moneyWhole(detail.gmv)+'đ',detail.fullyReturned?'Đã hoàn/hủy':'Hợp lệ',detail.createTime?new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'short'}).format(new Date(detail.createTime*1000)):'-'].forEach(function(value){var cell=document.createElement('td');cell.textContent=value;row.appendChild(cell);});body.appendChild(row);});
+        var head=document.createElement('thead');var headRow=document.createElement('tr');['Video / tài khoản','Chi phí','Đơn','GMV','ROI','Hiển thị','Nhấp','CTR','CVR','Xem 2s','Xem 6s','25%','50%','75%','100%'].forEach(function(label){var th=document.createElement('th');th.textContent=label;headRow.appendChild(th);});head.appendChild(headRow);table.appendChild(head);
+        var body=document.createElement('tbody');videos.forEach(function(video){var row=document.createElement('tr');var videoCell=document.createElement('td');
+          var videoLink=document.createElement('a');videoLink.className='koc-video-link';videoLink.href=video.videoUrl;videoLink.target='_blank';videoLink.rel='noopener noreferrer';videoLink.textContent=video.title||('Video '+video.itemId);videoCell.appendChild(videoLink);
+          var videoAccount=document.createElement('span');videoAccount.className='koc-video-account';videoAccount.textContent=(video.accountUsername?'@'+video.accountUsername:(video.accountName||'Không rõ tài khoản'))+' · ID: '+video.itemId+' · '+integer(video.affiliateOrders||0)+' đơn Affiliate';videoCell.appendChild(videoAccount);row.appendChild(videoCell);
+          [moneyWhole(video.cost),integer(video.orders),moneyWhole(video.grossRevenue),number(video.roi),integer(video.impressions),integer(video.clicks),percent(video.ctr),percent(video.cvr),rate(video.viewRate2s),rate(video.viewRate6s),rate(video.viewRate25),rate(video.viewRate50),rate(video.viewRate75),rate(video.viewRate100)].forEach(function(value){var cell=document.createElement('td');cell.textContent=value;row.appendChild(cell);});body.appendChild(row);});
+        if(!videos.length){var emptyRow=document.createElement('tr');var emptyCell=document.createElement('td');emptyCell.colSpan=15;emptyCell.className='empty';emptyCell.textContent='Không có video phát sinh đơn trong khoảng ngày đã chọn.';emptyRow.appendChild(emptyCell);body.appendChild(emptyRow);}
         table.appendChild(body);wrap.appendChild(table);document.getElementById('kocDetailModalBody').replaceChildren(wrap);modal.classList.remove('hidden');document.body.classList.add('modal-open');
       }
 
@@ -1814,7 +1824,7 @@
         var productRows=document.getElementById('kocProductRows');productRows.replaceChildren();
         (data.products||[]).forEach(function(product){(product.creators||[]).forEach(function(creator,index){var row=document.createElement('tr');
           if(index===0){var productCell=document.createElement('td');productCell.rowSpan=product.creators.length;productCell.className='koc-product-name';productCell.textContent=product.productName;row.appendChild(productCell);}
-          var creatorCell=document.createElement('td');var creatorName=document.createElement('span');creatorName.className='koc-creator-link';creatorName.textContent=creator.creatorUsername;creatorCell.appendChild(creatorName);row.appendChild(creatorCell);
+          var creatorCell=document.createElement('td');var creatorName=document.createElement('a');creatorName.className='koc-creator-link';creatorName.href='https://www.tiktok.com/@'+encodeURIComponent(creator.creatorUsername);creatorName.target='_blank';creatorName.rel='noopener noreferrer';creatorName.textContent=creator.creatorUsername;creatorCell.appendChild(creatorName);row.appendChild(creatorCell);
           var orderCell=document.createElement('td');orderCell.textContent=integer(creator.orders);row.appendChild(orderCell);
           var rateCell=document.createElement('td');rateCell.appendChild(kocRateNode(creator.cancellationRate));row.appendChild(rateCell);
           var gmvCell=document.createElement('td');gmvCell.textContent=compactMoney(creator.gmv);row.appendChild(gmvCell);

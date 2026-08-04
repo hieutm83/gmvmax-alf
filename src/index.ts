@@ -73,7 +73,7 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
     return ok(await loadContentKocAnalysis(env,{...scope,forceRefresh:input.forceRefresh===true}));
   }
   if(url.pathname==='/api/koc-analysis'){
-    const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadKocAnalysis(env,scope));
   }
   if(url.pathname==='/api/product-analysis'){

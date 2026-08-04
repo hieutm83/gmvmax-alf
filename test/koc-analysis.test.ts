@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeKocOrders } from '../src/koc-analysis';
+import { attachKocVideos, summarizeKocOrders } from '../src/koc-analysis';
 
 describe('KOC affiliate analysis', () => {
   it('counts unique orders while keeping cancellation rate at SKU-order level', () => {
@@ -40,5 +40,19 @@ describe('KOC affiliate analysis', () => {
     const sku = { creator_username:'creator', product_id:'p', content_type:'VIDEO', estimated_commission_base:{amount:'10'} };
     const result = summarizeKocOrders([{id:'a',skus:[sku]},{id:'b',skus:[sku]}],[{id:'old',skus:[sku]}],{});
     expect(result.products[0].creators[0].comparison).toMatchObject({ current:2, previous:1, delta:1, rate:1 });
+  });
+
+  it('joins ordered affiliate videos with Ads creative metrics', () => {
+    const result = summarizeKocOrders([{ id:'order-1', skus:[
+      { creator_username:'creator_a', product_id:'p1', content_type:'VIDEO', content_id:'video-1',
+        estimated_commission_base:{ amount:'143900' }, fully_return:'No' }
+    ] }], [], { p1:'Sản phẩm A' });
+    attachKocVideos(result, [{ itemId:'video-1', title:'Tiêu đề video', accountUsername:'creator_a',
+      cost:50000, orders:2, grossRevenue:287800, productImpressions:1000, productClicks:20,
+      viewRate2s:30, viewRate6s:10, viewRate25:5, viewRate50:3, viewRate75:2, viewRate100:1 }]);
+    expect(result.products[0].creators[0].videos[0]).toMatchObject({
+      itemId:'video-1', title:'Tiêu đề video', affiliateOrders:1, affiliateGmv:143900,
+      cost:50000, orders:2, grossRevenue:287800, roi:5.756, impressions:1000, clicks:20, ctr:.02, cvr:.1
+    });
   });
 });
