@@ -188,28 +188,80 @@ function orderSellerSkus(order: any): string[] {
   ).trim()).filter(Boolean)));
 }
 
+const VIETNAM_PROVINCES = [
+  'An Giang', 'Bà Rịa - Vũng Tàu', 'Bắc Giang', 'Bắc Kạn', 'Bạc Liêu', 'Bắc Ninh',
+  'Bến Tre', 'Bình Định', 'Bình Dương', 'Bình Phước', 'Bình Thuận', 'Cà Mau',
+  'Cần Thơ', 'Cao Bằng', 'Đà Nẵng', 'Đắk Lắk', 'Đắk Nông', 'Điện Biên', 'Đồng Nai',
+  'Đồng Tháp', 'Gia Lai', 'Hà Giang', 'Hà Nam', 'Hà Nội', 'Hà Tĩnh', 'Hải Dương',
+  'Hải Phòng', 'Hậu Giang', 'Hòa Bình', 'Hồ Chí Minh', 'Hưng Yên', 'Khánh Hòa',
+  'Kiên Giang', 'Kon Tum', 'Lai Châu', 'Lâm Đồng', 'Lạng Sơn', 'Lào Cai', 'Long An',
+  'Nam Định', 'Nghệ An', 'Ninh Bình', 'Ninh Thuận', 'Phú Thọ', 'Phú Yên',
+  'Quảng Bình', 'Quảng Nam', 'Quảng Ngãi', 'Quảng Ninh', 'Quảng Trị', 'Sóc Trăng',
+  'Sơn La', 'Tây Ninh', 'Thái Bình', 'Thái Nguyên', 'Thanh Hóa', 'Thừa Thiên Huế',
+  'Tiền Giang', 'Trà Vinh', 'Tuyên Quang', 'Vĩnh Long', 'Vĩnh Phúc', 'Yên Bái', 'Huế'
+] as const;
+
+function normalizedAddress(value: unknown): string {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function provinceFromAddressText(value: unknown): string {
+  const normalized = ` ${normalizedAddress(value)} `;
+  if (!normalized.trim()) return '';
+  for (const province of VIETNAM_PROVINCES) {
+    if (normalized.includes(` ${normalizedAddress(province)} `)) return province;
+  }
+  return '';
+}
+
+function recipientAddress(order: any): any {
+  return order?.recipient_address || order?.shipping_address || order?.delivery_address ||
+    order?.shipping_info?.recipient_address || {};
+}
+
 function recipientDistricts(order: any): any[] {
-  const address = order?.recipient_address || {};
-  const regions = address.district_info || address.district_info_list || address.district_infos || [];
-  return Array.isArray(regions) ? regions : [];
+  const address = recipientAddress(order);
+  let regions = address.district_info || address.district_info_list || address.district_infos || [];
+  if (typeof regions === 'string') {
+    try { regions = JSON.parse(regions); } catch { regions = []; }
+  }
+  if (Array.isArray(regions)) return regions;
+  return regions && typeof regions === 'object' ? Object.values(regions) : [];
 }
 
 function hasRecipientProvince(order: any): boolean {
-  const address = order?.recipient_address || {};
-  return Boolean(address.state || address.province || address.region_name || recipientDistricts(order).some((item: any) =>
+  const address = recipientAddress(order);
+  return Boolean(address.state || address.province || address.region_name ||
+    provinceFromAddressText(address.full_address || address.address_detail) || recipientDistricts(order).some((item: any) =>
     /^(L1|LEVEL_1)$/i.test(String(item?.address_level || item?.level || '')) ||
     /PROVINCE|STATE|TINH|THANH PHO|TỈNH|THÀNH PHỐ/i.test(String(item?.address_level_name || item?.address_type || ''))
   ));
 }
 
 export function orderProvince(order: any): string {
-  const address = order?.recipient_address || {};
+  const address = recipientAddress(order);
   const regions = recipientDistricts(order);
   const province = regions.find((item: any) => /^(L1|LEVEL_1)$/i.test(String(item?.address_level || item?.level || ''))) ||
     regions.find((item: any) => /PROVINCE|STATE|TINH|THANH PHO|TỈNH|THÀNH PHỐ/i.test(String(item?.address_level_name || item?.address_type || ''))) ||
     regions.find((item: any) => !/^L0$/i.test(String(item?.address_level || item?.level || ''))) || regions[0];
   return String(province?.address_name || province?.name || province?.region_name ||
-    address.state || address.province || address.region_name || 'Không xác định');
+    address.state || address.province || address.region_name ||
+    provinceFromAddressText(address.full_address || address.address_detail ||
+      [address.address_line1, address.address_line2, address.address_line3, address.address_line4].filter(Boolean).join(', ')) ||
+    'Không xác định');
+}
+
+function mergeOrderRecord(current: any, incoming: any): any {
+  const currentAddress = recipientAddress(current);
+  const incomingAddress = recipientAddress(incoming);
+  const merged = { ...(current || {}), ...(incoming || {}) };
+  if (Object.keys(currentAddress).length || Object.keys(incomingAddress).length) {
+    merged.recipient_address = { ...currentAddress, ...incomingAddress };
+    const districts = recipientDistricts(incoming).length ? recipientDistricts(incoming) : recipientDistricts(current);
+    if (districts.length) merged.recipient_address.district_info = districts;
+  }
+  return merged;
 }
 
 export function calculateCancellationRate(cancellations: unknown, totalOrders: unknown): number {
@@ -234,7 +286,10 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     ordersUpdatedForPeriod(env, input.startDate, input.endDate, cipher)
   ]);
   const orderById = new Map(populationOrders.map((order) => [String(order.id || order.order_id || ''), order]));
-  updatedOrders.forEach((order) => orderById.set(String(order.id || order.order_id || ''), order));
+  updatedOrders.forEach((order) => {
+    const id = String(order.id || order.order_id || '');
+    orderById.set(id, mergeOrderRecord(orderById.get(id), order));
+  });
 
   const [cancellations, returns] = await Promise.all([
     pagedSearch(env, '/return_refund/202602/cancellations/search', 'cancellations', cipher, input.startDate, input.endDate)
@@ -255,7 +310,7 @@ export async function loadOperationsAnalysis(env: Env, input: any): Promise<any>
     try {
       for (const detail of await orderDetails(env, detailOrderIds, cipher)) {
         const id = String(detail.id || detail.order_id || '');
-        orderById.set(id, { ...(orderById.get(id) || {}), ...detail });
+        orderById.set(id, mergeOrderRecord(orderById.get(id), detail));
       }
     } catch (error) {
       warnings.push(`Chi tiết đơn hàng: ${errorMessage(error)}`);

@@ -24,4 +24,21 @@ describe('order province extraction', () => {
       }
     })).toBe('Phú Thọ');
   });
+
+  it('reads a masked Vietnamese full address when district info is omitted', () => {
+    expect(orderProvince({
+      recipient_address: { full_address: '************, Vĩnh Long, Việt Nam' }
+    })).toBe('Vĩnh Long');
+  });
+
+  it('supports object-shaped district data and alternate address containers', () => {
+    expect(orderProvince({
+      shipping_address: {
+        district_info: {
+          country: { address_level: 'L0', address_name: 'Việt Nam' },
+          province: { address_level: 'L1', address_name: 'Vĩnh Long' }
+        }
+      }
+    })).toBe('Vĩnh Long');
+  });
 });
