@@ -117,7 +117,7 @@ export async function clearDashboardLoginFailures(env: Env, fingerprint: string)
 }
 
 const CONTENT_API_PATHS = new Set([
-  '/api/state', '/api/stores', '/api/report', '/api/revenue-analysis', '/api/content-koc-analysis', '/api/koc-analysis',
+  '/api/state', '/api/stores', '/api/report', '/api/cads-report', '/api/revenue-analysis', '/api/content-koc-analysis', '/api/koc-analysis',
   '/api/product-videos', '/api/creative-summaries', '/api/comparison', '/api/video-stats', '/api/video-metadata',
   '/api/customer-service-analysis'
 ]);

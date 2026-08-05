@@ -9,6 +9,7 @@
     getGmvMaxStores: ['POST', '/api/stores'],
     getTikTokConnectUrl: ['GET', '/api/oauth/connect'],
     loadReport: ['POST', '/api/report'],
+    loadCAdsReport: ['POST', '/api/cads-report'],
     loadRevenueAnalysis: ['POST', '/api/revenue-analysis'],
     loadContentKocAnalysis: ['POST', '/api/content-koc-analysis'],
     loadKocAnalysis: ['POST', '/api/koc-analysis'],

@@ -11,6 +11,7 @@ import { loadContentKocAnalysis } from './content-koc';
 import { loadProductAnalysis } from './product-analysis';
 import { loadKocAnalysis } from './koc-analysis';
 import { loadCustomerServiceAnalysis } from './customer-service';
+import { loadCAdsReport } from './cads';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { latestDueOrderBotSlot, monitorOrderBot, sendOrderBotReport } from './order-bot';
@@ -79,6 +80,10 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
   if(url.pathname==='/api/revenue-analysis'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngay bat dau phai truoc ngay ket thuc.');
     return ok(await loadSellerRevenueAnalysis(env,scope));
+  }
+  if(url.pathname==='/api/cads-report'){
+    const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    return ok(await loadCAdsReport(env,{...scope,forceRefresh:input.forceRefresh===true}));
   }
   if(url.pathname==='/api/content-koc-analysis'){
     const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');

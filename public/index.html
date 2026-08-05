@@ -459,6 +459,24 @@
       .operations-table th:nth-child(4), .operations-table td:nth-child(4) { width: 25%; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
       .operations-table th:nth-child(5), .operations-table td:nth-child(5) { width: 20%; min-width: 0; white-space: normal; }
       .operations-table th:nth-child(6), .operations-table td:nth-child(6) { width: 12%; min-width: 0; white-space: normal; }
+      .cads-overview { display:grid; grid-template-columns:minmax(280px,.8fr) minmax(0,2fr); gap:16px; margin-bottom:28px; }
+      .cads-panel { padding:20px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); }
+      .cads-panel h2 { margin:0 0 18px; font-size:16px; }
+      .cads-channel + .cads-channel { margin-top:22px; padding-top:18px; border-top:1px solid var(--border); }
+      .cads-channel-name { margin-bottom:8px; color:var(--text-muted); font-size:11px; font-weight:700; text-transform:uppercase; }
+      .cads-channel-line { display:flex; justify-content:space-between; gap:14px; padding:7px 0; color:var(--text-secondary); }
+      .cads-channel-line strong { color:var(--text); font-variant-numeric:tabular-nums; }
+      .cads-performance { display:grid; grid-template-columns:200px minmax(0,1fr); gap:18px; }
+      .cads-kpis { display:grid; gap:10px; }
+      .cads-kpi { padding:13px 15px; border:1px solid var(--border); border-left:3px solid var(--primary); border-radius:8px; }
+      .cads-kpi span { color:var(--text-muted); font-size:11px; font-weight:700; }
+      .cads-kpi strong { display:block; margin-top:8px; color:var(--text); font-size:21px; font-variant-numeric:tabular-nums; }
+      .cads-chart { position:relative; min-height:330px; }
+      .cads-table { width:max-content; min-width:100%; }
+      .cads-table th:first-child,.cads-table td:first-child { min-width:54px; text-align:center; }
+      .cads-table th:nth-child(2),.cads-table td:nth-child(2) { min-width:220px; text-align:left; white-space:normal; }
+      .cads-table td { text-align:right; }
+      .cads-no-cart { color:#9a3412; font-weight:700; }
       .order-detail-link { color: var(--primary); font-weight: 700; text-decoration: none; }
       .order-detail-link:hover { text-decoration: underline; }
       .admin-modal { width: min(720px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
@@ -470,7 +488,7 @@
       .admin-body .seller-required { min-height: 0; margin: 0; padding: 16px; }
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
-      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid, .cost-analysis-panel .gmv-analysis-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid, .cost-analysis-panel .gmv-analysis-grid,.cads-overview,.cads-performance { grid-template-columns: 1fr; } }
       @media (max-width: 1250px) { .finance-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } .finance-dual { grid-template-columns:1fr; } }
       @media (max-width: 900px) { .finance-charts { grid-template-columns:1fr; } }
       @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } .admin-body .revenue-auth { align-items:flex-start; flex-direction:column; } .oauth-card-actions { width:100%; justify-content:flex-start; } }
@@ -619,6 +637,7 @@
       <nav id="reportTabs" class="report-tabs hidden" aria-label="Loại báo cáo">
         <button class="report-tab active" type="button" data-report-view="revenue" aria-selected="true">Phân Tích Doanh Thu</button>
         <button class="report-tab" type="button" data-report-view="ads" aria-selected="false">Hiệu Quả Quảng Cáo</button>
+        <button class="report-tab" type="button" data-report-view="cads" aria-selected="false">C-ADS</button>
         <button class="report-tab" type="button" data-report-view="operations" aria-selected="false">Đơn Hoàn Hủy &amp; Logistics</button>
         <button class="report-tab" type="button" data-report-view="finance" aria-selected="false">Tài chính</button>
         <button class="report-tab" type="button" data-report-view="content-koc" aria-selected="false">Content &amp; KOC</button>
@@ -673,6 +692,16 @@
           </table>
           <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
         </div>
+      </section>
+      <section id="cadsReport" class="hidden">
+        <div class="cads-overview">
+          <aside class="cads-panel"><h2>Trạng thái nhóm quảng cáo</h2><div id="cadsChannels"></div></aside>
+          <section class="cads-panel"><h2>Hiệu suất</h2><div class="cads-performance"><div id="cadsKpis" class="cads-kpis"></div><div class="cads-chart"><canvas id="cadsChart"></canvas></div></div></section>
+        </div>
+        <h2 class="section-title">Sản phẩm &amp; kho video</h2>
+        <div class="table-wrap"><table class="cads-table"><thead><tr><th>STT</th><th>Sản phẩm</th><th>Mã SP</th><th>Kênh</th><th>Tổng video hiện có</th><th>Video đủ điều kiện chạy ads</th><th>Video đang chạy ads view</th><th>Video còn dư</th><th>Video đăng mới tuần này</th><th>Ưu tiên</th><th>Ghi chú</th></tr></thead><tbody id="cadsInventoryRows"></tbody></table><div id="cadsInventoryEmpty" class="empty hidden">Không có dữ liệu video trong khoảng ngày này.</div></div>
+        <h2 class="section-title">Theo dõi video ads</h2>
+        <div class="table-wrap"><table class="cads-table"><thead><tr><th>STT</th><th>Video/Creative</th><th>Sản phẩm gắn giỏ</th><th>Kênh</th><th>Ngày chạy</th><th>Spend</th><th>Impressions</th><th>Video Plays</th><th>Xem ≥2s</th><th>Xem ≥6s</th><th>Tỷ lệ 2s</th><th>Tỷ lệ 6s</th><th>Cost/View</th><th>Click</th><th>CTR</th><th>Order</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody id="cadsVideoRows"></tbody></table><div id="cadsVideoEmpty" class="empty hidden">Không có dữ liệu quảng cáo trong khoảng ngày này.</div></div>
       </section>
       <section id="contentKocReport" class="hidden">
         <div class="content-koc-summaries">
@@ -938,6 +967,7 @@
       var currentKocAnalysisData = null;
       var productTrafficChart = null;
       var currentProductAnalysisData = null;
+      var cadsChart = null;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
@@ -947,8 +977,9 @@
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
-        (['ads', 'revenue', 'operations', 'finance', 'content-koc', 'koc-analysis', 'product-analysis'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
+        (['ads', 'cads', 'revenue', 'operations', 'finance', 'content-koc', 'koc-analysis', 'product-analysis'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
+      var loadedCAdsScope = '';
       var loadedRevenueScope = '';
       var loadedOperationsScope = '';
       var loadedFinanceScope = '';
@@ -1014,7 +1045,7 @@
       }).getInitialState();
 
       function dashboardAllowedViews() {
-        return dashboardRole === 'content' ? ['revenue','ads','content-koc','koc-analysis'] : ['revenue','ads','operations','finance','content-koc','koc-analysis','product-analysis'];
+        return dashboardRole === 'content' ? ['revenue','ads','cads','content-koc','koc-analysis'] : ['revenue','ads','cads','operations','finance','content-koc','koc-analysis','product-analysis'];
       }
 
       function applyDashboardRole() {
@@ -1120,6 +1151,7 @@
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         loadedReportScope = '';
+        loadedCAdsScope = '';
         loadedRevenueScope = '';
         loadedOperationsScope = '';
         loadedFinanceScope = '';
@@ -1127,6 +1159,7 @@
         loadedKocAnalysisScope = '';
         loadedProductAnalysisScope = '';
         if (activeReportView === 'revenue') requestRevenueAnalysis(true);
+        else if (activeReportView === 'cads') requestCAdsReport(true);
         else if (activeReportView === 'operations') requestOperationsAnalysis(true);
         else if (activeReportView === 'finance') requestFinanceAnalysis(true);
         else if (activeReportView === 'content-koc') requestContentKocAnalysis(true);
@@ -1221,6 +1254,9 @@
             loadedReportScope = '';
             loadedOperationsScope = '';
             requestRevenueAnalysis(true);
+          } else if (activeReportView === 'cads') {
+            loadedReportScope = '';
+            requestCAdsReport(true);
           } else if (activeReportView === 'operations') {
             loadedReportScope = '';
             loadedRevenueScope = '';
@@ -1334,6 +1370,47 @@
         };
       }
 
+      function requestCAdsReport(force) {
+        if (button.disabled) return;
+        var scope = reportScope(); var key = JSON.stringify(scope);
+        setLoading(true); hideError();
+        google.script.run.withSuccessHandler(function (data) {
+          loadedCAdsScope = key; renderCAdsReport(data);
+        }).withFailureHandler(showError).loadCAdsReport(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function renderCAdsReport(data) {
+        setLoading(false);
+        document.getElementById('updatedAt').textContent = 'Cập nhật: ' + new Intl.DateTimeFormat('vi-VN', { dateStyle:'short', timeStyle:'medium' }).format(new Date(data.generatedAt));
+        var channels = document.getElementById('cadsChannels'); channels.replaceChildren();
+        data.channels.forEach(function (item) {
+          var block=document.createElement('div');block.className='cads-channel';
+          var name=document.createElement('div');name.className='cads-channel-name';name.textContent=item.channel;block.appendChild(name);
+          [['● Video đang chạy ads',integer(item.running)],['Chi tiêu',moneyWhole(item.spend)+' VND'],['CPM trung bình',moneyWhole(item.cpm)+' VND']].forEach(function(pair){var line=document.createElement('div');line.className='cads-channel-line';var label=document.createElement('span');label.textContent=pair[0];var value=document.createElement('strong');value.textContent=pair[1];line.append(label,value);block.appendChild(line);});channels.appendChild(block);
+        });
+        var kpis=[['Spend',moneyWhole(data.totals.spend)+' VND'],['Impressions',integer(data.totals.impressions)],['Video views at 100%',integer(data.totals.watched100)],['CPM',moneyWhole(data.totals.cpm)+' VND']];
+        var root=document.getElementById('cadsKpis');root.replaceChildren();kpis.forEach(function(item){var box=document.createElement('div');box.className='cads-kpi';var label=document.createElement('span');label.textContent=item[0];var value=document.createElement('strong');value.textContent=item[1];box.append(label,value);root.appendChild(box);});
+        renderCAdsChart(data.hourly); renderCAdsInventory(data.inventory); renderCAdsVideos(data.videos);
+      }
+
+      function renderCAdsChart(points) {
+        if(cadsChart)cadsChart.destroy();
+        cadsChart=new Chart(document.getElementById('cadsChart'),{type:'line',data:{labels:points.map(function(point){return String(point.hour).padStart(2,'0')+':00';}),datasets:[
+          {label:'Spend',data:points.map(function(point){return point.metrics.spend;}),borderColor:'#7c83ff',backgroundColor:'transparent',yAxisID:'y',tension:.28,pointRadius:0,borderWidth:2},
+          {label:'Impressions',data:points.map(function(point){return point.metrics.impressions;}),borderColor:'#0369a1',backgroundColor:'transparent',yAxisID:'y1',tension:.28,pointRadius:0,borderWidth:2}
+        ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{align:'start'}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#eef2f7'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}});
+      }
+
+      function renderCAdsInventory(items) {
+        var body=document.getElementById('cadsInventoryRows');body.replaceChildren();document.getElementById('cadsInventoryEmpty').classList.toggle('hidden',items.length>0);
+        items.forEach(function(item,index){var row=document.createElement('tr');[item.productName==='Không gắn giỏ'?'—':index+1,item.productName,item.productCode,item.channel,item.totalVideos,item.eligibleVideos,item.runningVideos,item.remainingVideos,item.newThisWeek,item.priority||'—',item.note||'—'].forEach(function(value,cellIndex){var cell=document.createElement('td');cell.textContent=value;if(cellIndex===1&&item.productName==='Không gắn giỏ')cell.className='cads-no-cart';row.appendChild(cell);});body.appendChild(row);});
+      }
+
+      function renderCAdsVideos(items) {
+        var body=document.getElementById('cadsVideoRows');body.replaceChildren();document.getElementById('cadsVideoEmpty').classList.toggle('hidden',items.length>0);
+        items.forEach(function(item,index){var m=item.metrics,noCart=item.productName==='Không gắn giỏ';var values=[index+1,item.name+' · '+item.adId,item.productName,item.channel,item.startDate,moneyWhole(m.spend),integer(m.impressions),integer(m.videoPlays),integer(m.watched2s),integer(m.watched6s),percent(m.rate2s),percent(m.rate6s),money(m.costPerView),integer(m.clicks),noCart?'—':percent(m.ctr),noCart?'—':integer(m.orders),item.status||'—',item.note||'—'];var row=document.createElement('tr');values.forEach(function(value,cellIndex){var cell=document.createElement('td');cell.textContent=value;if(cellIndex===2&&noCart)cell.className='cads-no-cart';row.appendChild(cell);});body.appendChild(row);});
+      }
+
       function setReportView(view, updateUrl) {
         var allowedViews = dashboardAllowedViews();
         activeReportView = allowedViews.indexOf(view) !== -1 ? view : allowedViews[0];
@@ -1344,6 +1421,7 @@
           tab.setAttribute('aria-selected', String(selected));
         });
         document.getElementById('report').classList.toggle('hidden', activeReportView !== 'ads');
+        document.getElementById('cadsReport').classList.toggle('hidden', activeReportView !== 'cads');
         document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
         document.getElementById('operationsReport').classList.toggle('hidden', activeReportView !== 'operations');
         document.getElementById('financeReport').classList.toggle('hidden', activeReportView !== 'finance');
@@ -1353,6 +1431,9 @@
         if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
+        } else if (activeReportView === 'cads') {
+          var cadsKey = JSON.stringify(reportScope());
+          if (loadedCAdsScope !== cadsKey) requestCAdsReport(false);
         } else if (activeReportView === 'operations') {
           var operationsKey = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedOperationsScope !== operationsKey) requestOperationsAnalysis(false);
