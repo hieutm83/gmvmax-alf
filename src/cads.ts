@@ -3,24 +3,29 @@ import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
 import { callTool, createSession } from './mcp';
 import { fetchShopVideos } from './content-koc';
 import { loadAdsVideoMetrics } from './reports';
+import { authorizedShop, shopRequest } from './seller';
 
 type CAdsMetrics = {
   spend:number; impressions:number; clicks:number; orders:number; videoPlays:number;
-  watched2s:number; watched6s:number; watched100:number; ctr:number; cpm:number;
-  rate2s:number; rate6s:number; costPerView:number;
+  watched2s:number; watched6s:number; watched25:number; watched50:number; watched75:number; watched100:number; ctr:number; cpm:number;
+  rate2s:number; rate6s:number; rate25:number; rate50:number; rate75:number; rate100:number; costPerView:number;
 };
 type ProductRef = { id:string; name:string };
 
 function emptyMetrics():CAdsMetrics{return {spend:0,impressions:0,clicks:0,orders:0,videoPlays:0,
-  watched2s:0,watched6s:0,watched100:0,ctr:0,cpm:0,rate2s:0,rate6s:0,costPerView:0};}
+  watched2s:0,watched6s:0,watched25:0,watched50:0,watched75:0,watched100:0,ctr:0,cpm:0,rate2s:0,rate6s:0,rate25:0,rate50:0,rate75:0,rate100:0,costPerView:0};}
 function normalized(raw:Record<string,unknown>):CAdsMetrics{return {...emptyMetrics(),spend:numberValue(raw.spend),
   impressions:numberValue(raw.impressions),clicks:numberValue(raw.clicks),orders:numberValue(raw.conversion??raw.conversions),
   videoPlays:numberValue(raw.video_play_actions),watched2s:numberValue(raw.video_watched_2s),
-  watched6s:numberValue(raw.video_watched_6s),watched100:numberValue(raw.video_views_p100??raw.video_watched_p100)};}
-function add(target:CAdsMetrics,value:CAdsMetrics):void{for(const key of ['spend','impressions','clicks','orders','videoPlays','watched2s','watched6s','watched100'] as const)target[key]+=value[key];}
+  watched6s:numberValue(raw.video_watched_6s),watched25:numberValue(raw.video_views_p25??raw.video_watched_p25),
+  watched50:numberValue(raw.video_views_p50??raw.video_watched_p50),watched75:numberValue(raw.video_views_p75??raw.video_watched_p75),
+  watched100:numberValue(raw.video_views_p100??raw.video_watched_p100)};}
+function add(target:CAdsMetrics,value:CAdsMetrics):void{for(const key of ['spend','impressions','clicks','orders','videoPlays','watched2s','watched6s','watched25','watched50','watched75','watched100'] as const)target[key]+=value[key];}
 function finish(value:CAdsMetrics):CAdsMetrics{value.ctr=value.impressions?value.clicks/value.impressions:0;
   value.cpm=value.impressions?value.spend*1000/value.impressions:0;value.rate2s=value.impressions?value.watched2s/value.impressions:0;
-  value.rate6s=value.impressions?value.watched6s/value.impressions:0;value.costPerView=value.videoPlays?value.spend/value.videoPlays:0;return value;}
+  value.rate6s=value.impressions?value.watched6s/value.impressions:0;value.rate25=value.videoPlays?value.watched25/value.videoPlays:0;
+  value.rate50=value.videoPlays?value.watched50/value.videoPlays:0;value.rate75=value.videoPlays?value.watched75/value.videoPlays:0;
+  value.rate100=value.videoPlays?value.watched100/value.videoPlays:0;value.costPerView=value.videoPlays?value.spend/value.videoPlays:0;return value;}
 function rowId(row:McpRow,key:string):string{return String(row.dimensions?.[key]??row.metrics?.[key]??'');}
 function pointKey(row:McpRow,dimension:string):string{const raw=rowId(row,dimension);if(dimension==='stat_time_day')return raw.slice(0,10);
   const match=raw.match(/(?:T|\s)(\d{1,2})(?::|$)/)||raw.match(/^(\d{1,2})(?::|$)/);return match?String(Number(match[1])).padStart(2,'0'):'';}
@@ -34,9 +39,11 @@ async function integratedRows(env:Env,session:McpSession,args:Record<string,unkn
 async function performanceRows(env:Env,session:McpSession,advertiserId:string,startDate:string,endDate:string):Promise<{rows:McpRow[];dimension:string}>{
   const dimension=startDate===endDate?'stat_time_hour':'stat_time_day';
   const base={advertiser_id:advertiserId,report_type:'BASIC',data_level:'AUCTION_AD',dimensions:['ad_id',dimension],start_date:startDate,end_date:endDate};
-  try{return {rows:await integratedRows(env,session,{...base,metrics:['spend','impressions','clicks','conversion','video_play_actions','video_watched_2s','video_watched_6s','video_views_p100']}),dimension};}
+  try{return {rows:await integratedRows(env,session,{...base,metrics:['spend','impressions','clicks','conversion','video_play_actions','video_watched_2s','video_watched_6s','video_views_p25','video_views_p50','video_views_p75','video_views_p100']}),dimension};}
   catch(error){if(!/metric|dimension|invalid|not supported/i.test(String(error)))throw error;
-    return {rows:await integratedRows(env,session,{...base,metrics:['spend','impressions','clicks','conversion']}),dimension};}
+    try{return {rows:await integratedRows(env,session,{...base,metrics:['spend','impressions','clicks','conversion','video_play_actions','video_watched_2s','video_watched_6s','video_views_p100']}),dimension};}
+    catch(fallbackError){if(!/metric|dimension|invalid|not supported/i.test(String(fallbackError)))throw fallbackError;
+      return {rows:await integratedRows(env,session,{...base,metrics:['spend','impressions','clicks','conversion']}),dimension};}}
 }
 
 async function adMetadata(env:Env,session:McpSession,advertiserId:string,ids:string[]):Promise<Record<string,any>>{
@@ -60,6 +67,18 @@ function adsProducts(ad:any):ProductRef[]{
   return [...products.values()];
 }
 function shopProducts(video:any):ProductRef[]{return (Array.isArray(video?.products)?video.products:[]).map((product:any)=>({id:String(product.id||product.product_id||''),name:String(product.name||product.title||product.product_name||product.id||'')})).filter((product:ProductRef)=>product.id);}
+async function fetchLinkedProducts(env:Env,videoIds:string[],startDate:string,endDate:string):Promise<{byVideoId:Map<string,ProductRef[]>;successful:number;failed:number}>{
+  const byVideoId=new Map<string,ProductRef[]>(),ids=Array.from(new Set(videoIds.filter(Boolean)));if(!ids.length)return{byVideoId,successful:0,failed:0};
+  const shop=await authorizedShop(env);const cipher=String(shop?.cipher||shop?.shop_cipher||shop?.id||'');if(!cipher)return{byVideoId,successful:0,failed:ids.length};
+  let successful=0,failed=0;
+  const loadOne=async(id:string)=>{try{const products=new Map<string,ProductRef>();let pageToken='',pages=0;
+    do{const data=await shopRequest(env,`/analytics/202409/shop_videos/${encodeURIComponent(id)}/products/performance`,'GET',{shop_cipher:cipher,start_date_ge:startDate,end_date_lt:shiftDate(endDate,1),page_size:100,sort_field:'gmv',sort_order:'DESC',currency:'LOCAL',page_token:pageToken||undefined});
+      for(const product of Array.isArray(data.products)?data.products:[]){const productId=String(product.id||product.product_id||'');if(productId)products.set(productId,{id:productId,name:String(product.name||product.title||product.product_name||productId)});}
+      pageToken=String(data.next_page_token||'');pages+=1;
+    }while(pageToken&&pages<100);byVideoId.set(id,[...products.values()]);successful+=1;}catch{failed+=1;}};
+  for(let offset=0;offset<ids.length;offset+=5)await Promise.all(ids.slice(offset,offset+5).map(loadOne));
+  return{byVideoId,successful,failed};
+}
 function conciseName(ad:any,adId:string):string{const candidates=[ad?.ad_name,ad?.creative_name,ad?.display_name,ad?.name,ad?.video_name].map((value)=>String(value||'').trim()).filter(Boolean);
   const readable=candidates.find((value)=>!/^https?:\/\//i.test(value));if(readable)return readable.length>90?`${readable.slice(0,87)}…`:readable;return `Quảng cáo ${adId.slice(-8)}`;}
 function embeddedVideoUrl(ad:any):string{const stack:any[]=[ad];while(stack.length){const value=stack.pop();if(typeof value==='string'){const match=value.match(/https?:\/\/(?:www\.)?tiktok\.com\/[^\s"']+\/video\/\d+/i);if(match)return match[0];}
@@ -74,7 +93,7 @@ function seriesPoints(startDate:string,endDate:string,dimension:string):Array<{k
   else for(let date=startDate;date<=endDate;date=shiftDate(date,1))points.push({key:date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,metrics:emptyMetrics()});return points;}
 
 export async function loadCAdsReport(env:Env,input:any):Promise<any>{
-  const cacheKey=stableKey('cads-v4',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  const cacheKey=stableKey('cads-v5',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
   const session=await createSession(env);const performance=await performanceRows(env,session,input.advertiserId,input.startDate,input.endDate);
   const totals=emptyMetrics(),points=seriesPoints(input.startDate,input.endDate,performance.dimension),byPoint=new Map(points.map((point)=>[point.key,point.metrics]));const byAd=new Map<string,CAdsMetrics>();
@@ -88,9 +107,10 @@ export async function loadCAdsReport(env:Env,input:any):Promise<any>{
   ]);
   const shopByVideoId=new Map((shopResult.videos||[]).map((video:any)=>[String(video.id||''),video]));
   const gmvByVideoId=new Map((gmvVideos||[]).map((video:any)=>[String(video.itemId||''),video]));
-  const videos=[...byAd.entries()].map(([adId,metrics])=>{const ad=metadata[adId]||{};const linkedVideoId=videoId(ad);const shopVideo=shopByVideoId.get(linkedVideoId);const gmvVideo:any=gmvByVideoId.get(linkedVideoId);const shopProductList=shopProducts(shopVideo);const products=shopProductList.length?shopProductList:(adsProducts(ad).length?adsProducts(ad):(gmvVideo?.products||[]));const product=products[0]||null;
+  const linkedProducts=await fetchLinkedProducts(env,Object.values(metadata).map(videoId),metadataStart,input.endDate).catch(()=>({byVideoId:new Map<string,ProductRef[]>(),successful:0,failed:Object.keys(metadata).length}));
+  const videos=[...byAd.entries()].map(([adId,metrics])=>{const ad=metadata[adId]||{};const linkedVideoId=videoId(ad);const shopVideo=shopByVideoId.get(linkedVideoId);const gmvVideo:any=gmvByVideoId.get(linkedVideoId);const directProductList=linkedProducts.byVideoId.get(linkedVideoId)||[];const shopProductList=shopProducts(shopVideo);const adProductList=adsProducts(ad);const products=directProductList.length?directProductList:(shopProductList.length?shopProductList:(adProductList.length?adProductList:(gmvVideo?.products||[])));const product=products[0]||null;
     const productLabel=product?.name||(shopVideo?'Không gắn giỏ':'Chưa xác định');const status=String(ad.operation_status||ad.secondary_status||ad.status||'');return {adId,videoId:linkedVideoId,name:String(shopVideo?.title||conciseName(ad,adId)),videoUrl:tiktokVideoUrl(ad,shopVideo,linkedVideoId),productName:productLabel,productCode:product?.id||'—',
-      channel:channel(ad,shopVideo),startTime:adStartTime(ad.create_time||ad.create_time_utc,input.startDate),status,note:product?'':(shopVideo?'Video branding/reach':'Chưa tìm thấy liên kết sản phẩm trong Ads MCP hoặc TikTok Shop'),metrics:finish(metrics),gmvMax:{cost:numberValue(gmvVideo?.cost),orders:numberValue(gmvVideo?.orders),costPerOrder:numberValue(gmvVideo?.orders)?numberValue(gmvVideo?.cost)/numberValue(gmvVideo?.orders):null,grossRevenue:numberValue(gmvVideo?.grossRevenue),click:numberValue(gmvVideo?.productClicks),roi:numberValue(gmvVideo?.cost)?numberValue(gmvVideo?.grossRevenue)/numberValue(gmvVideo?.cost):null}};}).sort((a,b)=>b.metrics.spend-a.metrics.spend);
+      channel:channel(ad,shopVideo),startTime:adStartTime(ad.create_time||ad.create_time_utc,input.startDate),status,note:product?'':(shopVideo?'Video branding/reach':'Chưa tìm thấy liên kết sản phẩm trong Ads MCP hoặc TikTok Shop'),metrics:finish(metrics)};}).sort((a,b)=>b.metrics.spend-a.metrics.spend);
   const channels=['Người bán','Liên kết'].map((name)=>{const items=videos.filter((video)=>video.channel===name);const spend=items.reduce((sum,item)=>sum+item.metrics.spend,0);const impressions=items.reduce((sum,item)=>sum+item.metrics.impressions,0);
     return {channel:name,running:items.filter((item)=>running(item.status)).length,spend,cpm:impressions?spend*1000/impressions:0};});
   const grouped=new Map<string,any>();for(const video of videos){const key=`${video.productName}|${video.productCode}|${video.channel}`;if(!grouped.has(key))grouped.set(key,{productName:video.productName,productCode:video.productCode,channel:video.channel,totalVideos:0,eligibleVideos:0,runningVideos:0,remainingVideos:0,newThisWeek:0,priority:'',note:video.note});
@@ -98,6 +118,7 @@ export async function loadCAdsReport(env:Env,input:any):Promise<any>{
   const inventory=[...grouped.values()].map((item)=>({...item,remainingVideos:Math.max(0,item.eligibleVideos-item.runningVideos)}));
   const result={advertiserId:input.advertiserId,startDate:input.startDate,endDate:input.endDate,generatedAt:new Date().toISOString(),totals,
     timeSeries:{granularity:performance.dimension==='stat_time_hour'?'hour':'day',points},channels,inventory,videos,
-    diagnostics:{adsMetadataCount:Object.keys(metadata).length,shopAvailable:shopResult.available,shopVideoCount:shopResult.videos.length,shopMatchedCount:videos.filter((video)=>video.videoId&&shopByVideoId.has(video.videoId)).length}};
+    diagnostics:{adsMetadataCount:Object.keys(metadata).length,shopAvailable:shopResult.available,shopVideoCount:shopResult.videos.length,shopMatchedCount:videos.filter((video)=>video.videoId&&shopByVideoId.has(video.videoId)).length,
+      linkedProductRequests:{successful:linkedProducts.successful,failed:linkedProducts.failed,matched:videos.filter((video)=>video.videoId&&(linkedProducts.byVideoId.get(video.videoId)||[]).length).length}}};
   await cachePut(env,cacheKey,result,240);return result;
 }
