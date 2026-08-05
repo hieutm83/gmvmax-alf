@@ -110,6 +110,10 @@ export function formatOperationsUpdatedAt(date: Date, timezone: string): string 
   return `${parts.hour}:${parts.minute}:${parts.second} ${Number(parts.day)}/${Number(parts.month)}/${parts.year}`;
 }
 
+export function formatOperationsMetricLine(item: { label: string; value: string; change: { text: string } }): string {
+  return `${item.label} ${item.value} ${item.change.text}`;
+}
+
 export function buildOperationsReportStyles(text: string): OperationsTextStyle[] {
   const styles: OperationsTextStyle[] = [];
   const add = (start: number, len: number, ...st: string[]) => { if (start >= 0 && len > 0) styles.push({ start, len, st }); };
@@ -302,7 +306,7 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
     title,
     ...(mode === 'REALTIME' ? [`Cập nhật: ${formatOperationsUpdatedAt(new Date(), env.TIMEZONE || 'Asia/Bangkok')}`] : []),
     '',
-    ...values.map((item) => `${item.label} ${item.value} ${item.label === '6. Tỷ lệ hủy:' ? item.change.text : `(${item.change.text})`}`),
+    ...values.map(formatOperationsMetricLine),
     '',
     'Sản phẩm'
   ];

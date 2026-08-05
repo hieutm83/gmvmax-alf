@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAdsStyles, extractZaloUpdates, normalizeZaloEvent, zaloUpdateTimestamp } from '../src/zalo';
-import { buildOperationsReportStyles, formatOperationsUpdatedAt } from '../src/operations-bot';
+import { buildOperationsReportStyles, formatOperationsMetricLine, formatOperationsUpdatedAt } from '../src/operations-bot';
 
 describe('normalizeZaloEvent', () => {
   it('reads the current Zalo webhook message shape', () => {
@@ -71,5 +71,12 @@ describe('buildOperationsReportStyles',()=>{
 describe('formatOperationsUpdatedAt',()=>{
   it('formats realtime updates in the configured timezone',()=>{
     expect(formatOperationsUpdatedAt(new Date('2026-07-30T10:02:30Z'),'Asia/Bangkok')).toBe('17:02:30 30/7/26');
+  });
+});
+
+describe('formatOperationsMetricLine',()=>{
+  it('renders comparison percentages without parentheses',()=>{
+    expect(formatOperationsMetricLine({label:'2. Đơn hàng:',value:'88',change:{text:'↑ 166,7%'}}))
+      .toBe('2. Đơn hàng: 88 ↑ 166,7%');
   });
 });

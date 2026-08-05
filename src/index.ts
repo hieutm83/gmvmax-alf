@@ -330,7 +330,9 @@ export default {
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',...dueOrderBotSlot}));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
-    if(localHour===8&&localMinute>=5&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
+    // TikTok Shop daily Analytics and cancellation snapshots are still partial
+    // shortly after 08:00. Start at 08:40, then retry every five minutes on failure.
+    if(localHour===8&&localMinute>=40&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
       const yesterday=shiftDate(localDate,-1);
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
     }
