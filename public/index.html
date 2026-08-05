@@ -466,6 +466,9 @@
       .cads-channel-name { margin-bottom:8px; color:#68778c; font-size:10px; font-weight:700; text-transform:uppercase; }
       .cads-channel-line { display:flex; justify-content:space-between; gap:14px; padding:8px 0; color:#45546b; font-size:12px; }
       .cads-channel-line strong { color:var(--text); font-variant-numeric:tabular-nums; }
+      .cads-value-running { color:#2563eb !important; }
+      .cads-value-spend { color:#db2777 !important; }
+      .cads-value-cpm { color:#d97706 !important; }
       .cads-performance { display:grid; grid-template-columns:200px minmax(0,1fr); gap:18px; }
       .cads-kpis { display:grid; gap:10px; }
       .cads-kpi.metric { min-height:0; padding:14px 16px; border-radius:9px; box-shadow:none; }
@@ -478,6 +481,22 @@
       .cads-table th:nth-child(2),.cads-table td:nth-child(2) { min-width:220px; text-align:left; white-space:normal; }
       .cads-table td { text-align:right; }
       .cads-no-cart { color:#9a3412; font-weight:700; }
+      .cads-channel-badge { display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:750; white-space:nowrap; }
+      .cads-channel-badge.seller { color:#9a5b05; background:#fff4d6; border:1px solid #f4d48b; }
+      .cads-channel-badge.affiliate { color:#08766f; background:#e7f8f5; border:1px solid #a9e3da; }
+      .cads-channel-name .cads-channel-badge { font-size:10px; }
+      .cads-inventory-table { width:100%; min-width:0; table-layout:fixed; }
+      .cads-inventory-table th,.cads-inventory-table td { min-width:0; padding-right:7px; padding-left:7px; overflow:hidden; text-overflow:ellipsis; }
+      .cads-inventory-table th { white-space:normal; line-height:1.25; }
+      .cads-inventory-table td { white-space:nowrap; }
+      .cads-inventory-table th:nth-child(1),.cads-inventory-table td:nth-child(1) { width:4%; min-width:0; }
+      .cads-inventory-table th:nth-child(2),.cads-inventory-table td:nth-child(2) { width:24%; min-width:0; white-space:nowrap; }
+      .cads-inventory-table th:nth-child(3),.cads-inventory-table td:nth-child(3) { width:13%; }
+      .cads-inventory-table th:nth-child(4),.cads-inventory-table td:nth-child(4) { width:10%; text-align:center; }
+      .cads-inventory-table th:nth-child(n+5),.cads-inventory-table td:nth-child(n+5) { width:9.8%; text-align:center; }
+      .cads-text-clip { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .cads-name-link { color:#2563eb; font-weight:650; text-decoration:none; }
+      .cads-name-link:hover { color:#1d4ed8; text-decoration:underline; }
       .order-detail-link { color: var(--primary); font-weight: 700; text-decoration: none; }
       .order-detail-link:hover { text-decoration: underline; }
       .admin-modal { width: min(720px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); }
@@ -700,9 +719,9 @@
           <section class="cads-panel"><h2>Hiệu suất</h2><div class="cads-performance"><div id="cadsKpis" class="cads-kpis"></div><div class="cads-chart"><canvas id="cadsChart"></canvas></div></div></section>
         </div>
         <h2 class="section-title">Sản phẩm &amp; kho video</h2>
-        <div class="table-wrap"><table class="cads-table"><thead><tr><th>STT</th><th>Sản phẩm</th><th>Mã SP</th><th>Kênh</th><th>Tổng video hiện có</th><th>Video đủ điều kiện chạy ads</th><th>Video đang chạy ads view</th><th>Video còn dư</th><th>Video đăng mới tuần này</th><th>Ưu tiên</th><th>Ghi chú</th></tr></thead><tbody id="cadsInventoryRows"></tbody></table><div id="cadsInventoryEmpty" class="empty hidden">Không có dữ liệu video trong khoảng ngày này.</div></div>
+        <div class="table-wrap"><table class="cads-table cads-inventory-table"><thead><tr><th>STT</th><th>Sản phẩm</th><th>Mã SP</th><th>Kênh</th><th>Tổng video hiện có</th><th>Video đủ điều kiện chạy ads</th><th>Video đang chạy ads view</th><th>Video còn dư</th><th>Video đăng mới tuần này</th></tr></thead><tbody id="cadsInventoryRows"></tbody></table><div id="cadsInventoryEmpty" class="empty hidden">Không có dữ liệu video trong khoảng ngày này.</div></div>
         <h2 class="section-title">Theo dõi video ads</h2>
-        <div class="table-wrap"><table class="cads-table"><thead><tr><th>STT</th><th>Name</th><th>Sản phẩm gắn giỏ</th><th>Kênh</th><th>Ngày chạy</th><th>Spend</th><th>Impressions</th><th>Video Plays</th><th>Xem ≥2s</th><th>Xem ≥6s</th><th>Tỷ lệ 2s</th><th>Tỷ lệ 6s</th><th>Cost/View</th><th>Click</th><th>CTR</th><th>Order</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody id="cadsVideoRows"></tbody></table><div id="cadsVideoEmpty" class="empty hidden">Không có dữ liệu quảng cáo trong khoảng ngày này.</div></div>
+        <div class="table-wrap"><table class="cads-table cads-video-table"><thead><tr><th>STT</th><th>Name</th><th>Sản phẩm gắn giỏ</th><th>Kênh</th><th>Ngày chạy</th><th>Spend</th><th>Impressions</th><th>Video Plays</th><th>Xem ≥2s</th><th>Xem ≥6s</th><th>Tỷ lệ 2s</th><th>Tỷ lệ 6s</th><th>Cost/View</th><th>Click</th><th>CTR</th><th>Order</th><th>Trạng thái</th></tr></thead><tbody id="cadsVideoRows"></tbody></table><div id="cadsVideoEmpty" class="empty hidden">Không có dữ liệu quảng cáo trong khoảng ngày này.</div></div>
       </section>
       <section id="contentKocReport" class="hidden">
         <div class="content-koc-summaries">
@@ -1386,8 +1405,8 @@
         var channels = document.getElementById('cadsChannels'); channels.replaceChildren();
         data.channels.forEach(function (item) {
           var block=document.createElement('div');block.className='cads-channel';
-          var name=document.createElement('div');name.className='cads-channel-name';name.textContent=item.channel;block.appendChild(name);
-          [['● Video đang chạy ads',integer(item.running)],['Chi tiêu',moneyWhole(item.spend)+' VND'],['CPM trung bình',moneyWhole(item.cpm)+' VND']].forEach(function(pair){var line=document.createElement('div');line.className='cads-channel-line';var label=document.createElement('span');label.textContent=pair[0];var value=document.createElement('strong');value.textContent=pair[1];line.append(label,value);block.appendChild(line);});channels.appendChild(block);
+          var name=document.createElement('div');name.className='cads-channel-name';name.appendChild(cadsChannelBadge(item.channel));block.appendChild(name);
+          [['Video đang chạy ads',integer(item.running),'running'],['Chi tiêu',moneyWhole(item.spend)+' VND','spend'],['CPM trung bình',moneyWhole(item.cpm)+' VND','cpm']].forEach(function(pair){var line=document.createElement('div');line.className='cads-channel-line';var label=document.createElement('span');label.textContent=pair[0];var value=document.createElement('strong');value.className='cads-value-'+pair[2];value.textContent=pair[1];line.append(label,value);block.appendChild(line);});channels.appendChild(block);
         });
         var kpis=[['Spend',moneyWhole(data.totals.spend)+' VND','cost'],['Impressions',integer(data.totals.impressions),'impressions'],['Video views at 100%',integer(data.totals.watched100),'orders'],['CPM',moneyWhole(data.totals.cpm)+' VND','costPerOrder']];
         var root=document.getElementById('cadsKpis');root.replaceChildren();kpis.forEach(function(item){var box=document.createElement('div');box.className='cads-kpi metric metric-'+item[2];var label=document.createElement('span');label.textContent=item[0];var value=document.createElement('strong');value.textContent=item[1];box.append(label,value);root.appendChild(box);});
@@ -1405,13 +1424,24 @@
 
       function renderCAdsInventory(items) {
         var body=document.getElementById('cadsInventoryRows');body.replaceChildren();document.getElementById('cadsInventoryEmpty').classList.toggle('hidden',items.length>0);
-        items.forEach(function(item,index){var row=document.createElement('tr');[item.productName==='Không gắn giỏ'?'—':index+1,item.productName,item.productCode,item.channel,item.totalVideos,item.eligibleVideos,item.runningVideos,item.remainingVideos,item.newThisWeek,item.priority||'—',item.note||'—'].forEach(function(value,cellIndex){var cell=document.createElement('td');cell.textContent=value;if(cellIndex===1&&item.productName==='Không gắn giỏ')cell.className='cads-no-cart';row.appendChild(cell);});body.appendChild(row);});
+        items.forEach(function(item,index){var row=document.createElement('tr');
+          row.appendChild(cadsTextCell(item.productName==='Không gắn giỏ'?'—':index+1));
+          var productCell=cadsTextCell('');var product=document.createElement('span');product.className='cads-text-clip'+(item.productName==='Không gắn giỏ'?' cads-no-cart':'');product.textContent=item.productName;product.title=item.productName;productCell.appendChild(product);row.appendChild(productCell);
+          row.appendChild(cadsTextCell(item.productCode));var channelCell=cadsTextCell('');channelCell.appendChild(cadsChannelBadge(item.channel));row.appendChild(channelCell);
+          [item.totalVideos,item.eligibleVideos,item.runningVideos,item.remainingVideos,item.newThisWeek].forEach(function(value){row.appendChild(cadsTextCell(value));});body.appendChild(row);});
       }
 
       function renderCAdsVideos(items) {
         var body=document.getElementById('cadsVideoRows');body.replaceChildren();document.getElementById('cadsVideoEmpty').classList.toggle('hidden',items.length>0);
-        items.forEach(function(item,index){var m=item.metrics,noCart=item.productName==='Không gắn giỏ';var values=[index+1,item.name,item.productName,item.channel,item.startDate,moneyWhole(m.spend),integer(m.impressions),integer(m.videoPlays),integer(m.watched2s),integer(m.watched6s),percent(m.rate2s),percent(m.rate6s),money(m.costPerView),integer(m.clicks),noCart?'—':percent(m.ctr),noCart?'—':integer(m.orders),item.status||'—',item.note||'—'];var row=document.createElement('tr');values.forEach(function(value,cellIndex){var cell=document.createElement('td');cell.textContent=value;if(cellIndex===2&&noCart)cell.className='cads-no-cart';row.appendChild(cell);});body.appendChild(row);});
+        items.forEach(function(item,index){var m=item.metrics,noCart=item.productName==='Không gắn giỏ';var row=document.createElement('tr');row.appendChild(cadsTextCell(index+1));
+          var nameCell=cadsTextCell('');var name=document.createElement(item.videoUrl?'a':'span');name.className='cads-text-clip'+(item.videoUrl?' cads-name-link':'');name.textContent=item.name;name.title=item.name;if(item.videoUrl){name.href=item.videoUrl;name.target='_blank';name.rel='noopener noreferrer';}nameCell.appendChild(name);row.appendChild(nameCell);
+          var productCell=cadsTextCell('');var product=document.createElement('span');product.className='cads-text-clip'+(noCart?' cads-no-cart':'');product.textContent=item.productName;product.title=item.productName;productCell.appendChild(product);row.appendChild(productCell);
+          var channelCell=cadsTextCell('');channelCell.appendChild(cadsChannelBadge(item.channel));row.appendChild(channelCell);
+          [item.startDate,moneyWhole(m.spend),integer(m.impressions),integer(m.videoPlays),integer(m.watched2s),integer(m.watched6s),percent(m.rate2s),percent(m.rate6s),money(m.costPerView),integer(m.clicks),noCart?'—':percent(m.ctr),noCart?'—':integer(m.orders),item.status||'—'].forEach(function(value){row.appendChild(cadsTextCell(value));});body.appendChild(row);});
       }
+
+      function cadsTextCell(value) { var cell=document.createElement('td');cell.textContent=value;return cell; }
+      function cadsChannelBadge(channel) { var badge=document.createElement('span');badge.className='cads-channel-badge '+(channel==='Liên kết'?'affiliate':'seller');badge.textContent=channel;return badge; }
 
       function setReportView(view, updateUrl) {
         var allowedViews = dashboardAllowedViews();

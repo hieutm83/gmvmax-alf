@@ -61,6 +61,10 @@ function adsProducts(ad:any):ProductRef[]{
 function shopProducts(video:any):ProductRef[]{return (Array.isArray(video?.products)?video.products:[]).map((product:any)=>({id:String(product.id||product.product_id||''),name:String(product.name||product.title||product.product_name||product.id||'')})).filter((product:ProductRef)=>product.id);}
 function conciseName(ad:any,adId:string):string{const candidates=[ad?.ad_name,ad?.creative_name,ad?.display_name,ad?.name,ad?.video_name].map((value)=>String(value||'').trim()).filter(Boolean);
   const readable=candidates.find((value)=>!/^https?:\/\//i.test(value));if(readable)return readable.length>90?`${readable.slice(0,87)}…`:readable;return `Quảng cáo ${adId.slice(-8)}`;}
+function embeddedVideoUrl(ad:any):string{const stack:any[]=[ad];while(stack.length){const value=stack.pop();if(typeof value==='string'){const match=value.match(/https?:\/\/(?:www\.)?tiktok\.com\/[^\s"']+\/video\/\d+/i);if(match)return match[0];}
+  else if(Array.isArray(value))stack.push(...value);else if(value&&typeof value==='object')stack.push(...Object.values(value));}return '';}
+function tiktokVideoUrl(ad:any,shopVideo:any,linkedVideoId:string):string{const embedded=embeddedVideoUrl(ad);if(embedded)return embedded;if(!linkedVideoId)return '';
+  const username=String(shopVideo?.creator?.user_name||shopVideo?.username||'').replace(/^@/,'');return username?`https://www.tiktok.com/@${encodeURIComponent(username)}/video/${linkedVideoId}`:`https://www.tiktok.com/player/v1/${linkedVideoId}`;}
 function channel(ad:any,shopVideo:any):string{const value=String(shopVideo?._accountType||shopVideo?.creator?.author_type||ad?.identity_type||ad?.identity_authorized_bc_id||'').toUpperCase();return /AFFILIATE|AUTH|CREATOR|BC/.test(value)?'Liên kết':'Người bán';}
 function running(status:string):boolean{return /ENABLE|ACTIVE|DELIVER/.test(status.toUpperCase())&&!/DISABLE|INACTIVE|NOT_DELIVER/.test(status.toUpperCase());}
 function seriesPoints(startDate:string,endDate:string,dimension:string):Array<{key:string;label:string;metrics:CAdsMetrics}>{const points=[];
@@ -68,7 +72,7 @@ function seriesPoints(startDate:string,endDate:string,dimension:string):Array<{k
   else for(let date=startDate;date<=endDate;date=shiftDate(date,1))points.push({key:date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,metrics:emptyMetrics()});return points;}
 
 export async function loadCAdsReport(env:Env,input:any):Promise<any>{
-  const cacheKey=stableKey('cads-v2',{advertiserId:input.advertiserId,startDate:input.startDate,endDate:input.endDate});
+  const cacheKey=stableKey('cads-v3',{advertiserId:input.advertiserId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
   const session=await createSession(env);const performance=await performanceRows(env,session,input.advertiserId,input.startDate,input.endDate);
   const totals=emptyMetrics(),points=seriesPoints(input.startDate,input.endDate,performance.dimension),byPoint=new Map(points.map((point)=>[point.key,point.metrics]));const byAd=new Map<string,CAdsMetrics>();
@@ -79,7 +83,7 @@ export async function loadCAdsReport(env:Env,input:any):Promise<any>{
   const shopResult=await fetchShopVideos(env,metadataStart,input.endDate).catch(()=>({available:false,videos:[],latestAvailableDate:null}));
   const shopByVideoId=new Map((shopResult.videos||[]).map((video:any)=>[String(video.id||''),video]));
   const videos=[...byAd.entries()].map(([adId,metrics])=>{const ad=metadata[adId]||{};const linkedVideoId=videoId(ad);const shopVideo=shopByVideoId.get(linkedVideoId);const shopProductList=shopProducts(shopVideo);const products=shopProductList.length?shopProductList:adsProducts(ad);const product=products[0]||null;
-    const productLabel=product?.name||(shopVideo?'Không gắn giỏ':'Chưa xác định');const status=String(ad.operation_status||ad.secondary_status||ad.status||'');return {adId,videoId:linkedVideoId,name:conciseName(ad,adId),productName:productLabel,productCode:product?.id||'—',
+    const productLabel=product?.name||(shopVideo?'Không gắn giỏ':'Chưa xác định');const status=String(ad.operation_status||ad.secondary_status||ad.status||'');return {adId,videoId:linkedVideoId,name:String(shopVideo?.title||conciseName(ad,adId)),videoUrl:tiktokVideoUrl(ad,shopVideo,linkedVideoId),productName:productLabel,productCode:product?.id||'—',
       channel:channel(ad,shopVideo),startDate:String(ad.create_time||ad.create_time_utc||input.startDate).slice(0,10),status,note:product?'':(shopVideo?'Video branding/reach':'Chưa tìm thấy liên kết sản phẩm trong Ads MCP hoặc TikTok Shop'),metrics:finish(metrics)};}).sort((a,b)=>b.metrics.spend-a.metrics.spend);
   const channels=['Người bán','Liên kết'].map((name)=>{const items=videos.filter((video)=>video.channel===name);const spend=items.reduce((sum,item)=>sum+item.metrics.spend,0);const impressions=items.reduce((sum,item)=>sum+item.metrics.impressions,0);
     return {channel:name,running:items.filter((item)=>running(item.status)).length,spend,cpm:impressions?spend*1000/impressions:0};});
