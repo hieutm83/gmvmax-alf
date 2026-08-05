@@ -497,18 +497,19 @@
       .cads-text-clip { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .cads-name-link { color:#2563eb; font-weight:650; text-decoration:none; }
       .cads-name-link:hover { color:#1d4ed8; text-decoration:underline; }
-      .cads-video-table { width:1840px; min-width:1840px; table-layout:fixed; }
+      .cads-video-table { width:2460px; min-width:2460px; table-layout:fixed; }
       .cads-video-table th,.cads-video-table td { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .cads-video-table th:nth-child(1),.cads-video-table td:nth-child(1) { width:50px; }
       .cads-video-table th:nth-child(2),.cads-video-table td:nth-child(2) { width:270px; min-width:0; }
       .cads-video-table th:nth-child(3),.cads-video-table td:nth-child(3) { width:250px; text-align:left; }
       .cads-video-table th:nth-child(4),.cads-video-table td:nth-child(4) { width:96px; text-align:center; }
-      .cads-video-table th:nth-child(5),.cads-video-table td:nth-child(5) { width:94px; }
+      .cads-video-table th:nth-child(5),.cads-video-table td:nth-child(5) { width:154px; overflow:visible; text-overflow:clip; }
       .cads-video-table th:nth-child(n+6):nth-child(-n+10),.cads-video-table td:nth-child(n+6):nth-child(-n+10) { width:96px; }
       .cads-video-table th:nth-child(11),.cads-video-table td:nth-child(11),.cads-video-table th:nth-child(12),.cads-video-table td:nth-child(12) { width:82px; }
       .cads-video-table th:nth-child(13),.cads-video-table td:nth-child(13) { width:98px; }
       .cads-video-table th:nth-child(n+14):nth-child(-n+16),.cads-video-table td:nth-child(n+14):nth-child(-n+16) { width:78px; }
       .cads-video-table th:nth-child(17),.cads-video-table td:nth-child(17) { width:116px; text-align:center; }
+      .cads-video-table th:nth-child(n+18),.cads-video-table td:nth-child(n+18) { width:104px; }
       .cads-status-badge { display:inline-flex; align-items:center; justify-content:center; min-height:24px; max-width:100%; padding:3px 8px; overflow:hidden; border:1px solid #cbd5e1; border-radius:6px; color:#526176; background:#f1f5f9; font-size:10px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
       .cads-status-badge.active { color:#08766f; background:#e7f8f5; border-color:#a9e3da; }
       .cads-status-badge.inactive { color:#64748b; background:#f1f5f9; border-color:#d8e0ea; }
@@ -737,8 +738,8 @@
         </div>
         <h2 class="section-title">Sản phẩm &amp; kho video</h2>
         <div class="table-wrap"><table class="cads-table cads-inventory-table"><thead><tr><th>STT</th><th>Sản phẩm</th><th>Mã SP</th><th>Kênh</th><th>Tổng video hiện có</th><th>Video đủ điều kiện chạy ads</th><th>Video đang chạy ads view</th><th>Video còn dư</th><th>Video đăng mới tuần này</th></tr></thead><tbody id="cadsInventoryRows"></tbody></table><div id="cadsInventoryEmpty" class="empty hidden">Không có dữ liệu video trong khoảng ngày này.</div></div>
-        <h2 class="section-title">Theo dõi video ads</h2>
-        <div class="table-wrap"><table class="cads-table cads-video-table"><thead><tr><th>STT</th><th>Name</th><th>Sản phẩm gắn giỏ</th><th>Kênh</th><th>Ngày chạy</th><th>Spend</th><th>Impressions</th><th>Video Plays</th><th>Xem ≥2s</th><th>Xem ≥6s</th><th>Tỷ lệ 2s</th><th>Tỷ lệ 6s</th><th>Cost/View</th><th>Click</th><th>CTR</th><th>Order</th><th>Trạng thái</th></tr></thead><tbody id="cadsVideoRows"></tbody></table><div id="cadsVideoEmpty" class="empty hidden">Không có dữ liệu quảng cáo trong khoảng ngày này.</div></div>
+        <div class="section-title-row"><h2 class="section-title">Theo dõi video ads</h2><button id="cadsVideoMore" class="recommendation-more hidden" type="button">Xem tất cả</button></div>
+        <div class="table-wrap"><table class="cads-table cads-video-table"><thead><tr><th>STT</th><th>Name</th><th>Sản phẩm gắn giỏ</th><th>Kênh</th><th>Ngày chạy</th><th>Spend</th><th>Impressions</th><th>Video Plays</th><th>Xem ≥2s</th><th>Xem ≥6s</th><th>Tỷ lệ 2s</th><th>Tỷ lệ 6s</th><th>Cost/View</th><th>Click</th><th>CTR</th><th>Order</th><th>Trạng thái</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th></tr></thead><tbody id="cadsVideoRows"></tbody></table><div id="cadsVideoEmpty" class="empty hidden">Không có dữ liệu quảng cáo trong khoảng ngày này.</div></div>
       </section>
       <section id="contentKocReport" class="hidden">
         <div class="content-koc-summaries">
@@ -1005,6 +1006,8 @@
       var productTrafficChart = null;
       var currentProductAnalysisData = null;
       var cadsChart = null;
+      var currentCAdsVideos = [];
+      var cadsVideoExpanded = false;
       var sellerOAuthConnected = false;
       var sellerOAuthConfigured = false;
       var sellerOAuthCanAuthorize = false;
@@ -1427,7 +1430,8 @@
         });
         var kpis=[['Spend',moneyWhole(data.totals.spend)+' VND','cost'],['Impressions',integer(data.totals.impressions),'impressions'],['Video views at 100%',integer(data.totals.watched100),'orders'],['CPM',moneyWhole(data.totals.cpm)+' VND','costPerOrder']];
         var root=document.getElementById('cadsKpis');root.replaceChildren();kpis.forEach(function(item){var box=document.createElement('div');box.className='cads-kpi metric metric-'+item[2];var label=document.createElement('span');label.textContent=item[0];var value=document.createElement('strong');value.textContent=item[1];box.append(label,value);root.appendChild(box);});
-        renderCAdsChart(data.timeSeries); renderCAdsInventory(data.inventory); renderCAdsVideos(data.videos);
+        currentCAdsVideos=data.videos||[];cadsVideoExpanded=false;
+        renderCAdsChart(data.timeSeries); renderCAdsInventory(data.inventory); renderCAdsVideos();
       }
 
       function renderCAdsChart(series) {
@@ -1448,18 +1452,22 @@
           [item.totalVideos,item.eligibleVideos,item.runningVideos,item.remainingVideos,item.newThisWeek].forEach(function(value){row.appendChild(cadsTextCell(value));});body.appendChild(row);});
       }
 
-      function renderCAdsVideos(items) {
+      function renderCAdsVideos() {
+        var items=currentCAdsVideos,visibleItems=cadsVideoExpanded?items:items.slice(0,5),more=document.getElementById('cadsVideoMore');
+        more.classList.toggle('hidden',items.length<=5);more.textContent=cadsVideoExpanded?'Thu gọn':'Xem tất cả ('+integer(items.length)+')';more.onclick=function(){cadsVideoExpanded=!cadsVideoExpanded;renderCAdsVideos();};
         var body=document.getElementById('cadsVideoRows');body.replaceChildren();document.getElementById('cadsVideoEmpty').classList.toggle('hidden',items.length>0);
-        items.forEach(function(item,index){var m=item.metrics,noCart=item.productName==='Không gắn giỏ';var row=document.createElement('tr');row.appendChild(cadsTextCell(index+1));
+        visibleItems.forEach(function(item,index){var m=item.metrics,g=item.gmvMax||{},noCart=item.productName==='Không gắn giỏ';var row=document.createElement('tr');row.appendChild(cadsTextCell(index+1));
           var nameCell=cadsTextCell('');var name=document.createElement(item.videoUrl?'a':'span');name.className='cads-text-clip'+(item.videoUrl?' cads-name-link':'');name.textContent=item.name;name.title=item.name;if(item.videoUrl){name.href=item.videoUrl;name.target='_blank';name.rel='noopener noreferrer';}nameCell.appendChild(name);row.appendChild(nameCell);
           var productCell=cadsTextCell('');var product=document.createElement('span');product.className='cads-text-clip'+(noCart?' cads-no-cart':'');product.textContent=item.productName;product.title=item.productName;productCell.appendChild(product);row.appendChild(productCell);
           var channelCell=cadsTextCell('');channelCell.appendChild(cadsChannelBadge(item.channel));row.appendChild(channelCell);
-          [item.startDate,moneyWhole(m.spend),integer(m.impressions),integer(m.videoPlays),integer(m.watched2s),integer(m.watched6s),percent(m.rate2s),percent(m.rate6s),money(m.costPerView),integer(m.clicks),noCart?'—':percent(m.ctr),noCart?'—':integer(m.orders)].forEach(function(value){row.appendChild(cadsTextCell(value));});var statusCell=cadsTextCell('');statusCell.appendChild(cadsStatusBadge(item.status));row.appendChild(statusCell);body.appendChild(row);});
+          [formatCAdsDateTime(item.startTime),moneyWhole(m.spend),integer(m.impressions),integer(m.videoPlays),integer(m.watched2s),integer(m.watched6s),percent(m.rate2s),percent(m.rate6s),money(m.costPerView),integer(m.clicks),noCart?'—':percent(m.ctr),noCart?'—':integer(m.orders)].forEach(function(value){row.appendChild(cadsTextCell(value));});var statusCell=cadsTextCell('');statusCell.appendChild(cadsStatusBadge(item.status));row.appendChild(statusCell);
+          [moneyWhole(g.cost),integer(g.orders),moneyWhole(g.costPerOrder),moneyWhole(g.grossRevenue),integer(g.click),number(g.roi)].forEach(function(value){row.appendChild(cadsTextCell(value));});body.appendChild(row);});
       }
 
       function cadsTextCell(value) { var cell=document.createElement('td');cell.textContent=value;return cell; }
       function cadsChannelBadge(channel) { var badge=document.createElement('span');badge.className='cads-channel-badge '+(channel==='Liên kết'?'affiliate':'seller');badge.textContent=channel;return badge; }
       function cadsStatusBadge(status) { var value=String(status||'Chưa xác định');var upper=value.toUpperCase(),kind='inactive';if(/REJECT|ERROR|DELETE/.test(upper))kind='danger';else if(/PENDING|REVIEW|LEARNING|QUEUE/.test(upper))kind='warning';else if(/ENABLE|ACTIVE|DELIVER/.test(upper)&&!/DISABLE|INACTIVE|NOT_DELIVER/.test(upper))kind='active';var badge=document.createElement('span');badge.className='cads-status-badge '+kind;badge.textContent=value;badge.title=value;return badge; }
+      function formatCAdsDateTime(value) { var raw=String(value||'');if(!raw)return '—';if(/^\d{4}-\d{2}-\d{2}$/.test(raw))return raw;var date=new Date(raw);return Number.isNaN(date.getTime())?raw:new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'short'}).format(date); }
 
       function setReportView(view, updateUrl) {
         var allowedViews = dashboardAllowedViews();

@@ -82,7 +82,7 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
     return ok(await loadSellerRevenueAnalysis(env,scope));
   }
   if(url.pathname==='/api/cads-report'){
-    const scope=validateScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    const scope=await validateAdsScope(env,input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadCAdsReport(env,{...scope,forceRefresh:input.forceRefresh===true}));
   }
   if(url.pathname==='/api/content-koc-analysis'){
