@@ -41,4 +41,15 @@ describe('order province extraction', () => {
       }
     })).toBe('Vĩnh Long');
   });
+
+  it('does not stop at an empty recipient address when a sibling address is populated', () => {
+    expect(orderProvince({
+      recipient_address: {},
+      shipping_address: { full_address: '********, Vĩnh Long, Việt Nam' }
+    })).toBe('Vĩnh Long');
+  });
+
+  it('reads a province field on the order when address is redacted', () => {
+    expect(orderProvince({ recipient_address: {}, province_name: 'Vĩnh Long' })).toBe('Vĩnh Long');
+  });
 });

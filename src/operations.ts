@@ -215,9 +215,29 @@ function provinceFromAddressText(value: unknown): string {
   return '';
 }
 
+function asAddressObject(value: any): any {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch { return value.trim() ? { full_address: value } : {}; }
+  }
+  return value && typeof value === 'object' ? value : {};
+}
+
 function recipientAddress(order: any): any {
-  return order?.recipient_address || order?.shipping_address || order?.delivery_address ||
-    order?.shipping_info?.recipient_address || {};
+  const candidates = [
+    order?.recipient_address,
+    order?.shipping_address,
+    order?.delivery_address,
+    order?.receiver_address,
+    order?.address,
+    order?.shipping_info?.recipient_address
+  ].map(asAddressObject);
+  return candidates.find((candidate) => Object.entries(candidate).some(([key, value]) =>
+    value !== undefined && value !== null && String(value).trim() !== '' &&
+    !['district_info', 'district_info_list', 'district_infos'].includes(key))) ||
+    candidates.find((candidate) => Object.keys(candidate).length > 0) || {};
 }
 
 function recipientDistricts(order: any): any[] {
@@ -247,6 +267,7 @@ export function orderProvince(order: any): string {
     regions.find((item: any) => !/^L0$/i.test(String(item?.address_level || item?.level || ''))) || regions[0];
   return String(province?.address_name || province?.name || province?.region_name ||
     address.state || address.province || address.region_name ||
+    provinceFromAddressText(order?.province || order?.province_name || order?.region || order?.region_name) ||
     provinceFromAddressText(address.full_address || address.address_detail ||
       [address.address_line1, address.address_line2, address.address_line3, address.address_line4].filter(Boolean).join(', ')) ||
     'Không xác định');
