@@ -1,8 +1,6 @@
 import type { Env, McpRow, McpSession } from './types';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
 import { callTool, createSession } from './mcp';
-import { fetchShopVideos } from './content-koc';
-import { loadAdsVideoMetrics } from './reports';
 import { authorizedShop, shopRequest } from './seller';
 
 type CAdsMetrics = {
@@ -66,18 +64,33 @@ function adsProducts(ad:any):ProductRef[]{
   for(const list of [ad?.products,ad?.product_list,ad?.product_info_list])for(const item of Array.isArray(list)?list:[])addProduct(item?.product_id||item?.item_id||item?.id,item?.product_name||item?.item_name||item?.name);
   return [...products.values()];
 }
-function shopProducts(video:any):ProductRef[]{return (Array.isArray(video?.products)?video.products:[]).map((product:any)=>({id:String(product.id||product.product_id||''),name:String(product.name||product.title||product.product_name||product.id||'')})).filter((product:ProductRef)=>product.id);}
-async function fetchLinkedProducts(env:Env,videoIds:string[],startDate:string,endDate:string):Promise<{byVideoId:Map<string,ProductRef[]>;successful:number;failed:number}>{
-  const byVideoId=new Map<string,ProductRef[]>(),ids=Array.from(new Set(videoIds.filter(Boolean)));if(!ids.length)return{byVideoId,successful:0,failed:0};
-  const shop=await authorizedShop(env);const cipher=String(shop?.cipher||shop?.shop_cipher||shop?.id||'');if(!cipher)return{byVideoId,successful:0,failed:ids.length};
-  let successful=0,failed=0;
-  const loadOne=async(id:string)=>{try{const products=new Map<string,ProductRef>();let pageToken='',pages=0;
-    do{const data=await shopRequest(env,`/analytics/202409/shop_videos/${encodeURIComponent(id)}/products/performance`,'GET',{shop_cipher:cipher,start_date_ge:startDate,end_date_lt:shiftDate(endDate,1),page_size:100,sort_field:'gmv',sort_order:'DESC',currency:'LOCAL',page_token:pageToken||undefined});
-      for(const product of Array.isArray(data.products)?data.products:[]){const productId=String(product.id||product.product_id||'');if(productId)products.set(productId,{id:productId,name:String(product.name||product.title||product.product_name||productId)});}
-      pageToken=String(data.next_page_token||'');pages+=1;
-    }while(pageToken&&pages<100);byVideoId.set(id,[...products.values()]);successful+=1;}catch{failed+=1;}};
-  for(let offset=0;offset<ids.length;offset+=5)await Promise.all(ids.slice(offset,offset+5).map(loadOne));
-  return{byVideoId,successful,failed};
+type LinkedProductResult={byVideoId:Map<string,ProductRef[]>;successful:number;failed:number;errors:string[]};
+function wait(milliseconds:number):Promise<void>{return new Promise((resolve)=>setTimeout(resolve,milliseconds));}
+function videoPostDate(id:string,timezone:string):string|null{try{const timestamp=Number(BigInt(id)>>32n);if(timestamp<1_500_000_000||timestamp>4_000_000_000)return null;
+  return new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(timestamp*1000));}catch{return null;}}
+async function fetchLinkedProducts(env:Env,videoIds:string[],startDate:string,endDate:string):Promise<LinkedProductResult>{
+  const byVideoId=new Map<string,ProductRef[]>(),ids=Array.from(new Set(videoIds.filter(Boolean)));if(!ids.length)return{byVideoId,successful:0,failed:0,errors:[]};
+  const shop=await authorizedShop(env);const cipher=String(shop?.cipher||shop?.shop_cipher||shop?.id||'');if(!cipher)return{byVideoId,successful:0,failed:ids.length,errors:['Không tìm thấy shop_cipher']};
+  let successful=0,failed=0;const errors:string[]=[];
+  for(const id of ids){const associationKey=stableKey('shop-video-products-v2',{videoId:id});const cached=await cacheGet<ProductRef[]>(env,associationKey);
+    if(cached?.length){byVideoId.set(id,cached);successful+=1;continue;}
+    let completed=false,lastError='';
+    for(let attempt=0;attempt<3&&!completed;attempt+=1){if(attempt)await wait(attempt*650);
+      try{const loadRange=async(from:string,to:string)=>{const products=new Map<string,ProductRef>();let pageToken='',pages=0;
+          do{const data=await shopRequest(env,`/analytics/202409/shop_videos/${encodeURIComponent(id)}/products/performance`,'GET',{shop_cipher:cipher,start_date_ge:from,end_date_lt:shiftDate(to,1),page_size:100,sort_field:'gmv',sort_order:'DESC',currency:'LOCAL',page_token:pageToken||undefined});
+            for(const product of Array.isArray(data.products)?data.products:[]){const productId=String(product.id||product.product_id||'');if(productId)products.set(productId,{id:productId,name:String(product.name||product.title||product.product_name||productId)});}
+            pageToken=String(data.next_page_token||'');pages+=1;
+          }while(pageToken&&pages<100);return[...products.values()];};
+        let values=await loadRange(startDate,endDate);const posted=videoPostDate(id,env.TIMEZONE);
+        if(!values.length&&posted&&posted<startDate)values=await loadRange(posted,endDate);
+        if(!values.length&&posted&&posted>endDate)values=await loadRange(posted,shiftDate(posted,29));
+        byVideoId.set(id,values);if(values.length)await cachePut(env,associationKey,values,21600).catch(()=>undefined);successful+=1;completed=true;
+      }catch(error){lastError=error instanceof Error?error.message:String(error);}
+    }
+    if(!completed){failed+=1;if(errors.length<3)errors.push(lastError);}
+    await wait(150);
+  }
+  return{byVideoId,successful,failed,errors};
 }
 function conciseName(ad:any,adId:string):string{const candidates=[ad?.ad_name,ad?.creative_name,ad?.display_name,ad?.name,ad?.video_name].map((value)=>String(value||'').trim()).filter(Boolean);
   const readable=candidates.find((value)=>!/^https?:\/\//i.test(value));if(readable)return readable.length>90?`${readable.slice(0,87)}…`:readable;return `Quảng cáo ${adId.slice(-8)}`;}
@@ -93,24 +106,19 @@ function seriesPoints(startDate:string,endDate:string,dimension:string):Array<{k
   else for(let date=startDate;date<=endDate;date=shiftDate(date,1))points.push({key:date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,metrics:emptyMetrics()});return points;}
 
 export async function loadCAdsReport(env:Env,input:any):Promise<any>{
-  const cacheKey=stableKey('cads-v5',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  const cacheKey=stableKey('cads-v8',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
   const session=await createSession(env);const performance=await performanceRows(env,session,input.advertiserId,input.startDate,input.endDate);
   const totals=emptyMetrics(),points=seriesPoints(input.startDate,input.endDate,performance.dimension),byPoint=new Map(points.map((point)=>[point.key,point.metrics]));const byAd=new Map<string,CAdsMetrics>();
   for(const row of performance.rows){const values=normalized(row.metrics||{});add(totals,values);const key=pointKey(row,performance.dimension);const point=byPoint.get(key);if(point)add(point,values);
     const id=rowId(row,'ad_id');if(id){if(!byAd.has(id))byAd.set(id,emptyMetrics());add(byAd.get(id)!,values);}}
   finish(totals);points.forEach((point)=>finish(point.metrics));const metadata=await adMetadata(env,session,input.advertiserId,[...byAd.keys()]);
-  const metadataStart=input.startDate<shiftDate(input.endDate,-29)?input.startDate:shiftDate(input.endDate,-29);
-  const [shopResult,gmvVideos]=await Promise.all([
-    fetchShopVideos(env,metadataStart,input.endDate).catch(()=>({available:false,videos:[],latestAvailableDate:null})),
-    loadAdsVideoMetrics(env,input,input.startDate,input.endDate).catch(()=>[])
-  ]);
-  const shopByVideoId=new Map((shopResult.videos||[]).map((video:any)=>[String(video.id||''),video]));
-  const gmvByVideoId=new Map((gmvVideos||[]).map((video:any)=>[String(video.itemId||''),video]));
-  const linkedProducts=await fetchLinkedProducts(env,Object.values(metadata).map(videoId),metadataStart,input.endDate).catch(()=>({byVideoId:new Map<string,ProductRef[]>(),successful:0,failed:Object.keys(metadata).length}));
-  const videos=[...byAd.entries()].map(([adId,metrics])=>{const ad=metadata[adId]||{};const linkedVideoId=videoId(ad);const shopVideo=shopByVideoId.get(linkedVideoId);const gmvVideo:any=gmvByVideoId.get(linkedVideoId);const directProductList=linkedProducts.byVideoId.get(linkedVideoId)||[];const shopProductList=shopProducts(shopVideo);const adProductList=adsProducts(ad);const products=directProductList.length?directProductList:(shopProductList.length?shopProductList:(adProductList.length?adProductList:(gmvVideo?.products||[])));const product=products[0]||null;
-    const productLabel=product?.name||(shopVideo?'Không gắn giỏ':'Chưa xác định');const status=String(ad.operation_status||ad.secondary_status||ad.status||'');return {adId,videoId:linkedVideoId,name:String(shopVideo?.title||conciseName(ad,adId)),videoUrl:tiktokVideoUrl(ad,shopVideo,linkedVideoId),productName:productLabel,productCode:product?.id||'—',
-      channel:channel(ad,shopVideo),startTime:adStartTime(ad.create_time||ad.create_time_utc,input.startDate),status,note:product?'':(shopVideo?'Video branding/reach':'Chưa tìm thấy liên kết sản phẩm trong Ads MCP hoặc TikTok Shop'),metrics:finish(metrics)};}).sort((a,b)=>b.metrics.spend-a.metrics.spend);
+  const metadataStart=input.startDate<shiftDate(input.endDate,-29)?shiftDate(input.endDate,-29):input.startDate;
+  const unresolvedVideoIds=Object.values(metadata).filter((ad:any)=>!adsProducts(ad).length).map(videoId);
+  const linkedProducts=await fetchLinkedProducts(env,unresolvedVideoIds,metadataStart,input.endDate).catch((error)=>({byVideoId:new Map<string,ProductRef[]>(),successful:0,failed:unresolvedVideoIds.length,errors:[error instanceof Error?error.message:String(error)]}));
+  const videos=[...byAd.entries()].map(([adId,metrics])=>{const ad=metadata[adId]||{};const linkedVideoId=videoId(ad);const adProductList=adsProducts(ad);const shopProductList=linkedProducts.byVideoId.get(linkedVideoId)||[];const product=(adProductList.length?adProductList:shopProductList)[0]||null;
+    const productLabel=product?.name||'Chưa xác định';const status=String(ad.operation_status||ad.secondary_status||ad.status||'');return {adId,videoId:linkedVideoId,name:conciseName(ad,adId),videoUrl:tiktokVideoUrl(ad,null,linkedVideoId),productName:productLabel,productCode:product?.id||'—',
+      channel:channel(ad,null),startTime:adStartTime(ad.create_time||ad.create_time_utc,input.startDate),status,note:product?'':'Chưa tìm thấy liên kết sản phẩm trong Ads MCP hoặc TikTok Shop',metrics:finish(metrics)};}).sort((a,b)=>b.metrics.spend-a.metrics.spend);
   const channels=['Người bán','Liên kết'].map((name)=>{const items=videos.filter((video)=>video.channel===name);const spend=items.reduce((sum,item)=>sum+item.metrics.spend,0);const impressions=items.reduce((sum,item)=>sum+item.metrics.impressions,0);
     return {channel:name,running:items.filter((item)=>running(item.status)).length,spend,cpm:impressions?spend*1000/impressions:0};});
   const grouped=new Map<string,any>();for(const video of videos){const key=`${video.productName}|${video.productCode}|${video.channel}`;if(!grouped.has(key))grouped.set(key,{productName:video.productName,productCode:video.productCode,channel:video.channel,totalVideos:0,eligibleVideos:0,runningVideos:0,remainingVideos:0,newThisWeek:0,priority:'',note:video.note});
@@ -118,7 +126,7 @@ export async function loadCAdsReport(env:Env,input:any):Promise<any>{
   const inventory=[...grouped.values()].map((item)=>({...item,remainingVideos:Math.max(0,item.eligibleVideos-item.runningVideos)}));
   const result={advertiserId:input.advertiserId,startDate:input.startDate,endDate:input.endDate,generatedAt:new Date().toISOString(),totals,
     timeSeries:{granularity:performance.dimension==='stat_time_hour'?'hour':'day',points},channels,inventory,videos,
-    diagnostics:{adsMetadataCount:Object.keys(metadata).length,shopAvailable:shopResult.available,shopVideoCount:shopResult.videos.length,shopMatchedCount:videos.filter((video)=>video.videoId&&shopByVideoId.has(video.videoId)).length,
-      linkedProductRequests:{successful:linkedProducts.successful,failed:linkedProducts.failed,matched:videos.filter((video)=>video.videoId&&(linkedProducts.byVideoId.get(video.videoId)||[]).length).length}}};
+    diagnostics:{adsMetadataCount:Object.keys(metadata).length,adsProductMatchedCount:videos.filter((video)=>adsProducts(metadata[video.adId]||{}).length).length,
+      linkedProductRequests:{successful:linkedProducts.successful,failed:linkedProducts.failed,matched:videos.filter((video)=>video.videoId&&(linkedProducts.byVideoId.get(video.videoId)||[]).length).length,errors:linkedProducts.errors}}};
   await cachePut(env,cacheKey,result,240);return result;
 }
