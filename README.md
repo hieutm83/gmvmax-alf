@@ -82,7 +82,13 @@ TikTok Partner Center có thể khóa URL webhook sau khi ứng dụng đã tạ
 npm run typecheck
 npm test
 npm run deploy
+npm run deploy:triggers
 ```
+
+Sau khi deploy bang `wrangler versions upload/deploy`, bat buoc chay
+`npm run deploy:triggers`. Buoc nay gan lai Cron moi phut va cac Queue
+producer/consumer; neu bo qua, website van online nhung ca ba Zalo bot se
+khong tao duoc lich gui moi.
 
 Mo URL Worker, bam ket noi TikTok va hoan tat OAuth mot lan. Token sau do duoc ma hoa trong D1; refresh duoc Durable Object thuc hien tu dong, khong phu thuoc trinh duyet hay may tinh dang bat.
 
