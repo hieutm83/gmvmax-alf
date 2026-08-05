@@ -95,6 +95,8 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     const localHour=Number(localParts.hour),localMinute=Number(localParts.minute);
     const isCurrentSlot=(reportDate===localDate&&reportHour===localHour)||
       (reportHour===24&&localHour===0&&reportDate===shiftDate(localDate,-1));
+    if(hourlyRow.observed===false&&!isCurrentSlot)
+      throw new Error(`TikTok Ads không còn dữ liệu tách riêng khung giờ ${reportHour}:00; không gửi số 0 thay thế.`);
     if(report.hourlyMode==='hourly'&&hourlyRow.observed===false&&isCurrentSlot&&localMinute<20)
       throw new Error(`TikTok Ads chưa chốt dữ liệu khung giờ ${reportHour}:00; sẽ tự động thử lại.`);
     const summary = await loadCreativeSummaries(env, { ...base, products: report.products,
@@ -103,8 +105,14 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     const display = reportDate.split('-').reverse().join('/');
     const cumulative = report.hourlyMode === 'cumulative';
     const t = cumulative ? report.totals : hourlyRow.metrics;
+    const previousSent=await env.DB.prepare(`SELECT MAX(report_hour) AS report_hour FROM scheduled_reports
+      WHERE report_date=? AND report_hour<? AND status='SENT'`).bind(reportDate,reportHour).first<{report_hour:number|null}>();
+    const intervalStart=Math.max(1,Number(previousSent?.report_hour||0)+1);
+    const intervalLabel=report.hourlyMode==='snapshots'&&intervalStart<reportHour
+      ? `${String(intervalStart).padStart(2,'0')}:00–${String(reportHour).padStart(2,'0')}:00 (lũy kế)`
+      : `${String(reportHour).padStart(2,'0')}:00`;
     let text = [
-      `Chỉ số ADS ${display} - ${String(reportHour).padStart(2,'0')}:00`,
+      `Chỉ số ADS ${display} - ${intervalLabel}`,
       `Cost: ${integer(t.cost)}`,
       `SKU orders: ${integer(t.orders)}`,
       `Cost / order: ${integer(t.costPerOrder)}`,

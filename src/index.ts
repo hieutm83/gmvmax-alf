@@ -194,7 +194,9 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     }
     const tasks:Promise<unknown>[]=[];
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
-    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(enqueueMissingAdsReports(env,message.reportDate,message.reportHour));
+    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send(
+      {type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},
+      message.reportHour===8?{delaySeconds:30}:undefined));
     await Promise.all(tasks);return;
   }
   if(message.type==='operations-daily-report'){
@@ -233,17 +235,6 @@ async function assetResponse(request:Request,env:Env):Promise<Response>{
   if(isHtml){headers.set('Content-Type','text/html; charset=UTF-8');headers.set('Cache-Control','no-store');}
   if(assetUrl.pathname.endsWith('.js'))headers.set('Content-Type','application/javascript; charset=UTF-8');
   return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
-}
-
-async function enqueueMissingAdsReports(env:Env,reportDate:string,reportHour:number):Promise<void>{
-  const rows=await env.DB.prepare("SELECT report_hour FROM scheduled_reports WHERE report_date=? AND status='SENT'")
-    .bind(reportDate).all<{report_hour:number}>();
-  const sent=new Set((rows.results||[]).map((row)=>Number(row.report_hour)));
-  const missing=Array.from({length:reportHour},(_,index)=>index+1).filter((hour)=>!sent.has(hour));
-  if(!missing.length)return;
-  const prioritized=[reportHour,...missing].filter((hour,index,list)=>!sent.has(hour)&&list.indexOf(hour)===index).slice(0,4);
-  await env.TASK_QUEUE.sendBatch(prioritized.map((hour)=>({body:{type:'scheduled-report' as const,reportDate,reportHour:hour},
-    ...(hour===8?{delaySeconds:30}:{})})));
 }
 
 async function enqueueMissingOrderReports(env:Env,localDate:string,localHour:number,localMinute:number):Promise<void>{
