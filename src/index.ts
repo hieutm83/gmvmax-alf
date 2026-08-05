@@ -183,7 +183,10 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   if(message.type==='zalo-poll'||message.type==='zalo-webhook-ensure')return;
   if(message.type==='zalo-video'||message.type==='zalo-video-day'||message.type==='zalo-video-finalize'||message.type==='zalo-video-recover')return;
   if(message.type==='hourly-dispatch'){
-    try{await getAccessToken(runtime);}catch(error){console.error('TikTok OAuth refresh failed',error instanceof Error?error.message:String(error));return;}
+    try{await getAccessToken(runtime);}catch(error){
+      console.error('TikTok OAuth refresh failed',error instanceof Error?error.message:String(error));
+      throw error;
+    }
     const tasks:Promise<unknown>[]=[];
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
     if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},message.reportHour===8?{delaySeconds:30}:undefined));
@@ -330,9 +333,9 @@ export default {
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',...dueOrderBotSlot}));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
-    // TikTok Shop daily Analytics and cancellation snapshots are still partial
-    // shortly after 08:00. Start at 08:40, then retry every five minutes on failure.
-    if(localHour===8&&localMinute>=40&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
+    // Start at 08:00 and retry every five minutes. The report table is the
+    // idempotency key, so API delays cannot create duplicate messages.
+    if(localHour===8&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
       const yesterday=shiftDate(localDate,-1);
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
     }
