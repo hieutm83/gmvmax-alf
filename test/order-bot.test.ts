@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrderBotStyles, formatOrderBotReport, isOrderBotReportDay, latestDueOrderBotSlot, ORDER_BOT_SLOTS, resolveOrderBotSchedule, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
+import { buildOrderBotStyles, dueOrderBotSlots, formatOrderBotReport, isOrderBotReportDay, latestDueOrderBotSlot, ORDER_BOT_SLOTS, resolveOrderBotSchedule, summarizeOrderStatus, zonedDateTimeEpoch } from '../src/order-bot';
 
 describe('order bot', () => {
   it('sends every day including Sunday', () => {
@@ -19,6 +19,15 @@ describe('order bot', () => {
     expect(latestDueOrderBotSlot('2026-08-04', 11, 5)).toEqual({ reportDate: '2026-08-04', reportTime: '10:56' });
     expect(latestDueOrderBotSlot('2026-08-04', 11, 11)).toEqual({ reportDate: '2026-08-04', reportTime: '10:56' });
     expect(latestDueOrderBotSlot('2026-08-04', 0, 5)).toEqual({ reportDate: '2026-08-03', reportTime: '23:56' });
+  });
+
+  it('lists every due slot so the scheduler can backfill gaps', () => {
+    expect(dueOrderBotSlots('2026-08-05', 3, 10)).toEqual([
+      { reportDate: '2026-08-05', reportTime: '01:56' },
+      { reportDate: '2026-08-05', reportTime: '02:56' }
+    ]);
+    expect(dueOrderBotSlots('2026-08-05', 3, 56).at(-1)).toEqual({ reportDate: '2026-08-05', reportTime: '03:56' });
+    expect(dueOrderBotSlots('2026-08-05', 0, 5)).toEqual([{ reportDate: '2026-08-04', reportTime: '23:56' }]);
   });
 
   it('rolls Sunday orders after Saturday 19:00 into the Monday noon group', () => {

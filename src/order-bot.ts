@@ -56,6 +56,15 @@ export function latestDueOrderBotSlot(localDate: string, localHour: number, loca
   return { reportDate: shiftDate(localDate, -1), reportTime: '23:56' };
 }
 
+export function dueOrderBotSlots(localDate: string, localHour: number, localMinute: number):
+  Array<{ reportDate: string; reportTime: string }> {
+  if (localHour === 0) return [{ reportDate: shiftDate(localDate, -1), reportTime: '23:56' }];
+  const lastDueHour = Math.min(23, localMinute >= 56 ? localHour : localHour - 1);
+  return Array.from({ length: Math.max(0, lastDueHour) }, (_, index) => ({
+    reportDate: localDate, reportTime: `${String(index + 1).padStart(2, '0')}:56`
+  }));
+}
+
 export function resolveOrderBotSchedule(localDate: string, slotTime: string): {
   slot: OrderBotSlot; cutoffDate: string; newLabel: string;
 } {
@@ -373,30 +382,38 @@ export async function sendOrderBotReport(env: Env, localDate: string, slotTime: 
   const slot = schedule.slot;
   if (!isOrderBotReportDay(localDate)) return;
   if (!force) {
-    const existing = await env.DB.prepare('SELECT status FROM order_bot_reports WHERE report_date=? AND report_time=?')
-      .bind(localDate, slotTime).first<{ status: string }>();
-    if (existing?.status === 'SENT') return;
+    const claimed = await env.DB.prepare(`INSERT INTO order_bot_reports(report_date,report_time,status) VALUES(?,?,'SENDING')
+      ON CONFLICT(report_date,report_time) DO UPDATE SET status='SENDING',message_id=NULL,payload=NULL,updated_at=CURRENT_TIMESTAMP
+      WHERE order_bot_reports.status<>'SENT' AND (order_bot_reports.status<>'SENDING' OR order_bot_reports.updated_at<datetime('now','-10 minutes'))`)
+      .bind(localDate, slotTime).run();
+    if (!claimed.meta.changes) return;
   }
-  const shop = await authorizedShop(env);
-  if (!shop) throw new Error('Seller OAuth chưa được ủy quyền.');
-  const shopCipher = String(shop.cipher || shop.shop_cipher || shop.id || '');
-  if (!shopCipher) throw new Error('Không tìm thấy shop_cipher.');
-  const cutoffEpoch = zonedDateTimeEpoch(schedule.cutoffDate, slot.cutoffTime, env.TIMEZONE || 'Asia/Bangkok');
-  const statusOrders = await Promise.all(STATUS_DEFINITIONS.map((status) => currentOrders(env, shopCipher, status.code)));
-  const summaries = STATUS_DEFINITIONS.map((status, index) => summarizeOrderStatus(status.label, statusOrders[index], cutoffEpoch));
-  const updatedAt = new Date();
-  const text = formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok', Number.POSITIVE_INFINITY, schedule.newLabel);
-  let messageId: string;
   try {
-    messageId = await sendOrderBotMessage(env, text);
+    const shop = await authorizedShop(env);
+    if (!shop) throw new Error('Seller OAuth chưa được ủy quyền.');
+    const shopCipher = String(shop.cipher || shop.shop_cipher || shop.id || '');
+    if (!shopCipher) throw new Error('Không tìm thấy shop_cipher.');
+    const cutoffEpoch = zonedDateTimeEpoch(schedule.cutoffDate, slot.cutoffTime, env.TIMEZONE || 'Asia/Bangkok');
+    const statusOrders = await Promise.all(STATUS_DEFINITIONS.map((status) => currentOrders(env, shopCipher, status.code)));
+    const summaries = STATUS_DEFINITIONS.map((status, index) => summarizeOrderStatus(status.label, statusOrders[index], cutoffEpoch));
+    const updatedAt = new Date();
+    const text = formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok', Number.POSITIVE_INFINITY, schedule.newLabel);
+    let messageId: string;
+    try {
+      messageId = await sendOrderBotMessage(env, text);
+    } catch (error) {
+      if (!/length|too long|too large|message size|limit exceeded/i.test(error instanceof Error ? error.message : String(error))) throw error;
+      console.warn('Order bot message exceeded Zalo limit; retrying with 20 breakdown lines per group.');
+      messageId = await sendOrderBotMessage(env,
+        formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok', 20, schedule.newLabel));
+    }
+    await env.DB.prepare(`INSERT INTO order_bot_reports(report_date,report_time,status,message_id,payload)
+      VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_time) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
+      payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
+      .bind(localDate, slotTime, 'SENT', messageId, JSON.stringify({ cutoffEpoch, summaries, force })).run();
   } catch (error) {
-    if (!/length|too long|too large|message size|limit exceeded/i.test(error instanceof Error ? error.message : String(error))) throw error;
-    console.warn('Order bot message exceeded Zalo limit; retrying with 20 breakdown lines per group.');
-    messageId = await sendOrderBotMessage(env,
-      formatOrderBotReport(localDate, slot, summaries, updatedAt, env.TIMEZONE || 'Asia/Bangkok', 20, schedule.newLabel));
+    if (!force) await env.DB.prepare(`UPDATE order_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_time=?`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),localDate,slotTime).run();
+    throw error;
   }
-  await env.DB.prepare(`INSERT INTO order_bot_reports(report_date,report_time,status,message_id,payload)
-    VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_time) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
-    payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
-    .bind(localDate, slotTime, 'SENT', messageId, JSON.stringify({ cutoffEpoch, summaries, force })).run();
 }

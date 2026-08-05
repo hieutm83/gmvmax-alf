@@ -77,40 +77,58 @@ export function buildAdsStyles(text:string):ZaloTextStyle[]{
 }
 
 export async function sendScheduledReport(env: Env, reportDate: string, reportHour: number): Promise<void> {
-  const existing = await env.DB.prepare('SELECT status FROM scheduled_reports WHERE report_date=? AND report_hour=?')
-    .bind(reportDate, reportHour).first<{status:string}>();
-  if (existing?.status === 'SENT') return;
+  const claimed = await env.DB.prepare(`INSERT INTO scheduled_reports(report_date,report_hour,status) VALUES(?,?,'SENDING')
+    ON CONFLICT(report_date,report_hour) DO UPDATE SET status='SENDING',message_id=NULL,payload=NULL,updated_at=CURRENT_TIMESTAMP
+    WHERE scheduled_reports.status<>'SENT' AND (scheduled_reports.status<>'SENDING' OR scheduled_reports.updated_at<datetime('now','-10 minutes'))`)
+    .bind(reportDate, reportHour).run();
+  if (!claimed.meta.changes) return;
   const base = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE, startDate: reportDate, endDate: reportDate };
-  const report = await loadMainReport(env, base, true);
-  const summary = await loadCreativeSummaries(env, { ...base, products: report.products,
-    allContexts: report.creativeContexts, availableProducts: report.availableProductCount,
-    forceRefresh: true });
-  const hourlyRow = report.hourly?.[reportHour - 1];
-  if (!hourlyRow?.metrics) throw new Error(`Không tìm thấy dữ liệu khung giờ ${reportHour}:00.`);
-  const display = reportDate.split('-').reverse().join('/');
-  const cumulative = report.hourlyMode === 'cumulative';
-  const t = cumulative ? report.totals : hourlyRow.metrics;
-  let text = [
-    `Chỉ số ADS ${display} - ${String(reportHour).padStart(2,'0')}:00`,
-    `Cost: ${integer(t.cost)}`,
-    `SKU orders: ${integer(t.orders)}`,
-    `Cost / order: ${integer(t.costPerOrder)}`,
-    `Gross revenue: ${integer(t.grossRevenue)}`,
-    `ROI: ${Number(t.roi || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}`,
-    '',
-    '- Boost:',
-    ...recommendation(summary.videoEvaluation?.boost),
-    '- Tắt:',
-    ...recommendation(summary.videoEvaluation?.stop)
-  ].join('\n');
-  if (cumulative) text = text.replace(':00\n', ':00 (lũy kế)\n');
-  const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text));
-  await env.DB.prepare(`INSERT INTO scheduled_reports(report_date,report_hour,status,message_id,payload) VALUES(?,?,?,?,?)
-    ON CONFLICT(report_date,report_hour) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
-    .bind(reportDate, reportHour, 'SENT', messageId, JSON.stringify({ totals:t })).run();
-  await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
-    ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)
-    .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : t)).run();
+  try {
+    const report = await loadMainReport(env, base, true);
+    const hourlyRow = report.hourly?.[reportHour - 1];
+    if (!hourlyRow?.metrics) throw new Error(`Không tìm thấy dữ liệu khung giờ ${reportHour}:00.`);
+    const now = new Date();
+    const localDate = dateInTimezone(now, env.TIMEZONE || 'Asia/Bangkok');
+    const localParts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+      timeZone:env.TIMEZONE || 'Asia/Bangkok',hour:'2-digit',minute:'2-digit',hour12:false
+    }).formatToParts(now).map((part)=>[part.type,part.value]));
+    const localHour=Number(localParts.hour),localMinute=Number(localParts.minute);
+    const isCurrentSlot=(reportDate===localDate&&reportHour===localHour)||
+      (reportHour===24&&localHour===0&&reportDate===shiftDate(localDate,-1));
+    if(report.hourlyMode==='hourly'&&hourlyRow.observed===false&&isCurrentSlot&&localMinute<20)
+      throw new Error(`TikTok Ads chưa chốt dữ liệu khung giờ ${reportHour}:00; sẽ tự động thử lại.`);
+    const summary = await loadCreativeSummaries(env, { ...base, products: report.products,
+      allContexts: report.creativeContexts, availableProducts: report.availableProductCount,
+      forceRefresh: true });
+    const display = reportDate.split('-').reverse().join('/');
+    const cumulative = report.hourlyMode === 'cumulative';
+    const t = cumulative ? report.totals : hourlyRow.metrics;
+    let text = [
+      `Chỉ số ADS ${display} - ${String(reportHour).padStart(2,'0')}:00`,
+      `Cost: ${integer(t.cost)}`,
+      `SKU orders: ${integer(t.orders)}`,
+      `Cost / order: ${integer(t.costPerOrder)}`,
+      `Gross revenue: ${integer(t.grossRevenue)}`,
+      `ROI: ${Number(t.roi || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}`,
+      '',
+      '- Boost:',
+      ...recommendation(summary.videoEvaluation?.boost),
+      '- Tắt:',
+      ...recommendation(summary.videoEvaluation?.stop)
+    ].join('\n');
+    if (cumulative) text = text.replace(':00\n', ':00 (lũy kế)\n');
+    const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text));
+    await env.DB.prepare(`UPDATE scheduled_reports SET status='SENT',message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_hour=?`).bind(messageId,JSON.stringify({totals:t,source:report.hourlyMode,
+        observed:hourlyRow.observed!==false}),reportDate,reportHour).run();
+    await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
+      ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)
+      .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : t)).run();
+  } catch (error) {
+    await env.DB.prepare(`UPDATE scheduled_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_hour=?`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate,reportHour).run();
+    throw error;
+  }
 }
 
 function deepFind(input: any, keys: string[]): any {

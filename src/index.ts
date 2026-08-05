@@ -14,7 +14,7 @@ import { loadCustomerServiceAnalysis } from './customer-service';
 import { loadCAdsReport } from './cads';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
-import { latestDueOrderBotSlot, monitorOrderBot, sendOrderBotReport } from './order-bot';
+import { dueOrderBotSlots, monitorOrderBot, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
 import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
   createDashboardSession, dashboardRoleForPassword, dashboardSessionCookie, dashboardSessionFromRequest,
@@ -194,7 +194,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     }
     const tasks:Promise<unknown>[]=[];
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
-    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},message.reportHour===8?{delaySeconds:30}:undefined));
+    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(enqueueMissingAdsReports(env,message.reportDate,message.reportHour));
     await Promise.all(tasks);return;
   }
   if(message.type==='operations-daily-report'){
@@ -233,6 +233,32 @@ async function assetResponse(request:Request,env:Env):Promise<Response>{
   if(isHtml){headers.set('Content-Type','text/html; charset=UTF-8');headers.set('Cache-Control','no-store');}
   if(assetUrl.pathname.endsWith('.js'))headers.set('Content-Type','application/javascript; charset=UTF-8');
   return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+
+async function enqueueMissingAdsReports(env:Env,reportDate:string,reportHour:number):Promise<void>{
+  const rows=await env.DB.prepare("SELECT report_hour FROM scheduled_reports WHERE report_date=? AND status='SENT'")
+    .bind(reportDate).all<{report_hour:number}>();
+  const sent=new Set((rows.results||[]).map((row)=>Number(row.report_hour)));
+  const missing=Array.from({length:reportHour},(_,index)=>index+1).filter((hour)=>!sent.has(hour));
+  if(!missing.length)return;
+  const prioritized=[reportHour,...missing].filter((hour,index,list)=>!sent.has(hour)&&list.indexOf(hour)===index).slice(0,4);
+  await env.TASK_QUEUE.sendBatch(prioritized.map((hour)=>({body:{type:'scheduled-report' as const,reportDate,reportHour:hour},
+    ...(hour===8?{delaySeconds:30}:{})})));
+}
+
+async function enqueueMissingOrderReports(env:Env,localDate:string,localHour:number,localMinute:number):Promise<void>{
+  const due=dueOrderBotSlots(localDate,localHour,localMinute);if(!due.length)return;
+  const dates=[...new Set(due.map((slot)=>slot.reportDate))];
+  const sent=new Set<string>();
+  for(const date of dates){
+    const rows=await env.DB.prepare("SELECT report_time FROM order_bot_reports WHERE report_date=? AND status='SENT'")
+      .bind(date).all<{report_time:string}>();
+    for(const row of rows.results||[])sent.add(`${date}:${row.report_time}`);
+  }
+  const missing=due.filter((slot)=>!sent.has(`${slot.reportDate}:${slot.reportTime}`));if(!missing.length)return;
+  const latest=missing[missing.length-1];
+  const prioritized=[latest,...missing].filter((slot,index,list)=>list.findIndex((item)=>item.reportDate===slot.reportDate&&item.reportTime===slot.reportTime)===index).slice(0,3);
+  await env.TASK_QUEUE.sendBatch(prioritized.map((slot)=>({body:{type:'order-bot-report' as const,...slot}})));
 }
 
 async function dashboardLogin(request:Request,env:Env):Promise<Response>{
@@ -333,14 +359,13 @@ export default {
     if(localMinute%15===0)ctx.waitUntil(keepAccessTokenFresh(env).catch((error)=>
       console.error('TikTok Ads MCP proactive token refresh failed',error instanceof Error?error.message:String(error))));
     ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
-    const dueOrderBotSlot=latestDueOrderBotSlot(localDate,localHour,localMinute);
-    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&dueOrderBotSlot&&(localMinute===56||localMinute%5===0))
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-report',...dueOrderBotSlot}));
+    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&(localMinute===56||localMinute%5===0))
+      ctx.waitUntil(enqueueMissingOrderReports(env,localDate,localHour,localMinute));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
-    // Start at 08:00 and retry every five minutes. The report table is the
-    // idempotency key, so API delays cannot create duplicate messages.
-    if(localHour===8&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
+    // Start at 08:00 and keep retrying until TikTok Shop data passes the
+    // consistency check. The report table is the idempotency key.
+    if(localHour>=8&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
       const yesterday=shiftDate(localDate,-1);
       ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
     }

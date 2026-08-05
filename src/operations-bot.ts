@@ -4,7 +4,7 @@ import { loadMainReport } from './reports';
 import { loadOperationsAnalysis } from './operations';
 import { loadFinanceAnalysis, loadFinancePeriodSummary, type FinancePeriodSummaryScope } from './finance';
 import { loadContentKocAnalysis, loadContentKocPeriodTotals } from './content-koc';
-import { dateInTimezone, shiftDate } from './utils';
+import { dateInTimezone, hourInTimezone, shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 const GREEN = 'c_15a85f';
@@ -270,55 +270,70 @@ export async function pollOperationsBot(env: Env, timeoutSeconds = 25): Promise<
 export async function sendOperationsReport(env: Env, reportDate: string, mode: 'DAILY' | 'REALTIME', chatId?: string,
   operationsDate = reportDate): Promise<void> {
   if (mode === 'DAILY') {
-    const existing = await env.DB.prepare('SELECT status FROM operations_bot_reports WHERE report_date=? AND report_kind=?')
-      .bind(reportDate, mode).first<{ status: string }>();
-    if (existing?.status === 'SENT') return;
+    const claimed = await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status) VALUES(?,?,'SENDING')
+      ON CONFLICT(report_date,report_kind) DO UPDATE SET status='SENDING',message_id=NULL,payload=NULL,updated_at=CURRENT_TIMESTAMP
+      WHERE operations_bot_reports.status<>'SENT' AND (operations_bot_reports.status<>'SENDING' OR operations_bot_reports.updated_at<datetime('now','-10 minutes'))`)
+      .bind(reportDate, mode).run();
+    if (!claimed.meta.changes) return;
   }
-  const previousDate = shiftDate(reportDate, -1);
-  const previousOperationsDate = shiftDate(operationsDate, -1);
-  const input = { startDate: reportDate, endDate: reportDate, forceRefresh: true };
-  const previousInput = { startDate: previousDate, endDate: previousDate, forceRefresh: false };
-  const operationsInput = { startDate: operationsDate, endDate: operationsDate, forceRefresh: true };
-  const previousOperationsInput = { startDate: previousOperationsDate, endDate: previousOperationsDate, forceRefresh: false };
-  const [revenue, ads, previousAds, operations, previousOperations] = await Promise.all([
-    loadSellerRevenueAnalysis(env, input),
-    loadMainReport(env, { ...input, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }, true),
-    loadMainReport(env, { ...previousInput, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }),
-    loadOperationsAnalysis(env, operationsInput),
-    loadOperationsAnalysis(env, previousOperationsInput)
-  ]);
-  const currentRevenue = revenue.totals || {};
-  const previousRevenue = revenue.previousTotals || {};
-  const values = [
-    { label: '1. GMV:', value: compact(currentRevenue.grossRevenue), change: trend(currentRevenue.grossRevenue, previousRevenue.grossRevenue) },
-    { label: '2. Đơn hàng:', value: whole(currentRevenue.orders), change: trend(currentRevenue.orders, previousRevenue.orders) },
-    { label: '3. AOV:', value: compact(currentRevenue.aov), change: trend(currentRevenue.aov, previousRevenue.aov) },
-    { label: '4. ADS:', value: compact(ads.totals?.cost), change: trend(ads.totals?.cost, previousAds.totals?.cost) },
-    { label: '5. ROI:', value: roi(ads.totals?.roi), change: trend(ads.totals?.roi, previousAds.totals?.roi) },
-    { label: '6. Tỷ lệ hủy:', value: `${((Number(operations.totals?.cancellationRate) || 0) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`, change: trend(operations.totals?.cancellationRate, previousOperations.totals?.cancellationRate) }
-  ];
-  const products = (revenue.gmvAttribution?.products || []).filter((product: any) => Number(product.gmv) > 0);
-  const displayDate = reportDate.split('-').reverse().join('/');
-  const title = mode === 'REALTIME'
-    ? 'Báo cáo realtime chỉ số vận hành Tiktok shop'
-    : `Báo cáo chỉ số vận hành Tiktok shop ngày ${displayDate}`;
-  const lines = [
-    title,
-    ...(mode === 'REALTIME' ? [`Cập nhật: ${formatOperationsUpdatedAt(new Date(), env.TIMEZONE || 'Asia/Bangkok')}`] : []),
-    '',
-    ...values.map(formatOperationsMetricLine),
-    '',
-    'Sản phẩm'
-  ];
-  if (products.length) products.forEach((product: any, index: number) => {
-    lines.push(`${index + 1}. ${shortProductName(product.name)}`, `GMV: ${compact(product.gmv)}`);
-  });
-  else lines.push('Không có sản phẩm phát sinh GMV.');
-  const text = lines.join('\n');
-  const messageId = await sendOperationsMessage(env, text, buildOperationsReportStyles(text), chatId);
-  if (mode === 'DAILY') await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
-    VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
-    .bind(reportDate, mode, 'SENT', messageId, JSON.stringify({ values, productCount: products.length, operationsDate })).run();
+  try {
+    const previousDate = shiftDate(reportDate, -1);
+    const previousOperationsDate = shiftDate(operationsDate, -1);
+    const input = { startDate: reportDate, endDate: reportDate, forceRefresh: true };
+    const previousInput = { startDate: previousDate, endDate: previousDate, forceRefresh: false };
+    const operationsInput = { startDate: operationsDate, endDate: operationsDate, forceRefresh: true };
+    const previousOperationsInput = { startDate: previousOperationsDate, endDate: previousOperationsDate, forceRefresh: false };
+    const [revenue, ads, previousAds, operations, previousOperations] = await Promise.all([
+      loadSellerRevenueAnalysis(env, input),
+      loadMainReport(env, { ...input, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }, true),
+      loadMainReport(env, { ...previousInput, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }),
+      loadOperationsAnalysis(env, operationsInput),
+      loadOperationsAnalysis(env, previousOperationsInput)
+    ]);
+    const now = new Date();
+    const yesterday = shiftDate(dateInTimezone(now, env.TIMEZONE || 'Asia/Bangkok'), -1);
+    const fallbackDue = reportDate < yesterday || hourInTimezone(now, env.TIMEZONE || 'Asia/Bangkok') >= 12;
+    if (mode === 'DAILY' && revenue.dataQuality?.ready === false && !fallbackDue) {
+      throw new Error(`TikTok Shop chưa đồng bộ đủ dữ liệu ${reportDate}; sẽ tự động thử lại.`);
+    }
+    const currentRevenue = revenue.totals || {};
+    const previousRevenue = revenue.previousTotals || {};
+    const values = [
+      { label: '1. GMV:', value: compact(currentRevenue.grossRevenue), change: trend(currentRevenue.grossRevenue, previousRevenue.grossRevenue) },
+      { label: '2. Đơn hàng:', value: whole(currentRevenue.orders), change: trend(currentRevenue.orders, previousRevenue.orders) },
+      { label: '3. AOV:', value: compact(currentRevenue.aov), change: trend(currentRevenue.aov, previousRevenue.aov) },
+      { label: '4. ADS:', value: compact(ads.totals?.cost), change: trend(ads.totals?.cost, previousAds.totals?.cost) },
+      { label: '5. ROI:', value: roi(ads.totals?.roi), change: trend(ads.totals?.roi, previousAds.totals?.roi) },
+      { label: '6. Tỷ lệ hủy:', value: `${((Number(operations.totals?.cancellationRate) || 0) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%`, change: trend(operations.totals?.cancellationRate, previousOperations.totals?.cancellationRate) }
+    ];
+    const products = (revenue.gmvAttribution?.products || []).filter((product: any) => Number(product.gmv) > 0);
+    const displayDate = reportDate.split('-').reverse().join('/');
+    const title = mode === 'REALTIME'
+      ? 'Báo cáo realtime chỉ số vận hành Tiktok shop'
+      : `Báo cáo chỉ số vận hành Tiktok shop ngày ${displayDate}`;
+    const lines = [
+      title,
+      ...(mode === 'REALTIME' ? [`Cập nhật: ${formatOperationsUpdatedAt(new Date(), env.TIMEZONE || 'Asia/Bangkok')}`] : []),
+      '',
+      ...values.map(formatOperationsMetricLine),
+      '',
+      'Sản phẩm'
+    ];
+    if (products.length) products.forEach((product: any, index: number) => {
+      lines.push(`${index + 1}. ${shortProductName(product.name)}`, `GMV: ${compact(product.gmv)}`);
+    });
+    else lines.push('Không có sản phẩm phát sinh GMV.');
+    const text = lines.join('\n');
+    const messageId = await sendOperationsMessage(env, text, buildOperationsReportStyles(text), chatId);
+    if (mode === 'DAILY') await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
+      VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
+      .bind(reportDate, mode, 'SENT', messageId, JSON.stringify({ values, productCount: products.length, operationsDate,
+        dataQuality:revenue.dataQuality||null })).run();
+  } catch (error) {
+    if (mode === 'DAILY') await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_kind=?`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate,mode).run();
+    throw error;
+  }
 }
 
 export async function buildWeeklyOperationsReport(env: Env, saturdayDate: string): Promise<{ text: string; styles: OperationsTextStyle[] }> {
@@ -398,15 +413,21 @@ export async function prepareWeeklyOperationsReport(env: Env, saturdayDate: stri
 
 export async function sendWeeklyOperationsReport(env: Env, saturdayDate: string): Promise<void> {
   const reportDate = shiftDate(saturdayDate, -1);
-  const existing = await env.DB.prepare('SELECT status FROM operations_bot_reports WHERE report_date=? AND report_kind=?')
-    .bind(reportDate, 'WEEKLY').first<{ status: string }>();
-  if (existing?.status === 'SENT') return;
-  const formatted = await buildWeeklyOperationsReport(env, saturdayDate);
-  const messageId = await sendOperationsMessage(env, formatted.text, formatted.styles);
-  await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
-    VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
-    payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
-    .bind(reportDate, 'WEEKLY', 'SENT', messageId, JSON.stringify({ saturdayDate })).run();
+  const claimed = await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status) VALUES(?,'WEEKLY','SENDING')
+    ON CONFLICT(report_date,report_kind) DO UPDATE SET status='SENDING',message_id=NULL,payload=NULL,updated_at=CURRENT_TIMESTAMP
+    WHERE operations_bot_reports.status<>'SENT' AND (operations_bot_reports.status<>'SENDING' OR operations_bot_reports.updated_at<datetime('now','-20 minutes'))`)
+    .bind(reportDate).run();
+  if (!claimed.meta.changes) return;
+  try {
+    const formatted = await buildWeeklyOperationsReport(env, saturdayDate);
+    const messageId = await sendOperationsMessage(env, formatted.text, formatted.styles);
+    await env.DB.prepare(`UPDATE operations_bot_reports SET status='SENT',message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_kind='WEEKLY'`).bind(messageId,JSON.stringify({saturdayDate}),reportDate).run();
+  } catch(error) {
+    await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_kind='WEEKLY'`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate).run();
+    throw error;
+  }
 }
 
 export function monthlyRanges(firstDayOfMonth: string): { startDate: string; endDate: string; previousStartDate: string; previousEndDate: string } {
@@ -526,13 +547,19 @@ export async function prepareMonthlyOperationsReport(env: Env, firstDayOfMonth: 
 
 export async function sendMonthlyOperationsReport(env: Env, firstDayOfMonth: string): Promise<void> {
   const { endDate } = monthlyRanges(firstDayOfMonth);
-  const existing = await env.DB.prepare('SELECT status FROM operations_bot_reports WHERE report_date=? AND report_kind=?')
-    .bind(endDate, 'MONTHLY').first<{ status: string }>();
-  if (existing?.status === 'SENT') return;
-  const formatted = await buildMonthlyOperationsReport(env, firstDayOfMonth);
-  const messageId = await sendOperationsMessage(env, formatted.text, formatted.styles);
-  await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,message_id,payload)
-    VALUES(?,?,?,?,?) ON CONFLICT(report_date,report_kind) DO UPDATE SET status=excluded.status,message_id=excluded.message_id,
-    payload=excluded.payload,updated_at=CURRENT_TIMESTAMP`)
-    .bind(endDate, 'MONTHLY', 'SENT', messageId, JSON.stringify({ firstDayOfMonth })).run();
+  const claimed = await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status) VALUES(?,'MONTHLY','SENDING')
+    ON CONFLICT(report_date,report_kind) DO UPDATE SET status='SENDING',message_id=NULL,payload=NULL,updated_at=CURRENT_TIMESTAMP
+    WHERE operations_bot_reports.status<>'SENT' AND (operations_bot_reports.status<>'SENDING' OR operations_bot_reports.updated_at<datetime('now','-20 minutes'))`)
+    .bind(endDate).run();
+  if (!claimed.meta.changes) return;
+  try {
+    const formatted = await buildMonthlyOperationsReport(env, firstDayOfMonth);
+    const messageId = await sendOperationsMessage(env, formatted.text, formatted.styles);
+    await env.DB.prepare(`UPDATE operations_bot_reports SET status='SENT',message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_kind='MONTHLY'`).bind(messageId,JSON.stringify({firstDayOfMonth}),endDate).run();
+  } catch(error) {
+    await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_kind='MONTHLY'`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),endDate).run();
+    throw error;
+  }
 }

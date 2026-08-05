@@ -88,14 +88,21 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
       values.forEach((rows) => hourlyRows.push(...rows));
     }
   }
-  const hourly = Array.from({ length: 24 }, (_, index) => ({ hour: index + 1, label: `${index + 1}:00`, metrics: empty() }));
+  const hourly = Array.from({ length: 24 }, (_, index) => ({ hour: index + 1, label: `${index + 1}:00`, metrics: empty(), observed: false }));
   for (const row of hourlyRows) {
     const value = String(row.dimensions?.stat_time_hour || row.metrics?.stat_time_hour || '');
     const match = value.match(/(?:T|\s)(\d{1,2})(?::|$)/) || value.match(/^(\d{1,2})(?::|$)/); if (!match) continue;
-    const index = Number(match[1]); if (index >= 0 && index < 24) add(hourly[index].metrics, metric(row.metrics || {}));
+    const index = Number(match[1]); if (index >= 0 && index < 24) {
+      add(hourly[index].metrics, metric(row.metrics || {}));
+      hourly[index].observed = true;
+    }
   }
   let hourlyMode: 'hourly' | 'snapshots' | 'cumulative' = 'hourly';
-  if (!multiDay) {
+  const hasDirectHourlyData = hourly.some((point) => point.observed);
+  // Stored snapshots are only a fallback for accounts whose MCP report does
+  // not return hourly rows. Mixing them into valid hourly rows shifts delayed
+  // hours into the next successful bot message.
+  if (!multiDay && !hasDirectHourlyData) {
     const stored = await env.DB.prepare(`SELECT report_hour,metrics_json FROM hourly_metrics
       WHERE advertiser_id=? AND store_id=? AND report_date=? ORDER BY report_hour`)
       .bind(advertiserId, storeId, startDate).all<{ report_hour: number; metrics_json: string }>();
@@ -122,6 +129,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
       }
       if (numberValue(metrics.cost) || numberValue(metrics.grossRevenue) || numberValue(metrics.orders)) {
         hourly[index].metrics = { ...empty(), ...metrics };
+        hourly[index].observed = true;
         restored += 1;
       }
     }
@@ -139,6 +147,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
           costPerOrder: remainder.orders ? remainder.cost / remainder.orders : null,
           roi: remainder.cost ? remainder.grossRevenue / remainder.cost : null
         };
+        if (remainder.cost || remainder.orders || remainder.grossRevenue) hourly[index].observed = true;
       }
     }
   }
@@ -147,6 +156,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
     const isToday = endDate === dateInTimezone(now, env.TIMEZONE);
     const fallbackIndex = isToday ? Math.max(0, Math.min(23, hourInTimezone(now, env.TIMEZONE) - 1)) : 23;
     hourly[fallbackIndex].metrics = { ...totals };
+    hourly[fallbackIndex].observed = true;
     hourlyMode = 'cumulative';
   }
   const daily: any[] = [];
