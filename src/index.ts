@@ -12,6 +12,7 @@ import { loadProductAnalysis } from './product-analysis';
 import { loadKocAnalysis } from './koc-analysis';
 import { loadCustomerServiceAnalysis } from './customer-service';
 import { loadCAdsReport } from './cads';
+import { syncSupabaseBackup } from './supabase-backup';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { dueOrderBotSlots, monitorOrderBot, sendOrderBotReport } from './order-bot';
@@ -185,6 +186,7 @@ async function pollOperationsInbox(env:Env):Promise<void>{
 async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
   if(message.type==='tracking-sync')return syncTrackingOrder(env,message.orderId,message.shopCipher);
+  if(message.type==='supabase-backup')return syncSupabaseBackup(env,message.reportDate);
   if(message.type==='zalo-poll'||message.type==='zalo-webhook-ensure')return;
   if(message.type==='zalo-video'||message.type==='zalo-video-day'||message.type==='zalo-video-finalize'||message.type==='zalo-video-recover')return;
   if(message.type==='hourly-dispatch'){
@@ -354,6 +356,8 @@ export default {
       ctx.waitUntil(enqueueMissingOrderReports(env,localDate,localHour,localMinute));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
+    if(env.SUPABASE_URL&&env.SUPABASE_SECRET_KEY&&localMinute%5===0)
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'supabase-backup',reportDate:localDate}));
     // Start at 08:00 and keep retrying until TikTok Shop data passes the
     // consistency check. The report table is the idempotency key.
     if(localHour>=8&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){

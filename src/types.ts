@@ -35,6 +35,9 @@ export interface Env {
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
   GOOGLE_BACKUP_SPREADSHEET_ID?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SECRET_KEY?: string;
+  SUPABASE_BACKUP_BUCKET?: string;
 }
 
 export type TaskMessage =
@@ -53,6 +56,7 @@ export type TaskMessage =
   | { type: 'zalo-video-finalize'; eventId: number }
   | { type: 'zalo-video-recover' }
   | { type: 'tracking-sync'; orderId: string; shopCipher: string }
+  | { type: 'supabase-backup'; reportDate: string }
   | { type: 'sheet-backup'; reportDate: string };
 
 export interface OAuthTokenSet {

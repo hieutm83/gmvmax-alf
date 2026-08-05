@@ -25,6 +25,8 @@ ZALO_OPERATIONS_GROUP_NAME = "[AnlanhFarm]-TMDT"
 ZALO_ORDER_GROUP_CHAT_ID = "zgr-a6ec2c8ddce035be6cf1"
 ZALO_ORDER_GROUP_CHAT_NAME = "[AnlanhFarm]-Vận Đơn"
 TIKTOK_SHOP_APP_KEY = "6kqcmsfamo07g"
+SUPABASE_URL = "https://yodqoqwxkxvilsjwdkjf.supabase.co"
+SUPABASE_BACKUP_BUCKET = "gmv-max-monitoring"
 
 [[d1_databases]]
 binding = "DB"
