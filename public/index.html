@@ -460,17 +460,18 @@
       .operations-table th:nth-child(5), .operations-table td:nth-child(5) { width: 20%; min-width: 0; white-space: normal; }
       .operations-table th:nth-child(6), .operations-table td:nth-child(6) { width: 12%; min-width: 0; white-space: normal; }
       .cads-overview { display:grid; grid-template-columns:minmax(280px,.8fr) minmax(0,2fr); gap:16px; margin-bottom:28px; }
-      .cads-panel { padding:20px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:var(--shadow-sm); }
-      .cads-panel h2 { margin:0 0 18px; font-size:16px; }
+      .cads-panel { min-height:360px; padding:22px 24px 20px; background:var(--surface); border:1px solid #e5eaf1; border-radius:12px; box-shadow:0 9px 28px rgba(35,55,84,.055); }
+      .cads-panel h2 { margin:0 0 18px; color:#20293a; font-size:15px; font-weight:750; }
       .cads-channel + .cads-channel { margin-top:22px; padding-top:18px; border-top:1px solid var(--border); }
-      .cads-channel-name { margin-bottom:8px; color:var(--text-muted); font-size:11px; font-weight:700; text-transform:uppercase; }
-      .cads-channel-line { display:flex; justify-content:space-between; gap:14px; padding:7px 0; color:var(--text-secondary); }
+      .cads-channel-name { margin-bottom:8px; color:#68778c; font-size:10px; font-weight:700; text-transform:uppercase; }
+      .cads-channel-line { display:flex; justify-content:space-between; gap:14px; padding:8px 0; color:#45546b; font-size:12px; }
       .cads-channel-line strong { color:var(--text); font-variant-numeric:tabular-nums; }
       .cads-performance { display:grid; grid-template-columns:200px minmax(0,1fr); gap:18px; }
       .cads-kpis { display:grid; gap:10px; }
-      .cads-kpi { padding:13px 15px; border:1px solid var(--border); border-left:3px solid var(--primary); border-radius:8px; }
-      .cads-kpi span { color:var(--text-muted); font-size:11px; font-weight:700; }
-      .cads-kpi strong { display:block; margin-top:8px; color:var(--text); font-size:21px; font-variant-numeric:tabular-nums; }
+      .cads-kpi.metric { min-height:0; padding:14px 16px; border-radius:9px; box-shadow:none; }
+      .cads-kpi.metric:hover { transform:none; box-shadow:none; }
+      .cads-kpi.metric span { margin-bottom:7px; font-size:10px; }
+      .cads-kpi.metric strong { margin-top:0; font-size:21px; }
       .cads-chart { position:relative; min-height:330px; }
       .cads-table { width:max-content; min-width:100%; }
       .cads-table th:first-child,.cads-table td:first-child { min-width:54px; text-align:center; }
@@ -701,7 +702,7 @@
         <h2 class="section-title">Sản phẩm &amp; kho video</h2>
         <div class="table-wrap"><table class="cads-table"><thead><tr><th>STT</th><th>Sản phẩm</th><th>Mã SP</th><th>Kênh</th><th>Tổng video hiện có</th><th>Video đủ điều kiện chạy ads</th><th>Video đang chạy ads view</th><th>Video còn dư</th><th>Video đăng mới tuần này</th><th>Ưu tiên</th><th>Ghi chú</th></tr></thead><tbody id="cadsInventoryRows"></tbody></table><div id="cadsInventoryEmpty" class="empty hidden">Không có dữ liệu video trong khoảng ngày này.</div></div>
         <h2 class="section-title">Theo dõi video ads</h2>
-        <div class="table-wrap"><table class="cads-table"><thead><tr><th>STT</th><th>Video/Creative</th><th>Sản phẩm gắn giỏ</th><th>Kênh</th><th>Ngày chạy</th><th>Spend</th><th>Impressions</th><th>Video Plays</th><th>Xem ≥2s</th><th>Xem ≥6s</th><th>Tỷ lệ 2s</th><th>Tỷ lệ 6s</th><th>Cost/View</th><th>Click</th><th>CTR</th><th>Order</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody id="cadsVideoRows"></tbody></table><div id="cadsVideoEmpty" class="empty hidden">Không có dữ liệu quảng cáo trong khoảng ngày này.</div></div>
+        <div class="table-wrap"><table class="cads-table"><thead><tr><th>STT</th><th>Name</th><th>Sản phẩm gắn giỏ</th><th>Kênh</th><th>Ngày chạy</th><th>Spend</th><th>Impressions</th><th>Video Plays</th><th>Xem ≥2s</th><th>Xem ≥6s</th><th>Tỷ lệ 2s</th><th>Tỷ lệ 6s</th><th>Cost/View</th><th>Click</th><th>CTR</th><th>Order</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody id="cadsVideoRows"></tbody></table><div id="cadsVideoEmpty" class="empty hidden">Không có dữ liệu quảng cáo trong khoảng ngày này.</div></div>
       </section>
       <section id="contentKocReport" class="hidden">
         <div class="content-koc-summaries">
@@ -1388,17 +1389,18 @@
           var name=document.createElement('div');name.className='cads-channel-name';name.textContent=item.channel;block.appendChild(name);
           [['● Video đang chạy ads',integer(item.running)],['Chi tiêu',moneyWhole(item.spend)+' VND'],['CPM trung bình',moneyWhole(item.cpm)+' VND']].forEach(function(pair){var line=document.createElement('div');line.className='cads-channel-line';var label=document.createElement('span');label.textContent=pair[0];var value=document.createElement('strong');value.textContent=pair[1];line.append(label,value);block.appendChild(line);});channels.appendChild(block);
         });
-        var kpis=[['Spend',moneyWhole(data.totals.spend)+' VND'],['Impressions',integer(data.totals.impressions)],['Video views at 100%',integer(data.totals.watched100)],['CPM',moneyWhole(data.totals.cpm)+' VND']];
-        var root=document.getElementById('cadsKpis');root.replaceChildren();kpis.forEach(function(item){var box=document.createElement('div');box.className='cads-kpi';var label=document.createElement('span');label.textContent=item[0];var value=document.createElement('strong');value.textContent=item[1];box.append(label,value);root.appendChild(box);});
-        renderCAdsChart(data.hourly); renderCAdsInventory(data.inventory); renderCAdsVideos(data.videos);
+        var kpis=[['Spend',moneyWhole(data.totals.spend)+' VND','cost'],['Impressions',integer(data.totals.impressions),'impressions'],['Video views at 100%',integer(data.totals.watched100),'orders'],['CPM',moneyWhole(data.totals.cpm)+' VND','costPerOrder']];
+        var root=document.getElementById('cadsKpis');root.replaceChildren();kpis.forEach(function(item){var box=document.createElement('div');box.className='cads-kpi metric metric-'+item[2];var label=document.createElement('span');label.textContent=item[0];var value=document.createElement('strong');value.textContent=item[1];box.append(label,value);root.appendChild(box);});
+        renderCAdsChart(data.timeSeries); renderCAdsInventory(data.inventory); renderCAdsVideos(data.videos);
       }
 
-      function renderCAdsChart(points) {
+      function renderCAdsChart(series) {
+        var points=series.points||[];
         if(cadsChart)cadsChart.destroy();
-        cadsChart=new Chart(document.getElementById('cadsChart'),{type:'line',data:{labels:points.map(function(point){return String(point.hour).padStart(2,'0')+':00';}),datasets:[
-          {label:'Spend',data:points.map(function(point){return point.metrics.spend;}),borderColor:'#7c83ff',backgroundColor:'transparent',yAxisID:'y',tension:.28,pointRadius:0,borderWidth:2},
-          {label:'Impressions',data:points.map(function(point){return point.metrics.impressions;}),borderColor:'#0369a1',backgroundColor:'transparent',yAxisID:'y1',tension:.28,pointRadius:0,borderWidth:2}
-        ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{align:'start'}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#eef2f7'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}});
+        cadsChart=new Chart(document.getElementById('cadsChart'),{type:'line',data:{labels:points.map(function(point){return point.label;}),datasets:[
+          {label:'Spend',data:points.map(function(point){return point.metrics.spend;}),borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.12)',fill:true,yAxisID:'y',tension:.28,pointRadius:2,pointHoverRadius:4,borderWidth:2},
+          {label:'Impressions',data:points.map(function(point){return point.metrics.impressions;}),borderColor:'#059669',backgroundColor:'#059669',yAxisID:'y1',tension:.28,pointRadius:2,pointHoverRadius:4,borderWidth:2}
+        ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom'}},scales:{x:{grid:{display:false},ticks:{maxRotation:series.granularity==='day'?45:0}},y:{beginAtZero:true,grid:{color:'#e8edf3'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false}}}}});
       }
 
       function renderCAdsInventory(items) {
@@ -1408,7 +1410,7 @@
 
       function renderCAdsVideos(items) {
         var body=document.getElementById('cadsVideoRows');body.replaceChildren();document.getElementById('cadsVideoEmpty').classList.toggle('hidden',items.length>0);
-        items.forEach(function(item,index){var m=item.metrics,noCart=item.productName==='Không gắn giỏ';var values=[index+1,item.name+' · '+item.adId,item.productName,item.channel,item.startDate,moneyWhole(m.spend),integer(m.impressions),integer(m.videoPlays),integer(m.watched2s),integer(m.watched6s),percent(m.rate2s),percent(m.rate6s),money(m.costPerView),integer(m.clicks),noCart?'—':percent(m.ctr),noCart?'—':integer(m.orders),item.status||'—',item.note||'—'];var row=document.createElement('tr');values.forEach(function(value,cellIndex){var cell=document.createElement('td');cell.textContent=value;if(cellIndex===2&&noCart)cell.className='cads-no-cart';row.appendChild(cell);});body.appendChild(row);});
+        items.forEach(function(item,index){var m=item.metrics,noCart=item.productName==='Không gắn giỏ';var values=[index+1,item.name,item.productName,item.channel,item.startDate,moneyWhole(m.spend),integer(m.impressions),integer(m.videoPlays),integer(m.watched2s),integer(m.watched6s),percent(m.rate2s),percent(m.rate6s),money(m.costPerView),integer(m.clicks),noCart?'—':percent(m.ctr),noCart?'—':integer(m.orders),item.status||'—',item.note||'—'];var row=document.createElement('tr');values.forEach(function(value,cellIndex){var cell=document.createElement('td');cell.textContent=value;if(cellIndex===2&&noCart)cell.className='cads-no-cart';row.appendChild(cell);});body.appendChild(row);});
       }
 
       function setReportView(view, updateUrl) {

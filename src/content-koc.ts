@@ -67,7 +67,7 @@ export async function loadContentKocPeriodTotals(env:Env,input:{advertiserId:str
   await cachePut(env,key,result,86400).catch(()=>undefined);return result;
 }
 
-async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<{available:boolean;videos:any[];latestAvailableDate:string|null} >{
+export async function fetchShopVideos(env:Env,startDate:string,endDate:string):Promise<{available:boolean;videos:any[];latestAvailableDate:string|null} >{
   const shop=await authorizedShop(env);const cipher=String(shop?.cipher||shop?.shop_cipher||shop?.id||'');
   if(!cipher)return{available:false,videos:[],latestAvailableDate:null};
   const videoMap=new Map<string,any>();let latestAvailableDate:string|null=null;
