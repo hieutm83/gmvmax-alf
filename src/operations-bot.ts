@@ -4,7 +4,7 @@ import { loadMainReport } from './reports';
 import { loadOperationsAnalysis } from './operations';
 import { loadFinanceAnalysis, loadFinancePeriodSummary, type FinancePeriodSummaryScope } from './finance';
 import { loadContentKocAnalysis, loadContentKocPeriodTotals } from './content-koc';
-import { dateInTimezone, hourInTimezone, shiftDate } from './utils';
+import { dateInTimezone, shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 const GREEN = 'c_15a85f';
@@ -290,12 +290,6 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
       loadOperationsAnalysis(env, operationsInput),
       loadOperationsAnalysis(env, previousOperationsInput)
     ]);
-    const now = new Date();
-    const yesterday = shiftDate(dateInTimezone(now, env.TIMEZONE || 'Asia/Bangkok'), -1);
-    const fallbackDue = reportDate < yesterday || hourInTimezone(now, env.TIMEZONE || 'Asia/Bangkok') >= 12;
-    if (mode === 'DAILY' && revenue.dataQuality?.ready === false && !fallbackDue) {
-      throw new Error(`TikTok Shop chưa đồng bộ đủ dữ liệu ${reportDate}; sẽ tự động thử lại.`);
-    }
     const currentRevenue = revenue.totals || {};
     const previousRevenue = revenue.previousTotals || {};
     const values = [
