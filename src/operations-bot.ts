@@ -279,9 +279,14 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
   try {
     const previousDate = shiftDate(reportDate, -1);
     const previousOperationsDate = shiftDate(operationsDate, -1);
-    const input = { startDate: reportDate, endDate: reportDate, forceRefresh: true };
+    // A daily report covers a closed historical day. Reuse the five-minute
+    // synchronization cache so the Queue consumer does not repeat several
+    // expensive TikTok scans and time out before it reaches Zalo. Realtime
+    // checks still bypass the cache as requested by the user.
+    const forceRefresh = mode === 'REALTIME';
+    const input = { startDate: reportDate, endDate: reportDate, forceRefresh };
     const previousInput = { startDate: previousDate, endDate: previousDate, forceRefresh: false };
-    const operationsInput = { startDate: operationsDate, endDate: operationsDate, forceRefresh: true };
+    const operationsInput = { startDate: operationsDate, endDate: operationsDate, forceRefresh };
     const previousOperationsInput = { startDate: previousOperationsDate, endDate: previousOperationsDate, forceRefresh: false };
     const [revenue, ads, previousAds, operations, previousOperations] = await Promise.all([
       loadSellerRevenueAnalysis(env, input),
