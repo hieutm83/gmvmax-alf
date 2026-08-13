@@ -20,12 +20,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Verify Cloudflare deployment credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing repository secret CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing repository secret CLOUDFLARE_ACCOUNT_ID"; exit 1; }
       - name: Apply D1 migrations
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npx wrangler d1 migrations apply gmv-max-db --remote
       - name: Deploy Worker
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npm run deploy
       - name: Reconcile routes, queues and Cron triggers
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npm run deploy:triggers
