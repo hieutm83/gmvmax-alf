@@ -6,6 +6,7 @@ const env = {
   ADMIN_PASSWORD: 'admin-pass',
   DASHBOARD_CEO_PASSWORD: 'ceo-pass',
   DASHBOARD_CONTENT_PASSWORD: 'content-pass',
+  DASHBOARD_ADS_PASSWORD: 'ads-pass',
   DASHBOARD_SESSION_SECRET: 'a-session-secret-that-is-longer-than-thirty-two-characters'
 } as Env;
 
@@ -14,6 +15,7 @@ describe('dashboard authentication', () => {
     await expect(dashboardRoleForPassword(env, 'admin-pass')).resolves.toBe('admin');
     await expect(dashboardRoleForPassword(env, 'ceo-pass')).resolves.toBe('ceo');
     await expect(dashboardRoleForPassword(env, 'content-pass')).resolves.toBe('content');
+    await expect(dashboardRoleForPassword(env, 'ads-pass')).resolves.toBe('ads');
     await expect(dashboardRoleForPassword(env, 'wrong')).resolves.toBeNull();
   });
 
@@ -29,6 +31,10 @@ describe('dashboard authentication', () => {
     expect(() => assertDashboardApiAccess('content', '/api/report', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('content', '/api/content-koc-analysis', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('content', '/api/finance-analysis', 'POST')).toThrow();
+    expect(() => assertDashboardApiAccess('ads', '/api/ads-overview', 'POST')).not.toThrow();
+    expect(() => assertDashboardApiAccess('ads', '/api/facebook-ads', 'POST')).not.toThrow();
+    expect(() => assertDashboardApiAccess('ads', '/api/report', 'POST')).not.toThrow();
+    expect(() => assertDashboardApiAccess('ads', '/api/cads-report', 'POST')).toThrow();
     expect(() => assertDashboardApiAccess('ceo', '/api/finance-analysis', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('ceo', '/api/oauth/refresh', 'POST')).toThrow();
     expect(() => assertDashboardApiAccess('ceo', '/api/finance-sku-cost', 'POST')).toThrow();

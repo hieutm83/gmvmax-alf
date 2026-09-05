@@ -10,6 +10,8 @@
     getTikTokConnectUrl: ['GET', '/api/oauth/connect'],
     loadReport: ['POST', '/api/report'],
     loadCAdsReport: ['POST', '/api/cads-report'],
+    loadAdsOverview: ['POST', '/api/ads-overview'],
+    loadFacebookAds: ['POST', '/api/facebook-ads'],
     loadRevenueAnalysis: ['POST', '/api/revenue-analysis'],
     loadContentKocAnalysis: ['POST', '/api/content-koc-analysis'],
     loadKocAnalysis: ['POST', '/api/koc-analysis'],

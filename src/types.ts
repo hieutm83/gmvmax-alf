@@ -14,6 +14,7 @@ export interface Env {
   ADMIN_PASSWORD: string;
   DASHBOARD_CEO_PASSWORD?: string;
   DASHBOARD_CONTENT_PASSWORD?: string;
+  DASHBOARD_ADS_PASSWORD?: string;
   DASHBOARD_SESSION_SECRET?: string;
   TOKEN_ENCRYPTION_KEY: string;
   ZALO_BOT_TOKEN?: string;
@@ -38,6 +39,10 @@ export interface Env {
   SUPABASE_URL?: string;
   SUPABASE_SECRET_KEY?: string;
   SUPABASE_BACKUP_BUCKET?: string;
+  FB_ACCESS_TOKEN?: string;
+  FB_ACT_ID?: string;
+  FB_API_VERSION?: string;
+  FB_TIMEZONE?: string;
 }
 
 export type TaskMessage =

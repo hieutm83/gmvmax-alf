@@ -27,6 +27,9 @@ ZALO_ORDER_GROUP_CHAT_NAME = "[AnlanhFarm]-Vận Đơn"
 TIKTOK_SHOP_APP_KEY = "6kqcmsfamo07g"
 SUPABASE_URL = "https://yodqoqwxkxvilsjwdkjf.supabase.co"
 SUPABASE_BACKUP_BUCKET = "gmv-max-monitoring"
+FB_ACT_ID = "act_702331935270958"
+FB_API_VERSION = "v19.0"
+FB_TIMEZONE = "Asia/Ho_Chi_Minh"
 
 [[d1_databases]]
 binding = "DB"

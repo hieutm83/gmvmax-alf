@@ -1,7 +1,7 @@
 import type { Env } from './types';
 import { bytesToBase64Url, HttpError, sha256Base64Url } from './utils';
 
-export type DashboardRole = 'admin' | 'ceo' | 'content';
+export type DashboardRole = 'admin' | 'ceo' | 'content' | 'ads';
 export type DashboardSession = { role: DashboardRole; issuedAt: number; expiresAt: number };
 
 const COOKIE_NAME = 'alf_dashboard_session';
@@ -45,7 +45,8 @@ export async function dashboardRoleForPassword(env: Env, password: string): Prom
   const configured: Array<[DashboardRole, string]> = [
     ['admin', String(env.ADMIN_PASSWORD || '')],
     ['ceo', String(env.DASHBOARD_CEO_PASSWORD || '')],
-    ['content', String(env.DASHBOARD_CONTENT_PASSWORD || '')]
+    ['content', String(env.DASHBOARD_CONTENT_PASSWORD || '')],
+    ['ads', String(env.DASHBOARD_ADS_PASSWORD || '')]
   ];
   let matched: DashboardRole | null = null;
   for (const [role, expected] of configured) {
@@ -64,7 +65,7 @@ export async function verifyDashboardSession(env: Env, token: string, now = Date
   if (!payload || !signature || extra || !await safeTextEqual(signature, await hmac(sessionSecret(env), payload))) return null;
   try {
     const decoded = decodePayload(payload);
-    if (decoded?.v !== 1 || !['admin', 'ceo', 'content'].includes(decoded.role) || Number(decoded.exp) <= now) return null;
+    if (decoded?.v !== 1 || !['admin', 'ceo', 'content', 'ads'].includes(decoded.role) || Number(decoded.exp) <= now) return null;
     return { role: decoded.role, issuedAt: Number(decoded.iat), expiresAt: Number(decoded.exp) };
   } catch {
     return null;
@@ -124,9 +125,14 @@ const CONTENT_API_PATHS = new Set([
 const ADMIN_API_PATHS = new Set([
   '/api/oauth/connect', '/api/oauth/refresh', '/api/oauth/disconnect', '/api/seller/disconnect', '/api/admin/verify'
 ]);
+const ADS_API_PATHS = new Set([
+  '/api/state', '/api/stores', '/api/report', '/api/creative-summaries', '/api/comparison', '/api/product-videos',
+  '/api/video-stats', '/api/video-metadata', '/api/facebook-ads', '/api/ads-overview'
+]);
 
 export function assertDashboardApiAccess(role: DashboardRole, path: string, method: string): void {
   if (role === 'admin') return;
   if (ADMIN_API_PATHS.has(path) || (path === '/api/finance-sku-cost' && method !== 'GET')) throw new HttpError(403, 'Tài khoản không có quyền thực hiện thao tác này.');
+  if (role === 'ads' && !ADS_API_PATHS.has(path)) throw new HttpError(403, 'Tài khoản chỉ có quyền truy cập báo cáo quảng cáo.');
   if (role === 'content' && !CONTENT_API_PATHS.has(path)) throw new HttpError(403, 'Tài khoản không có quyền truy cập dữ liệu này.');
 }

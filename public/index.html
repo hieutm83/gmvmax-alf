@@ -637,6 +637,34 @@
       .video-metrics { gap:10px; padding:10px 0 0; border:0; }
       .video-metric { border:1px solid #e6ebf2; border-radius:8px; background:#fff; }
 
+      .platform-summary { margin-bottom:18px; }
+      .platform-summary .metric { min-height:108px; padding:17px 18px; }
+      .platform-summary .metric strong { font-size:27px; }
+      .platform-chart-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-bottom:16px; }
+      .platform-card, .platform-table-card {
+        min-width:0; padding:20px 22px; background:#fff; border:1px solid #e5eaf1;
+        border-radius:12px; box-shadow:0 9px 28px rgba(35,55,84,.055);
+      }
+      .platform-card h2, .platform-table-card h2 { margin:0 0 16px; color:#20293a; font-size:15px; font-weight:750; }
+      .platform-canvas { position:relative; height:300px; }
+      .platform-donut-canvas { height:285px; }
+      .platform-table-card { margin-bottom:18px; }
+      .platform-table-card .table-wrap { box-shadow:none; }
+      .platform-table { min-width:1120px; }
+      .facebook-campaign-table { min-width:1160px; }
+      .platform-name { display:flex; align-items:center; gap:8px; color:#273449; font-weight:700; white-space:nowrap; }
+      .platform-logo { display:inline-grid; place-items:center; width:24px; height:24px; border-radius:6px; color:#fff; font-size:14px; font-weight:900; }
+      .platform-logo.facebook { background:#1877f2; }
+      .platform-logo.tiktok { background:#111827; }
+      .platform-logo.total { color:#475569; background:#e8edf4; }
+      .campaign-result-badge { display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border:1px solid transparent; border-radius:6px; font-size:10px; font-weight:750; white-space:nowrap; }
+      .campaign-result-badge.message { color:#087a67; background:#e9faf6; border-color:#a7e8da; }
+      .campaign-result-badge.reach { color:#235fc2; background:#edf4ff; border-color:#bfd4fa; }
+      .campaign-result-badge.traffic { color:#a85b00; background:#fff7e8; border-color:#f6d08f; }
+      .campaign-result-badge.engagement { color:#7a42bd; background:#f7efff; border-color:#dcc4f7; }
+      .campaign-name-cell { min-width:260px; max-width:360px; }
+      .campaign-name-clip { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#245fc8; font-weight:700; }
+
       @media (max-width:1180px) {
         .metric { padding-right:20px; }
       }
@@ -645,6 +673,7 @@
         body > header { padding:0 18px; }
         .metric { min-height:122px; }
         .analytics-panel { padding:18px; }
+        .platform-chart-grid { grid-template-columns:1fr; }
       }
       @media (max-width:600px) {
         main { padding:16px 12px 30px; }
@@ -673,8 +702,10 @@
         <span id="updatedAt" class="updated-at"></span>
       </form>
       <nav id="reportTabs" class="report-tabs hidden" aria-label="Loại báo cáo">
+        <button class="report-tab" type="button" data-report-view="overview" aria-selected="false">Tổng quan</button>
+        <button class="report-tab" type="button" data-report-view="facebook" aria-selected="false">Facebook ADS</button>
+        <button class="report-tab" type="button" data-report-view="ads" aria-selected="false">Tiktok ADS</button>
         <button class="report-tab active" type="button" data-report-view="revenue" aria-selected="true">Phân Tích Doanh Thu</button>
-        <button class="report-tab" type="button" data-report-view="ads" aria-selected="false">Hiệu Quả Quảng Cáo</button>
         <button class="report-tab" type="button" data-report-view="cads" aria-selected="false">C-ADS</button>
         <button class="report-tab" type="button" data-report-view="operations" aria-selected="false">Đơn Hoàn Hủy &amp; Logistics</button>
         <button class="report-tab" type="button" data-report-view="finance" aria-selected="false">Tài chính</button>
@@ -682,6 +713,26 @@
         <button class="report-tab" type="button" data-report-view="koc-analysis" aria-selected="false">Phân Tích KOC</button>
         <button class="report-tab" type="button" data-report-view="product-analysis" aria-selected="false">Phân tích sản phẩm</button>
       </nav>
+      <section id="adsOverviewReport" class="hidden">
+        <div id="adsOverviewSummary" class="summary platform-summary"></div>
+        <div class="platform-chart-grid">
+          <section class="platform-card"><h2>Chi phí quảng cáo đa kênh theo ngày</h2><div class="platform-canvas"><canvas id="adsOverviewCostChart"></canvas></div></section>
+          <section class="platform-card"><h2>Lượt Click &amp; Tổng Đơn Hàng Đa Kênh Theo Ngày</h2><div class="platform-canvas"><canvas id="adsOverviewPerformanceChart"></canvas></div></section>
+        </div>
+        <div class="platform-chart-grid">
+          <section class="platform-card"><h2>Cơ cấu chi phí TikTok theo nguồn</h2><div class="platform-canvas platform-donut-canvas"><canvas id="adsOverviewTikTokSourceChart"></canvas></div></section>
+          <section class="platform-card"><h2>Cơ cấu chi phí Facebook theo kết quả</h2><div class="platform-canvas platform-donut-canvas"><canvas id="adsOverviewFacebookResultChart"></canvas></div></section>
+        </div>
+        <section class="platform-table-card"><h2>So Sánh Hiệu Suất Giữa Các Nền Tảng</h2><div class="table-wrap"><table class="platform-table"><thead><tr><th>Nền tảng</th><th>Chi phí</th><th>Doanh thu</th><th>Hiển thị</th><th>Click</th><th>CTR</th><th>CR</th><th>CPC</th><th>CPM</th><th>CPO</th><th>ROAS</th></tr></thead><tbody id="adsOverviewComparisonRows"></tbody></table></div></section>
+      </section>
+      <section id="facebookReport" class="hidden">
+        <div id="facebookSummary" class="summary platform-summary"></div>
+        <div class="platform-chart-grid">
+          <section class="platform-card"><h2>Impressions, Click &amp; Tin Nhắn Mới Theo Ngày</h2><div class="platform-canvas"><canvas id="facebookTrafficChart"></canvas></div></section>
+          <section class="platform-card"><h2>Chi phí theo ngày</h2><div class="platform-canvas"><canvas id="facebookSpendChart"></canvas></div></section>
+        </div>
+        <section class="platform-table-card"><h2>Hiệu Suất Chiến Dịch</h2><div class="table-wrap"><table class="facebook-campaign-table"><thead><tr><th>Campaign</th><th>Kết quả chính</th><th>Spend</th><th>Impressions</th><th>Reach</th><th>Click</th><th>Post engagement</th><th>New messages</th><th>CPM</th><th>CPC</th></tr></thead><tbody id="facebookCampaignRows"></tbody></table></div></section>
+      </section>
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
         <section class="analytics-panel hourly-chart-panel">
@@ -1006,6 +1057,12 @@
       var productTrafficChart = null;
       var currentProductAnalysisData = null;
       var cadsChart = null;
+      var adsOverviewCostChart = null;
+      var adsOverviewPerformanceChart = null;
+      var adsOverviewTikTokSourceChart = null;
+      var adsOverviewFacebookResultChart = null;
+      var facebookTrafficChart = null;
+      var facebookSpendChart = null;
       var currentCAdsVideos = [];
       var cadsVideoExpanded = false;
       var sellerOAuthConnected = false;
@@ -1017,8 +1074,10 @@
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
-        (['ads', 'cads', 'revenue', 'operations', 'finance', 'content-koc', 'koc-analysis', 'product-analysis'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
+        (['overview', 'facebook', 'ads', 'cads', 'revenue', 'operations', 'finance', 'content-koc', 'koc-analysis', 'product-analysis'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
       var loadedReportScope = '';
+      var loadedAdsOverviewScope = '';
+      var loadedFacebookScope = '';
       var loadedCAdsScope = '';
       var loadedRevenueScope = '';
       var loadedOperationsScope = '';
@@ -1085,7 +1144,8 @@
       }).getInitialState();
 
       function dashboardAllowedViews() {
-        return dashboardRole === 'content' ? ['revenue','ads','cads','content-koc','koc-analysis'] : ['revenue','ads','cads','operations','finance','content-koc','koc-analysis','product-analysis'];
+        if (dashboardRole === 'ads') return ['overview','facebook','ads'];
+        return dashboardRole === 'content' ? ['revenue','ads','cads','content-koc','koc-analysis'] : ['overview','facebook','revenue','ads','cads','operations','finance','content-koc','koc-analysis','product-analysis'];
       }
 
       function applyDashboardRole() {
@@ -1094,7 +1154,7 @@
         if (allowed.indexOf(activeReportView) === -1) activeReportView = allowed[0];
         var contentLocked = dashboardRole === 'content';
         ['startDate','endDate'].forEach(function(id){var field=document.getElementById(id);field.readOnly=contentLocked;field.classList.toggle('role-date-locked',contentLocked);field.setAttribute('aria-readonly',String(contentLocked));});
-        document.getElementById('sessionRole').textContent = dashboardRole === 'admin' ? 'Admin' : dashboardRole === 'ceo' ? 'CEO' : 'Content';
+        document.getElementById('sessionRole').textContent = dashboardRole === 'admin' ? 'Admin' : dashboardRole === 'ceo' ? 'CEO' : dashboardRole === 'ads' ? 'ADS' : 'Content';
         document.getElementById('sellerConnectButton').classList.toggle('hidden', dashboardRole !== 'admin');
       }
 
@@ -1191,6 +1251,8 @@
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         loadedReportScope = '';
+        loadedAdsOverviewScope = '';
+        loadedFacebookScope = '';
         loadedCAdsScope = '';
         loadedRevenueScope = '';
         loadedOperationsScope = '';
@@ -1198,7 +1260,9 @@
         loadedContentKocScope = '';
         loadedKocAnalysisScope = '';
         loadedProductAnalysisScope = '';
-        if (activeReportView === 'revenue') requestRevenueAnalysis(true);
+        if (activeReportView === 'overview') requestAdsOverview(true);
+        else if (activeReportView === 'facebook') requestFacebookAds(true);
+        else if (activeReportView === 'revenue') requestRevenueAnalysis(true);
         else if (activeReportView === 'cads') requestCAdsReport(true);
         else if (activeReportView === 'operations') requestOperationsAnalysis(true);
         else if (activeReportView === 'finance') requestFinanceAnalysis(true);
@@ -1290,7 +1354,13 @@
       function setAutoRefresh(enabled) {
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = enabled ? setInterval(function () {
-          if (activeReportView === 'revenue') {
+          if (activeReportView === 'overview') {
+            loadedAdsOverviewScope = '';
+            requestAdsOverview(true);
+          } else if (activeReportView === 'facebook') {
+            loadedFacebookScope = '';
+            requestFacebookAds(true);
+          } else if (activeReportView === 'revenue') {
             loadedReportScope = '';
             loadedOperationsScope = '';
             requestRevenueAnalysis(true);
@@ -1386,6 +1456,145 @@
         });
       }
 
+      function requestAdsOverview(force) {
+        if (button.disabled) return;
+        var scope = reportScope(); var key = JSON.stringify(scope);
+        setLoading(true); hideError();
+        google.script.run.withSuccessHandler(function (data) {
+          loadedAdsOverviewScope = key; renderAdsOverview(data);
+        }).withFailureHandler(showError).loadAdsOverview(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function requestFacebookAds(force) {
+        if (button.disabled) return;
+        var scope = reportScope(); var key = JSON.stringify(scope);
+        setLoading(true); hideError();
+        google.script.run.withSuccessHandler(function (data) {
+          loadedFacebookScope = key; renderFacebookAds(data);
+        }).withFailureHandler(showError).loadFacebookAds(Object.assign({}, scope, { forceRefresh: force === true }));
+      }
+
+      function platformMetric(labelText, valueText, className, current, previous, lowerIsBetter) {
+        var box = document.createElement('div'); box.className = 'metric metric-' + className;
+        var label = document.createElement('span'); label.textContent = labelText;
+        var value = document.createElement('strong'); value.textContent = valueText;
+        var comparison = document.createElement('span'); comparison.className = 'metric-change neutral';
+        var change = changeValue(current, previous);
+        if (change == null) comparison.textContent = 'Không có dữ liệu kỳ trước';
+        else {
+          var good = lowerIsBetter ? change <= 0 : change >= 0;
+          comparison.className = 'metric-change ' + (good ? 'good' : 'bad');
+          comparison.textContent = (change >= 0 ? '↑ ' : '↓ ') + number(Math.abs(change)) + '% so với kỳ trước';
+        }
+        box.append(label, value, comparison); return box;
+      }
+
+      function setPlatformUpdatedAt(value) {
+        setLoading(false);
+        document.getElementById('reportTabs').classList.remove('hidden');
+        document.getElementById('updatedAt').textContent = 'Cập nhật: ' + new Intl.DateTimeFormat('vi-VN', { dateStyle:'short', timeStyle:'medium' }).format(new Date(value));
+      }
+
+      function chartMoneyTick(value) { return compactMoney(Number(value)); }
+      function chartNumberTick(value) { return compactMoney(Number(value)); }
+      function platformChartOptions(stacked, rightAxis) {
+        var scales = {
+          x:{ stacked:Boolean(stacked), grid:{display:false}, ticks:{color:'#64748b',font:{family:'Inter',size:10}} },
+          y:{ stacked:Boolean(stacked), beginAtZero:true, grid:{color:'#e8edf3'}, ticks:{color:'#64748b',font:{family:'Inter',size:10},callback:chartMoneyTick} }
+        };
+        if (rightAxis) scales.y1={beginAtZero:true,position:'right',grid:{drawOnChartArea:false},ticks:{color:'#64748b',font:{family:'Inter',size:10},callback:chartNumberTick}};
+        return {responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,color:'#475569',font:{family:'Inter',size:10}}}},scales:scales};
+      }
+
+      function platformDonut(canvasId, chartId, labels, values, colors, centerLabel) {
+        if (chartId === 'tiktok' && adsOverviewTikTokSourceChart) adsOverviewTikTokSourceChart.destroy();
+        if (chartId === 'facebook' && adsOverviewFacebookResultChart) adsOverviewFacebookResultChart.destroy();
+        var total = values.reduce(function (sum, value) { return sum + Number(value || 0); }, 0);
+        var centerPlugin = { id:'platformDonutCenter' + chartId, afterDraw:function (chart) {
+          var area=chart.chartArea;if(!area)return;var x=(area.left+area.right)/2,y=(area.top+area.bottom)/2,context=chart.ctx;
+          context.save();context.textAlign='center';context.textBaseline='middle';context.fillStyle='#64748b';context.font='700 11px Inter';context.fillText(centerLabel,x,y-11);
+          context.fillStyle='#172033';context.font='800 18px Inter';context.fillText(compactMoney(total),x,y+12);context.restore();
+        }};
+        var chart = new Chart(document.getElementById(canvasId), {type:'doughnut',plugins:[centerPlugin],data:{labels:labels,datasets:[{data:values,backgroundColor:colors,borderColor:'#fff',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'64%',plugins:{legend:{position:'right',labels:{usePointStyle:true,boxWidth:8,color:'#475569',font:{family:'Inter',size:10}}},tooltip:{callbacks:{label:function(context){return context.label+': '+moneyWhole(context.raw)+' đ ('+number(total?Number(context.raw)/total*100:0)+'%)';}}}}}});
+        if (chartId === 'tiktok') adsOverviewTikTokSourceChart = chart; else adsOverviewFacebookResultChart = chart;
+      }
+
+      function renderAdsOverview(data) {
+        setPlatformUpdatedAt(data.generatedAt);
+        var totals=data.totals||{},previous=data.previousTotals||{},summary=document.getElementById('adsOverviewSummary');summary.replaceChildren();
+        summary.append(
+          platformMetric('TỔNG CHI PHÍ',compactMoney(totals.cost),'cost',totals.cost,previous.cost,true),
+          platformMetric('TỔNG DOANH THU',compactMoney(totals.revenue),'grossRevenue',totals.revenue,previous.revenue,false),
+          platformMetric('CPO',totals.cpo==null?'—':moneyWhole(totals.cpo),'costPerOrder',totals.cpo,previous.cpo,true),
+          platformMetric('ROAS',totals.roas==null?'—':number(totals.roas),'roi',totals.roas,previous.roas,false)
+        );
+        renderAdsOverviewCharts(data.daily||[]);
+        var source=data.tiktokCostSources||{};
+        var sourceLabels=['Thẻ sản phẩm','Video người bán','Video liên kết'],sourceValues=[source.productCard||0,source.seller||0,source.affiliate||0],sourceColors=['#2563eb','#f59e0b','#10b981'];
+        if(source.unclassified){sourceLabels.push('Chưa phân loại');sourceValues.push(source.unclassified);sourceColors.push('#94a3b8');}
+        platformDonut('adsOverviewTikTokSourceChart','tiktok',sourceLabels,sourceValues,sourceColors,'TikTok Cost');
+        var results=data.facebookResultCosts||[];
+        platformDonut('adsOverviewFacebookResultChart','facebook',results.map(function(item){return item.label;}),results.map(function(item){return item.cost;}),['#2563eb','#f59e0b','#10b981','#8b5cf6','#ec4899'],'Facebook Cost');
+        renderPlatformComparison(data.platforms||{},totals);
+      }
+
+      function renderAdsOverviewCharts(daily) {
+        if(adsOverviewCostChart)adsOverviewCostChart.destroy();if(adsOverviewPerformanceChart)adsOverviewPerformanceChart.destroy();
+        var labels=daily.map(function(day){return day.label;});
+        adsOverviewCostChart=new Chart(document.getElementById('adsOverviewCostChart'),{type:'bar',data:{labels:labels,datasets:[
+          {label:'Facebook Cost',data:daily.map(function(day){return day.facebook.cost;}),backgroundColor:'#2563eb',borderRadius:4,maxBarThickness:34},
+          {label:'TikTok Cost',data:daily.map(function(day){return day.tiktok.cost;}),backgroundColor:'#f59e0b',borderRadius:4,maxBarThickness:34}
+        ]},options:platformChartOptions(true,false)});
+        var options=platformChartOptions(true,true);options.scales.y.ticks.callback=chartNumberTick;
+        adsOverviewPerformanceChart=new Chart(document.getElementById('adsOverviewPerformanceChart'),{data:{labels:labels,datasets:[
+          {type:'bar',label:'Facebook Click',data:daily.map(function(day){return day.facebook.clicks;}),backgroundColor:'rgba(37,99,235,.68)',borderRadius:3,stack:'clicks',yAxisID:'y'},
+          {type:'bar',label:'TikTok Click',data:daily.map(function(day){return day.tiktok.clicks;}),backgroundColor:'rgba(245,158,11,.72)',borderRadius:3,stack:'clicks',yAxisID:'y'},
+          {type:'line',label:'Facebook Orders',data:daily.map(function(day){return day.facebook.orders;}),borderColor:'#10b981',backgroundColor:'#10b981',pointRadius:3,borderWidth:2,tension:.28,yAxisID:'y1'},
+          {type:'line',label:'TikTok Orders',data:daily.map(function(day){return day.tiktok.orders;}),borderColor:'#ef4444',backgroundColor:'#ef4444',pointRadius:3,borderWidth:2,tension:.28,yAxisID:'y1'}
+        ]},options:options});
+      }
+
+      function platformNameCell(name,kind) { var cell=document.createElement('td'),wrap=document.createElement('span'),logo=document.createElement('span');wrap.className='platform-name';logo.className='platform-logo '+kind;logo.textContent=kind==='facebook'?'f':kind==='tiktok'?'♪':'Σ';wrap.append(logo,document.createTextNode(name));cell.appendChild(wrap);return cell; }
+      function renderPlatformComparison(platforms,totals) {
+        var body=document.getElementById('adsOverviewComparisonRows');body.replaceChildren();
+        [['Facebook',platforms.facebook||{},'facebook'],['TikTok',platforms.tiktok||{},'tiktok'],['Tổng',totals||{},'total']].forEach(function(item){var metrics=item[1],row=document.createElement('tr');row.appendChild(platformNameCell(item[0],item[2]));[
+          moneyWhole(metrics.cost)+' đ',moneyWhole(metrics.revenue)+' đ',integer(metrics.impressions),integer(metrics.clicks),percent(metrics.ctr),percent(metrics.cr),moneyWhole(metrics.cpc)+' đ',moneyWhole(metrics.cpm)+' đ',metrics.cpo==null?'—':moneyWhole(metrics.cpo)+' đ',metrics.roas==null?'—':number(metrics.roas)
+        ].forEach(function(value){row.appendChild(cadsTextCell(value));});body.appendChild(row);});
+      }
+
+      function resultBadge(label) { var badge=document.createElement('span'),kind=/trò chuyện/i.test(label)?'message':/tiếp cận/i.test(label)?'reach':/trang đích/i.test(label)?'traffic':'engagement';badge.className='campaign-result-badge '+kind;badge.textContent=label;return badge; }
+      function renderFacebookAds(data) {
+        setPlatformUpdatedAt(data.generatedAt);
+        var totals=data.totals||{},previous=data.previousTotals||{},summary=document.getElementById('facebookSummary');summary.replaceChildren();
+        summary.append(
+          platformMetric('SPEND',compactMoney(totals.spend),'cost',totals.spend,previous.spend,true),platformMetric('IMPRESSIONS',integer(totals.impressions),'impressions',totals.impressions,previous.impressions,false),
+          platformMetric('CPM',moneyWhole(totals.cpm),'costPerOrder',totals.cpm,previous.cpm,true),platformMetric('CPC',moneyWhole(totals.cpc),'traffic',totals.cpc,previous.cpc,true),
+          platformMetric('REACH',integer(totals.reach),'orders',totals.reach,previous.reach,false),platformMetric('CLICK',integer(totals.clicks),'cost',totals.clicks,previous.clicks,false),
+          platformMetric('POST ENGAGEMENT',integer(totals.postEngagement),'roi',totals.postEngagement,previous.postEngagement,false),platformMetric('NEW MESSAGES',integer(totals.messages),'grossRevenue',totals.messages,previous.messages,false)
+        );
+        renderFacebookCharts(data.daily||[]);renderFacebookCampaigns(data.campaigns||[],totals);
+      }
+
+      function renderFacebookCharts(daily) {
+        if(facebookTrafficChart)facebookTrafficChart.destroy();if(facebookSpendChart)facebookSpendChart.destroy();var labels=daily.map(function(day){return day.label;});
+        var trafficOptions=platformChartOptions(false,true);trafficOptions.scales.y.ticks.callback=chartNumberTick;
+        facebookTrafficChart=new Chart(document.getElementById('facebookTrafficChart'),{data:{labels:labels,datasets:[
+          {type:'bar',label:'Impressions',data:daily.map(function(day){return day.metrics.impressions;}),backgroundColor:'rgba(245,158,11,.72)',borderRadius:4,maxBarThickness:34,yAxisID:'y'},
+          {type:'line',label:'Click',data:daily.map(function(day){return day.metrics.clicks;}),borderColor:'#10b981',backgroundColor:'#10b981',pointRadius:3,tension:.28,borderWidth:2,yAxisID:'y1'},
+          {type:'line',label:'Tin nhắn mới',data:daily.map(function(day){return day.metrics.messages;}),borderColor:'#ef4444',backgroundColor:'#ef4444',pointRadius:3,tension:.28,borderWidth:2,yAxisID:'y1'}
+        ]},options:trafficOptions});
+        facebookSpendChart=new Chart(document.getElementById('facebookSpendChart'),{type:'bar',data:{labels:labels,datasets:[{label:'Spend (VND)',data:daily.map(function(day){return day.metrics.spend;}),backgroundColor:'#3b73e8',borderRadius:4,maxBarThickness:42}]},options:platformChartOptions(false,false)});
+      }
+
+      function renderFacebookCampaigns(campaigns,totals) {
+        var body=document.getElementById('facebookCampaignRows');body.replaceChildren();
+        campaigns.concat([{campaignId:'total',campaignName:'TỔNG',resultCategory:'Tổng',metrics:totals,isTotal:true}]).forEach(function(item){var m=item.metrics||{},row=document.createElement('tr');
+          var nameCell=document.createElement('td');nameCell.className='campaign-name-cell';var name=document.createElement('span');name.className='campaign-name-clip';name.textContent=item.campaignName;name.title=item.campaignName;nameCell.appendChild(name);row.appendChild(nameCell);
+          var resultCell=document.createElement('td');if(item.isTotal)resultCell.textContent='—';else resultCell.appendChild(resultBadge(item.resultCategory));row.appendChild(resultCell);
+          [moneyWhole(m.spend)+' đ',integer(m.impressions),integer(m.reach),integer(m.clicks),integer(m.postEngagement),integer(m.messages),moneyWhole(m.cpm)+' đ',moneyWhole(m.cpc)+' đ'].forEach(function(value){row.appendChild(cadsTextCell(value));});body.appendChild(row);
+        });
+      }
+
       function requestReport(forceCreativeRefresh) {
         if (button.disabled) return;
         var scope = reportScope();
@@ -1477,6 +1686,8 @@
           tab.classList.toggle('active', selected);
           tab.setAttribute('aria-selected', String(selected));
         });
+        document.getElementById('adsOverviewReport').classList.toggle('hidden', activeReportView !== 'overview');
+        document.getElementById('facebookReport').classList.toggle('hidden', activeReportView !== 'facebook');
         document.getElementById('report').classList.toggle('hidden', activeReportView !== 'ads');
         document.getElementById('cadsReport').classList.toggle('hidden', activeReportView !== 'cads');
         document.getElementById('revenueReport').classList.toggle('hidden', activeReportView !== 'revenue');
@@ -1485,7 +1696,13 @@
         document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
         document.getElementById('kocAnalysisReport').classList.toggle('hidden', activeReportView !== 'koc-analysis');
         document.getElementById('productAnalysisReport').classList.toggle('hidden', activeReportView !== 'product-analysis');
-        if (activeReportView === 'revenue') {
+        if (activeReportView === 'overview') {
+          var overviewKey = JSON.stringify(reportScope());
+          if (loadedAdsOverviewScope !== overviewKey) requestAdsOverview(false);
+        } else if (activeReportView === 'facebook') {
+          var facebookKey = JSON.stringify(reportScope());
+          if (loadedFacebookScope !== facebookKey) requestFacebookAds(false);
+        } else if (activeReportView === 'revenue') {
           var key = JSON.stringify(reportScope());
           if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
         } else if (activeReportView === 'cads') {
