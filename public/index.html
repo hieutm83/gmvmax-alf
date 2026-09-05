@@ -1045,6 +1045,8 @@
       var currentSummaryContexts = [];
       var currentReportTotals = null;
       var currentReportHourly = [];
+      var currentAdsEngagementPoints = [];
+      var adsTrafficTimelineAvailable = false;
       var recommendationExpanded = { boost: false, stop: false };
       var currentComparison = null;
       var currentCreativeSummary = null;
@@ -1083,6 +1085,7 @@
       var facebookSpendChart = null;
       var currentAdsOverviewData = null;
       var overviewSourceRequestId = 0;
+      var adsTrafficRequestId = 0;
       var currentCAdsVideos = [];
       var cadsVideoExpanded = false;
       var sellerOAuthConnected = false;
@@ -2885,7 +2888,10 @@
         document.getElementById('adsSalesTimeSeriesTitle').textContent = 'Chi phí, doanh số & đơn hàng theo ' + seriesPeriod;
         document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị, Click & CR theo ' + seriesPeriod;
         currentReportHourly = reportUsesDailySeries ? (data.daily || []) : (data.hourly || []);
+        currentAdsEngagementPoints = [];
+        adsTrafficTimelineAvailable = false;
         renderAdsPerformanceCharts(currentReportHourly);
+        requestAdsTrafficTimeline(forceCreativeRefresh === true);
 
         var rows = document.getElementById('productRows');
         rows.replaceChildren();
@@ -2973,16 +2979,28 @@
         if (adsSalesChart) adsSalesChart.destroy();
         if (adsEngagementChart) adsEngagementChart.destroy();
         var labels = points.map(function (point) { return point.label; });
+        var engagementPoints = currentAdsEngagementPoints.length ? currentAdsEngagementPoints : points;
         adsSalesChart = new Chart(document.getElementById('adsSalesChart'), { data: { labels: labels, datasets: [
           { type: 'bar', label: 'Chi phí', data: points.map(function (point) { return point.metrics.cost || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(37,99,235,.82)', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
           { type: 'bar', label: 'Doanh số', data: points.map(function (point) { return point.metrics.grossRevenue || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(15,159,154,.78)', borderColor: '#0f9f9a', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
           { type: 'line', label: 'Đơn hàng', data: points.map(function (point) { return point.metrics.orders || 0; }), yAxisID: 'secondary', borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
         ] }, options: adsTimeSeriesOptions('VND', 'Đơn hàng', false) });
-        adsEngagementChart = new Chart(document.getElementById('adsEngagementChart'), { data: { labels: labels, datasets: [
-          { type: 'bar', label: 'Hiển thị', data: points.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
-          { type: 'bar', label: 'Click', data: points.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
-          { type: 'line', label: 'CR', data: points.map(function (point) { return point.metrics.traffic ? Number(point.metrics.orders || 0) / Number(point.metrics.traffic) : 0; }), yAxisID: 'secondary', borderColor: '#7c3aed', backgroundColor: '#7c3aed', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
+        adsEngagementChart = new Chart(document.getElementById('adsEngagementChart'), { data: { labels: engagementPoints.map(function (point) { return point.label; }), datasets: [
+          { type: 'bar', label: 'Hiển thị', data: engagementPoints.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
+          { type: 'bar', label: 'Click', data: engagementPoints.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
+          { type: 'line', label: 'CR', data: engagementPoints.map(function (point) { var conversions=point.metrics.adConversions;return point.metrics.traffic ? Number(conversions == null ? point.metrics.orders || 0 : conversions) / Number(point.metrics.traffic) : 0; }), yAxisID: 'secondary', borderColor: '#7c3aed', backgroundColor: '#7c3aed', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
         ] }, options: adsTimeSeriesOptions('Lượt', 'CR', true) });
+      }
+
+      function requestAdsTrafficTimeline(forceRefresh) {
+        var requestId = ++adsTrafficRequestId;
+        var scope = reportScope(); var scopeKey = JSON.stringify(scope);
+        google.script.run.withSuccessHandler(function (data) {
+          if (requestId !== adsTrafficRequestId || scopeKey !== JSON.stringify(reportScope())) return;
+          applyAdsTrafficTimeline(data.points || [], data.source);
+        }).withFailureHandler(function (error) {
+          if (requestId === adsTrafficRequestId) console.error('Không tải được timeline Hiển thị/Click/CR', error && (error.message || error));
+        }).loadAdsTrafficTimeline(Object.assign({}, scope, { forceRefresh: forceRefresh === true }));
       }
 
       function openProductVideos(product) {
@@ -3075,7 +3093,6 @@
             availableProducts: currentAvailableProductCount,
             startDate: document.getElementById('startDate').value,
             endDate: document.getElementById('endDate').value,
-            includeTimeline: true,
             forceRefresh: forceRefresh === true
           });
       }
@@ -3091,7 +3108,12 @@
         currentCreativeSummary = data;
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
-        applyPerformanceTimeline(data.performanceTimeline || []);
+        if (!adsTrafficTimelineAvailable && (Number(data.impressions) || Number(data.traffic))) {
+          currentAdsEngagementPoints = [{ label: 'Tổng kỳ', metrics: { impressions: Number(data.impressions) || 0,
+            traffic: Number(data.traffic) || 0, orders: Number(currentReportTotals && currentReportTotals.orders) || 0 } }];
+          document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị, Click & CR trong kỳ';
+          renderAdsPerformanceCharts(currentReportHourly);
+        }
         videoContextByItemId = {};
         (data.summaries || []).forEach(function (item) {
           var cell = document.getElementById(productTrafficElementId(item));
@@ -3196,8 +3218,14 @@
         requestVideoStats();
       }
 
-      function applyPerformanceTimeline(timeline) {
+      function applyAdsTrafficTimeline(timeline, source) {
         if (!timeline.length || !currentReportHourly.length) return;
+        var hasData = timeline.some(function (item) { var metrics=item.metrics||{};return Number(metrics.impressions)||Number(metrics.clicks)||Number(metrics.orders); });
+        if (!hasData) return;
+        adsTrafficTimelineAvailable = true;
+        currentAdsEngagementPoints = currentReportHourly;
+        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị, Click & CR theo ' +
+          (currentReportHourly[0] && currentReportHourly[0].date ? 'ngày' : 'giờ');
         var daily = Boolean(currentReportHourly[0] && currentReportHourly[0].date);
         var currentByKey = {};
         currentReportHourly.forEach(function (point, index) {
@@ -3206,11 +3234,9 @@
         timeline.forEach(function (item) {
           var point = currentByKey[item.key]; if (!point) return;
           var metrics = item.metrics || {};
-          ['cost','orders','grossRevenue','traffic','impressions'].forEach(function (key) { point.metrics[key] = Number(metrics[key]) || 0; });
-          point.metrics.trafficAvailable = metrics.trafficAvailable === true;
-          point.metrics.impressionsAvailable = metrics.impressionsAvailable === true;
-          point.metrics.costPerOrder = point.metrics.orders ? point.metrics.cost / point.metrics.orders : null;
-          point.metrics.roi = point.metrics.cost ? point.metrics.grossRevenue / point.metrics.cost : null;
+          point.metrics.impressions = Number(metrics.impressions) || 0;
+          point.metrics.traffic = Number(metrics.clicks) || 0;
+          if (source === 'integrated_ads') point.metrics.adConversions = Number(metrics.orders) || 0;
         });
         renderAdsPerformanceCharts(currentReportHourly);
       }

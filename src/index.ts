@@ -11,7 +11,7 @@ import { loadContentKocAnalysis } from './content-koc';
 import { loadProductAnalysis } from './product-analysis';
 import { loadKocAnalysis } from './koc-analysis';
 import { loadCustomerServiceAnalysis } from './customer-service';
-import { loadCAdsReport } from './cads';
+import { loadAdsTrafficTimeline, loadCAdsReport } from './cads';
 import { loadAdsOverview, loadFacebookAdsReport } from './facebook';
 import { syncSupabaseBackup } from './supabase-backup';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
@@ -86,6 +86,10 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
   if(url.pathname==='/api/cads-report'){
     const scope=await validateAdsScope(env,input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
     return ok(await loadCAdsReport(env,{...scope,forceRefresh:input.forceRefresh===true}));
+  }
+  if(url.pathname==='/api/ads-traffic-timeline'){
+    const scope=await validateAdsScope(env,input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');
+    return ok(await loadAdsTrafficTimeline(env,{...scope,forceRefresh:input.forceRefresh===true}));
   }
   if(url.pathname==='/api/facebook-ads'){
     const scope=validateSellerScope(input);if(scope.startDate>scope.endDate)throw new HttpError(400,'Ngày bắt đầu phải trước ngày kết thúc.');

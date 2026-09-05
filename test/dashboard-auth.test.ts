@@ -34,6 +34,7 @@ describe('dashboard authentication', () => {
     expect(() => assertDashboardApiAccess('ads', '/api/ads-overview', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('ads', '/api/facebook-ads', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('ads', '/api/report', 'POST')).not.toThrow();
+    expect(() => assertDashboardApiAccess('ads', '/api/ads-traffic-timeline', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('ads', '/api/cads-report', 'POST')).toThrow();
     expect(() => assertDashboardApiAccess('ceo', '/api/finance-analysis', 'POST')).not.toThrow();
     expect(() => assertDashboardApiAccess('ceo', '/api/oauth/refresh', 'POST')).toThrow();

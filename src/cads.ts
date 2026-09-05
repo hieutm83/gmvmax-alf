@@ -1,6 +1,6 @@
 import type { Env, McpRow, McpSession } from './types';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
-import { callTool, createSession } from './mcp';
+import { callTool, createSession, pagedReport } from './mcp';
 import { authorizedShop, shopRequest } from './seller';
 
 type CAdsMetrics = {
@@ -104,6 +104,21 @@ function running(status:string):boolean{return /ENABLE|ACTIVE|DELIVER/.test(stat
 function seriesPoints(startDate:string,endDate:string,dimension:string):Array<{key:string;label:string;metrics:CAdsMetrics}>{const points=[];
   if(dimension==='stat_time_hour'){for(let hour=0;hour<24;hour++){const key=String(hour).padStart(2,'0');points.push({key,label:`${key}:00`,metrics:emptyMetrics()});}}
   else for(let date=startDate;date<=endDate;date=shiftDate(date,1))points.push({key:date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,metrics:emptyMetrics()});return points;}
+
+export async function loadAdsTrafficTimeline(env:Env,input:any):Promise<any>{
+  const cacheKey=stableKey('ads-traffic-v2',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
+  if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
+  const session=await createSession(env),dimension=input.startDate===input.endDate?'stat_time_hour':'stat_time_day';let gmvRows:McpRow[]=[];
+  try{gmvRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:[dimension],
+    metrics:['product_impressions','product_clicks'],start_date:input.startDate,end_date:input.endDate});}catch{/* Use the standard ads report below. */}
+  const points=seriesPoints(input.startDate,input.endDate,dimension),byPoint=new Map(points.map((point)=>[point.key,point.metrics]));let source='gmv_max';
+  if(gmvRows.length){for(const row of gmvRows){const point=byPoint.get(pointKey(row,dimension));if(!point)continue;point.impressions+=numberValue(row.metrics?.product_impressions);point.clicks+=numberValue(row.metrics?.product_clicks);}}
+  else{source='integrated_ads';const performance=await performanceRows(env,session,input.advertiserId,input.startDate,input.endDate);
+    for(const row of performance.rows){const point=byPoint.get(pointKey(row,performance.dimension));if(point)add(point,normalized(row.metrics||{}));}}
+  points.forEach((point)=>finish(point.metrics));
+  const result={generatedAt:new Date().toISOString(),granularity:dimension==='stat_time_hour'?'hour':'day',source,points};
+  await cachePut(env,cacheKey,result,240);return result;
+}
 
 export async function loadCAdsReport(env:Env,input:any):Promise<any>{
   const cacheKey=stableKey('cads-v8',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});

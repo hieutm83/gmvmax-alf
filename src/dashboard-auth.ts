@@ -118,7 +118,7 @@ export async function clearDashboardLoginFailures(env: Env, fingerprint: string)
 }
 
 const CONTENT_API_PATHS = new Set([
-  '/api/state', '/api/stores', '/api/report', '/api/cads-report', '/api/revenue-analysis', '/api/content-koc-analysis', '/api/koc-analysis',
+  '/api/state', '/api/stores', '/api/report', '/api/cads-report', '/api/ads-traffic-timeline', '/api/revenue-analysis', '/api/content-koc-analysis', '/api/koc-analysis',
   '/api/product-videos', '/api/creative-summaries', '/api/comparison', '/api/video-stats', '/api/video-metadata',
   '/api/customer-service-analysis'
 ]);
@@ -126,7 +126,7 @@ const ADMIN_API_PATHS = new Set([
   '/api/oauth/connect', '/api/oauth/refresh', '/api/oauth/disconnect', '/api/seller/disconnect', '/api/admin/verify'
 ]);
 const ADS_API_PATHS = new Set([
-  '/api/state', '/api/stores', '/api/report', '/api/creative-summaries', '/api/comparison', '/api/product-videos',
+  '/api/state', '/api/stores', '/api/report', '/api/ads-traffic-timeline', '/api/creative-summaries', '/api/comparison', '/api/product-videos',
   '/api/video-stats', '/api/video-metadata', '/api/facebook-ads', '/api/ads-overview'
 ]);
 

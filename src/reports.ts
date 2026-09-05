@@ -10,20 +10,16 @@ function metric(m: Record<string, unknown>): any {
   const cost = numberValue(m.cost), orders = numberValue(m.orders), grossRevenue = numberValue(m.gross_revenue);
   return { cost, orders, grossRevenue, traffic: numberValue(m.product_clicks ?? m.product_ad_clicks ?? m.clicks),
     trafficAvailable: m.product_clicks != null || m.product_ad_clicks != null || m.clicks != null,
-    impressions: numberValue(m.product_impressions ?? m.impressions),
-    impressionsAvailable: m.product_impressions != null || m.impressions != null,
     costPerOrder: m.cost_per_order != null ? numberValue(m.cost_per_order) : (orders ? cost / orders : null),
     roi: m.roi != null ? numberValue(m.roi) : (cost ? grossRevenue / cost : null) };
 }
 function add(target: any, source: any): void {
   target.cost += source.cost; target.orders += source.orders; target.grossRevenue += source.grossRevenue;
   target.traffic += source.traffic; target.trafficAvailable ||= source.trafficAvailable;
-  target.impressions += source.impressions; target.impressionsAvailable ||= source.impressionsAvailable;
   target.costPerOrder = target.orders ? target.cost / target.orders : null;
   target.roi = target.cost ? target.grossRevenue / target.cost : null;
 }
-function empty(): any { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: false,
-  impressions: 0, impressionsAvailable: false, costPerOrder: null, roi: null }; }
+function empty(): any { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: false, costPerOrder: null, roi: null }; }
 function rowId(row: McpRow, key: string): string { return String(row.dimensions?.[key] || row.metrics?.[key] || ''); }
 function campaignActive(info: any): boolean {
   const enabled = info.is_enabled ?? info.is_active;
@@ -218,23 +214,17 @@ export async function loadProductVideos(env: Env, input: any): Promise<any> {
 }
 
 export async function loadCreativeSummaries(env: Env, input: any): Promise<any> {
-  const key=stableKey('summary-v4-timeline',{...input,forceRefresh:undefined}); if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
+  const key=stableKey('summary-v3-source-orders',{...input,forceRefresh:undefined}); if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
   const session=await createSession(env); const contexts=input.allContexts||input.products||[];
-  const rows:McpRow[]=[];const timelineRows:McpRow[]=[];
-  const timeDimension=input.startDate===input.endDate?'stat_time_hour':'stat_time_day';
+  const rows:McpRow[]=[];
   const exactContexts=Array.from(new Map<string,ProductContext>(contexts.map((context:ProductContext)=>[`${context.campaignId}:${context.itemGroupId}`,context])).values());
   for(let offset=0;offset<exactContexts.length;offset+=4){
     const chunk=exactContexts.slice(offset,offset+4);
     const chunkRows=await Promise.all(chunk.map(async context=>{
-      const [values,timeValues]=await Promise.all([
-        pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
-          dimensions:['item_id'],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
-          filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId],creative_types:['ADS_AND_ORGANIC']}}),
-        input.includeTimeline===true?contextsRows(env,session,input.advertiserId,input.storeId,[context],input.startDate,input.endDate,
-          ['item_id',timeDimension],['cost','orders','gross_revenue','product_impressions','product_clicks']).catch(()=>[]):Promise.resolve([])
-      ]);
+      const values=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
+        dimensions:['item_id'],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
+        filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId],creative_types:['ADS_AND_ORGANIC']}});
       values.forEach(row=>{row.dimensions={...(row.dimensions||{}),campaign_id:context.campaignId,item_group_id:context.itemGroupId};});
-      timelineRows.push(...timeValues);
       return values;
     }));
     chunkRows.forEach(values=>rows.push(...values));
@@ -260,16 +250,8 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     const entry=map.get(k)||{creativeCount:0,traffic:0,itemIds:[]}; impressions+=numberValue(m.product_impressions);traffic+=numberValue(m.product_clicks);
     if(numberValue(m.cost)||numberValue(m.orders)||numberValue(m.product_impressions)){if(id){ids.add(id);if(!entry.itemIds.includes(id))entry.itemIds.push(id);}entry.creativeCount++;entry.traffic+=numberValue(m.product_clicks);}map.set(k,entry);}
   for(const source of Object.values<any>(costAttribution.metrics))source.roi=source.cost?source.grossRevenue/source.cost:0;
-  const timelineByKey=new Map<string,any>();
-  for(const row of timelineRows){const raw=String(row.dimensions?.[timeDimension]||row.metrics?.[timeDimension]||'');
-    let timelineKey='';if(timeDimension==='stat_time_day')timelineKey=raw.slice(0,10);
-    else{const match=raw.match(/(?:T|\s)(\d{1,2})(?::|$)/)||raw.match(/^(\d{1,2})(?::|$)/);if(match)timelineKey=String(match[1]).padStart(2,'0');}
-    if(!timelineKey)continue;
-    const point=timelineByKey.get(timelineKey)||{key:timelineKey,metrics:empty()};add(point.metrics,metric(row.metrics||{}));timelineByKey.set(timelineKey,point);
-  }
-  const performanceTimeline=Array.from(timelineByKey.values()).sort((a,b)=>a.key.localeCompare(b.key));
   const result={generatedAt:new Date().toISOString(),summaries:(input.products||[]).map((p:any)=>({campaignId:p.campaignId,itemGroupId:p.itemGroupId,...(map.get(`${p.campaignId}:${p.itemGroupId}`)||{creativeCount:0,traffic:0,itemIds:[]})})),
-    totalCreatives:ids.size,impressions,traffic,costAttribution,videoEvaluation:evaluateVideos(rows),performanceTimeline,cacheStatus:'REFRESHED'};
+    totalCreatives:ids.size,impressions,traffic,costAttribution,videoEvaluation:evaluateVideos(rows),hourlyTraffic:[],cacheStatus:'REFRESHED'};
   await cachePut(env,key,result,300);return result;
 }
 
