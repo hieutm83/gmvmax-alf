@@ -56,13 +56,27 @@ export function summarizeFacebookRows(rows:any[]):{totals:FacebookMetrics;daily:
     resultCosts:[...resultMap].map(([label,cost])=>({label,cost})).sort((a,b)=>b.cost-a.cost)};
 }
 
+export function minimumChartStartDate(startDate:string,endDate:string,minimumDays=7):string{
+  const minimumStart=shiftDate(endDate,-Math.max(1,minimumDays)+1);
+  return startDate<minimumStart?startDate:minimumStart;
+}
+
+function facebookDaily(rows:any[],startDate:string,endDate:string):any[]{
+  const byDate=new Map(summarizeFacebookRows(rows).daily.map((day:any)=>[day.date,day]));const daily:any[]=[];
+  for(let date=startDate;date<=endDate;date=shiftDate(date,1))daily.push(byDate.get(date)||{date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,metrics:emptyMetrics()});
+  return daily;
+}
+
 function comparisonDates(startDate:string,endDate:string):{startDate:string;endDate:string}{const days=Math.max(1,Math.round((Date.parse(`${endDate}T00:00:00Z`)-Date.parse(`${startDate}T00:00:00Z`))/86400000)+1);
   const previousEnd=shiftDate(startDate,-1);return{startDate:shiftDate(previousEnd,-days+1),endDate:previousEnd};}
 
 export async function loadFacebookAdsReport(env:Env,input:{startDate:string;endDate:string;forceRefresh?:boolean}):Promise<any>{
-  const key=stableKey('facebook-ads-v1',{startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
-  const previous=comparisonDates(input.startDate,input.endDate);const [currentRows,previousRows]=await Promise.all([insights(env,input.startDate,input.endDate),insights(env,previous.startDate,previous.endDate)]);
-  const current=summarizeFacebookRows(currentRows),previousReport=summarizeFacebookRows(previousRows);const result={...current,previousTotals:previousReport.totals,startDate:input.startDate,endDate:input.endDate,generatedAt:new Date().toISOString()};
+  const key=stableKey('facebook-ads-v2',{startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
+  const previous=comparisonDates(input.startDate,input.endDate),chartStartDate=minimumChartStartDate(input.startDate,input.endDate);
+  const currentPromise=insights(env,input.startDate,input.endDate);const chartPromise=chartStartDate===input.startDate?currentPromise:insights(env,chartStartDate,input.endDate);
+  const [currentRows,previousRows,chartRows]=await Promise.all([currentPromise,insights(env,previous.startDate,previous.endDate),chartPromise]);
+  const current=summarizeFacebookRows(currentRows),previousReport=summarizeFacebookRows(previousRows);const result={...current,daily:facebookDaily(chartRows,chartStartDate,input.endDate),
+    previousTotals:previousReport.totals,startDate:input.startDate,endDate:input.endDate,chartStartDate,generatedAt:new Date().toISOString()};
   await cachePut(env,key,result,input.endDate<new Date().toISOString().slice(0,10)?86400:300).catch(()=>undefined);return result;
 }
 
@@ -77,13 +91,12 @@ type TikTokOverview = {
 };
 
 function rowMetric(row:McpRow,key:string):number{return numberValue(row.metrics?.[key]);}
-function rowDate(row:McpRow):string{return String(row.dimensions?.stat_time_day||row.metrics?.stat_time_day||'').slice(0,10);}
 function addTikTok(target:any,row:McpRow):void{
   target.cost+=rowMetric(row,'cost');target.revenue+=rowMetric(row,'gross_revenue');target.orders+=rowMetric(row,'orders');
   target.clicks+=rowMetric(row,'product_clicks');target.impressions+=rowMetric(row,'product_impressions');
 }
 
-async function loadTikTokOverview(env:Env,input:any,previousDates:{startDate:string;endDate:string}):Promise<TikTokOverview>{
+async function loadTikTokOverview(env:Env,input:any,previousDates:{startDate:string;endDate:string},chartStartDate:string):Promise<TikTokOverview>{
   const session=await createSession(env);
   const loadRows=async(startDate:string,endDate:string,dimensions:string[],metrics:string[]):Promise<McpRow[]>=>{
     const base={advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions,start_date:startDate,end_date:endDate};
@@ -96,39 +109,29 @@ async function loadTikTokOverview(env:Env,input:any,previousDates:{startDate:str
   const previous={cost:0,revenue:0,orders:0,clicks:0,impressions:0};
   for(const row of currentRows)addTikTok(current,row);
   for(const row of previousRows)addTikTok(previous,row);
-  const dayCount=Math.max(1,Math.round((Date.parse(`${input.endDate}T00:00:00Z`)-Date.parse(`${input.startDate}T00:00:00Z`))/86400000)+1);
-  const bucketSize=Math.max(1,Math.ceil(dayCount/32));const daily:any[]=[];
-  for(let start=input.startDate;start<=input.endDate;){const candidateEnd=shiftDate(start,bucketSize-1),end=candidateEnd>input.endDate?input.endDate:candidateEnd;
+  const dayCount=Math.max(1,Math.round((Date.parse(`${input.endDate}T00:00:00Z`)-Date.parse(`${chartStartDate}T00:00:00Z`))/86400000)+1);
+  const bucketSize=Math.max(1,Math.ceil(dayCount/20));const daily:any[]=[];
+  for(let start=chartStartDate;start<=input.endDate;){const candidateEnd=shiftDate(start,bucketSize-1),end=candidateEnd>input.endDate?input.endDate:candidateEnd;
     const metrics={cost:0,revenue:0,orders:0,clicks:0,impressions:0};
     const rows=await loadRows(start,end,['campaign_id'],summaryMetrics);for(const row of rows)addTikTok(metrics,row);
+    const clickRows=await loadRows(start,end,['campaign_id'],['product_clicks']).catch(()=>[]);for(const row of clickRows)metrics.clicks+=rowMetric(row,'product_clicks');
     daily.push({date:start,endDate:end,label:start===end?`${start.slice(8,10)}/${start.slice(5,7)}`:`${start.slice(8,10)}/${start.slice(5,7)}–${end.slice(8,10)}/${end.slice(5,7)}`,metrics});start=shiftDate(end,1);}
   const costSources={total:0,productCard:0,seller:0,affiliate:0,unclassified:0};
-  try{
-    const creativeRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_id'],
-      metrics:['title','tt_account_authorization_type','cost','product_impressions','product_clicks'],start_date:input.startDate,end_date:input.endDate,
-      filtering:{creative_types:['ADS_AND_ORGANIC']}});
-    current.impressions=0;current.clicks=0;
-    for(const row of creativeRows){const metrics=row.metrics||{},cost=numberValue(metrics.cost),itemId=String(row.dimensions?.item_id||metrics.item_id||'');
-      const title=String(metrics.title||row.dimensions?.title||'').toLowerCase(),authorization=String(metrics.tt_account_authorization_type||row.dimensions?.tt_account_authorization_type||'').toUpperCase();
-      const source=itemId==='-1'||/product card|thẻ sản phẩm/.test(title)?'productCard':/AUTH|AFFILIATE|CREATOR/.test(authorization)?'affiliate':'seller';
-      costSources[source]+=cost;costSources.total+=cost;current.impressions+=numberValue(metrics.product_impressions);current.clicks+=numberValue(metrics.product_clicks);
-    }
-  }catch{/* Daily GMV Max totals remain available if creative-level attribution is unavailable. */}
-  if(!costSources.total){costSources.unclassified=current.cost;costSources.total=current.cost;}
+  costSources.unclassified=current.cost;costSources.total=current.cost;
   return{current:platformMetrics(current),previous:platformMetrics(previous),daily,costSources,
     diagnostics:{currentRows:currentRows.length,previousRows:previousRows.length,dailyQueries:daily.length}};
 }
 
 export async function loadAdsOverview(env:Env,input:any):Promise<any>{
-  const key=stableKey('ads-overview-v6',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
-  const previousDates=comparisonDates(input.startDate,input.endDate);
-  const [facebook,tiktok]=await Promise.all([loadFacebookAdsReport(env,input),loadTikTokOverview(env,input,previousDates)]);
+  const key=stableKey('ads-overview-v7',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
+  const previousDates=comparisonDates(input.startDate,input.endDate),chartStartDate=minimumChartStartDate(input.startDate,input.endDate);
+  const [facebook,tiktok]=await Promise.all([loadFacebookAdsReport(env,input),loadTikTokOverview(env,input,previousDates,chartStartDate)]);
   const facebookPlatform=platformMetrics(facebook.totals),tiktokPlatform=tiktok.current;
   const previousFacebook=platformMetrics(facebook.previousTotals),previousTiktok=tiktok.previous;
   const daily=tiktok.daily.map((day:any)=>({date:day.date,endDate:day.endDate,label:day.label,facebook:{cost:0,clicks:0,orders:0},
     tiktok:{cost:numberValue(day.metrics?.cost),clicks:numberValue(day.metrics?.clicks),orders:numberValue(day.metrics?.orders)}}));
   for(const day of facebook.daily){const target=daily.find((point:any)=>day.date>=point.date&&day.date<=point.endDate);if(target){target.facebook.cost+=day.metrics.spend;target.facebook.clicks+=day.metrics.clicks;target.facebook.orders+=day.metrics.orders;}}
-  const result={startDate:input.startDate,endDate:input.endDate,generatedAt:new Date().toISOString(),totals:totalPlatforms(facebookPlatform,tiktokPlatform),
+  const result={startDate:input.startDate,endDate:input.endDate,chartStartDate,generatedAt:new Date().toISOString(),totals:totalPlatforms(facebookPlatform,tiktokPlatform),
     previousTotals:totalPlatforms(previousFacebook,previousTiktok),platforms:{facebook:facebookPlatform,tiktok:tiktokPlatform},daily,
     tiktokCostSources:tiktok.costSources,tiktokDiagnostics:tiktok.diagnostics,facebookResultCosts:facebook.resultCosts};
   await cachePut(env,key,result,input.endDate<new Date().toISOString().slice(0,10)?86400:300).catch(()=>undefined);return result;

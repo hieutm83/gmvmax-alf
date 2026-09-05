@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeFacebookRows } from '../src/facebook';
+import { minimumChartStartDate, summarizeFacebookRows } from '../src/facebook';
 
 describe('Facebook Ads normalization',()=>{
   it('selects one canonical action per metric and does not double count aliases',()=>{
@@ -8,5 +8,11 @@ describe('Facebook Ads normalization',()=>{
       action_values:[{action_type:'omni_purchase',value:'300000'},{action_type:'onsite_conversion.purchase',value:'300000'}]}]);
     expect(report.totals).toMatchObject({spend:100000,impressions:1000,clicks:50,postEngagement:90,messages:4,orders:2,revenue:300000,cpm:100000,cpc:2000,ctr:.05,cpo:50000,roas:3});
     expect(report.campaigns[0].resultCategory).toBe('Cuộc trò chuyện mới');
+  });
+
+  it('uses at least seven calendar days for chart series',()=>{
+    expect(minimumChartStartDate('2026-09-05','2026-09-05')).toBe('2026-08-30');
+    expect(minimumChartStartDate('2026-09-02','2026-09-05')).toBe('2026-08-30');
+    expect(minimumChartStartDate('2026-08-20','2026-09-05')).toBe('2026-08-20');
   });
 });
