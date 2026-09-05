@@ -2,7 +2,6 @@ import type { Env, McpRow, McpSession } from './types';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
 import { callTool, createSession, pagedReport } from './mcp';
 import { authorizedShop, shopRequest } from './seller';
-import { discoverVideoContexts } from './reports';
 
 type CAdsMetrics = {
   spend:number; impressions:number; clicks:number; orders:number; videoPlays:number;
@@ -111,29 +110,15 @@ export function adsTrafficChartStartDate(startDate:string,endDate:string,minimum
   return selectedDays<=minimumDays?shiftDate(endDate,-minimumDays+1):startDate;
 }
 
-async function creativeTrafficRows(env:Env,session:McpSession,input:any,startDate:string,endDate:string):Promise<McpRow[]>{
-  const contexts=await discoverVideoContexts(env,input,startDate,endDate,session),rows:McpRow[]=[];
-  for(let offset=0;offset<contexts.length;offset+=4){
-    const values=await Promise.all(contexts.slice(offset,offset+4).map((context)=>pagedReport(env,session,{
-      advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['stat_time_day'],metrics:['product_impressions','product_clicks'],
-      start_date:startDate,end_date:endDate,filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId]}
-    }).catch(()=>[])));
-    rows.push(...values.flat());
-  }
-  // Use exactly the same creative-level shape as the COST attribution table.
-  // Asking missing dates one at a time also repairs accounts that return only a
-  // partial stat_time_day series even though the period totals are complete.
+async function dailyCreativeTrafficRows(env:Env,session:McpSession,input:any,startDate:string,endDate:string):Promise<McpRow[]>{
+  const rows:McpRow[]=[];
+  // TikTok can return a partial series when stat_time_day is combined with
+  // GMV Max metrics. Query the same creative grain used by COST attribution,
+  // once per date, without multiplying requests by product contexts.
   for(let date=startDate;date<=endDate;date=shiftDate(date,1)){
-    const dateHasData=rows.some((row)=>pointKey(row,'stat_time_day')===date&&
-      (numberValue(row.metrics?.product_impressions)||numberValue(row.metrics?.product_clicks)));
-    if(dateHasData)continue;
-    for(let offset=0;offset<contexts.length;offset+=4){
-      const values=await Promise.all(contexts.slice(offset,offset+4).map((context)=>pagedReport(env,session,{
-        advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_id'],metrics:['product_impressions','product_clicks'],
-        start_date:date,end_date:date,filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId],creative_types:['ADS_AND_ORGANIC']}
-      }).catch(()=>[])));
-      for(const row of values.flat())rows.push({...row,dimensions:{...(row.dimensions||{}),stat_time_day:date}});
-    }
+    const values=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_id'],
+      metrics:['product_impressions','product_clicks'],start_date:date,end_date:date,filtering:{creative_types:['ADS_AND_ORGANIC']}}).catch(()=>[]);
+    for(const row of values)rows.push({...row,dimensions:{...(row.dimensions||{}),stat_time_day:date}});
   }
   return rows;
 }
@@ -143,7 +128,7 @@ export async function loadAdsTrafficTimeline(env:Env,input:any):Promise<any>{
   const cacheKey=stableKey('ads-traffic-v4',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate,chartStartDate});
   if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
   const session=await createSession(env),dimension='stat_time_day';
-  let gmvRows=await creativeTrafficRows(env,session,input,chartStartDate,input.endDate).catch(()=>[]),source='gmv_max_creatives';
+  let gmvRows=await dailyCreativeTrafficRows(env,session,input,chartStartDate,input.endDate).catch(()=>[]),source='gmv_max_creatives_daily';
   if(!gmvRows.some((row)=>numberValue(row.metrics?.product_impressions)||numberValue(row.metrics?.product_clicks))){
     try{gmvRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:[dimension],
       metrics:['product_impressions','product_clicks'],start_date:chartStartDate,end_date:input.endDate});source='gmv_max';}catch{/* Use the integrated ads report below. */}
