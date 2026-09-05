@@ -114,20 +114,16 @@ export function adsTrafficChartStartDate(startDate:string,endDate:string,minimum
 async function dailyCreativeTrafficRows(env:Env,session:McpSession,input:any,startDate:string,endDate:string):Promise<McpRow[]>{
   const contexts=await discoverVideoContexts(env,input,startDate,endDate,session);
   const rows:McpRow[]=[];
-  const campaignIds=[...new Set(contexts.map((context)=>context.campaignId).filter(Boolean))];
-  const itemGroupIds=[...new Set(contexts.map((context)=>context.itemGroupId).filter(Boolean))];
-  if(!campaignIds.length||!itemGroupIds.length)return rows;
+  if(!contexts.length)return rows;
   // TikTok can return a partial series when stat_time_day is combined with
   // GMV Max metrics. Query the same creative grain used by COST attribution,
-  // once per date, batching all eligible contexts instead of multiplying
-  // subrequests by product context.
+  // once per date using the exact campaign/product pairs required by the API.
+  // This account has six contexts, so seven days stays safely below the Worker
+  // subrequest limit while retaining real per-day numbers.
   for(let date=startDate;date<=endDate;date=shiftDate(date,1)){
-    for(let offset=0;offset<campaignIds.length;offset+=20){
-      const batchCampaignIds=campaignIds.slice(offset,offset+20);
-      const batchItems=[...new Set(contexts.filter((context)=>batchCampaignIds.includes(context.campaignId)).map((context)=>context.itemGroupId))];
-      const values=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_id'],
-        metrics:['product_impressions','product_clicks'],start_date:date,end_date:date,
-        filtering:{campaign_ids:batchCampaignIds,item_group_ids:batchItems,creative_types:['ADS_AND_ORGANIC']}}).catch(()=>[]);
+    for(const context of contexts){const values=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_id'],
+      metrics:['product_impressions','product_clicks'],start_date:date,end_date:date,
+      filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId],creative_types:['ADS_AND_ORGANIC']}}).catch(()=>[]);
       for(const row of values)rows.push({...row,dimensions:{...(row.dimensions||{}),stat_time_day:date}});
     }
   }
