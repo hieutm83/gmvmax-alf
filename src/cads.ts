@@ -136,13 +136,14 @@ async function dailyCreativeTrafficRows(env:Env,session:McpSession,input:any,sta
 
 export async function loadAdsTrafficTimeline(env:Env,input:any):Promise<any>{
   const chartStartDate=adsTrafficChartStartDate(input.startDate,input.endDate);
-  const cacheKey=stableKey('ads-traffic-v4',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate,chartStartDate});
+  const cacheKey=stableKey('ads-traffic-v5',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate,chartStartDate});
   if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
   const session=await createSession(env),dimension='stat_time_day';
-  let gmvRows=await dailyCreativeTrafficRows(env,session,input,chartStartDate,input.endDate).catch(()=>[]),source='gmv_max_creatives_daily';
+  let gmvRows:McpRow[]=[],source='gmv_max';
+  try{gmvRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:[dimension],
+    metrics:['product_impressions','product_clicks'],start_date:chartStartDate,end_date:input.endDate});}catch{/* Use creative-level fallback below. */}
   if(!gmvRows.some((row)=>numberValue(row.metrics?.product_impressions)||numberValue(row.metrics?.product_clicks))){
-    try{gmvRows=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:[dimension],
-      metrics:['product_impressions','product_clicks'],start_date:chartStartDate,end_date:input.endDate});source='gmv_max';}catch{/* Use the integrated ads report below. */}
+    gmvRows=await dailyCreativeTrafficRows(env,session,input,chartStartDate,input.endDate).catch(()=>[]);source='gmv_max_creatives_daily';
   }
   const points=seriesPoints(chartStartDate,input.endDate,dimension),byPoint=new Map(points.map((point)=>[point.key,point.metrics]));
   if(gmvRows.some((row)=>numberValue(row.metrics?.product_impressions)||numberValue(row.metrics?.product_clicks))){for(const row of gmvRows){const point=byPoint.get(pointKey(row,dimension));if(!point)continue;point.impressions+=numberValue(row.metrics?.product_impressions);point.clicks+=numberValue(row.metrics?.product_clicks);}}
