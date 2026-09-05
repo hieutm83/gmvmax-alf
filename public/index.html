@@ -69,6 +69,8 @@
       .hourly-chart-panel { min-height: 390px; }
       .hourly-chart-panel h2 { text-align: left; }
       .hourly-chart-canvas { position: relative; width: 100%; height: 330px; }
+      .ads-performance-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+      .ads-performance-grid .hourly-chart-panel { min-width:0; }
       .cost-analysis-panel { margin-top: 20px; }
       table { width: 100%; color: var(--text-secondary); border-collapse: separate; border-spacing: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
       th, td { padding: 11px 14px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
@@ -526,7 +528,7 @@
       .admin-body .seller-required { min-height: 0; margin: 0; padding: 16px; }
       body.modal-open { overflow: hidden; }
       @media (max-width: 1180px) { .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar .account-field { grid-column: 1 / -1; } .updated-at { width: 100%; } }
-      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .gmv-analysis-grid, .cost-analysis-panel .gmv-analysis-grid,.cads-overview,.cads-performance { grid-template-columns: 1fr; } }
+      @media (max-width: 960px) { .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .video-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); } .analytics-grid, .ads-performance-grid, .gmv-analysis-grid, .cost-analysis-panel .gmv-analysis-grid,.cads-overview,.cads-performance { grid-template-columns: 1fr; } }
       @media (max-width: 1250px) { .finance-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } .finance-dual { grid-template-columns:1fr; } }
       @media (max-width: 900px) { .finance-charts { grid-template-columns:1fr; } }
       @media (max-width: 720px) { main { padding: 16px; } body > header { padding: 14px 16px; } .toolbar { grid-template-columns: 1fr; padding: 14px; } .toolbar .account-field { grid-column: auto; } .toolbar .account-field, .toolbar .shop-field, .toolbar .date-field { width: 100%; min-width: 0; } .summary,.finance-summary { grid-template-columns: 1fr 1fr; gap: 8px; } .metric { min-height: 100px; padding: 16px; } .metric strong { font-size: 22px; } .report-tabs { overflow-x: auto; } .report-tab { white-space: nowrap; } .analytics-panel { min-height: 300px; padding: 14px; } .analytics-canvas { height: 245px; } .video-search { align-items: stretch; flex-direction: column; } .video-chart-wrap { height: 340px; } .video-chart-canvas { height: 280px; } .modal-backdrop { padding: 0; } .modal, .video-stats-modal,.finance-statement-modal { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; } .finance-settlement-grid,.finance-card-kpis,.finance-modal-grid { grid-template-columns:1fr 1fr; } .admin-body .revenue-auth { align-items:flex-start; flex-direction:column; } .oauth-card-actions { width:100%; justify-content:flex-start; } }
@@ -742,10 +744,16 @@
       </section>
       <section id="report" class="hidden">
         <div id="summary" class="summary"></div>
-        <section class="analytics-panel hourly-chart-panel">
-          <h2 id="adsTimeSeriesTitle">Dữ liệu theo giờ</h2>
-          <div class="hourly-chart-canvas"><canvas id="hourlyPerformanceChart"></canvas></div>
-        </section>
+        <div class="ads-performance-grid">
+          <section class="analytics-panel hourly-chart-panel">
+            <h2 id="adsSalesTimeSeriesTitle">Chi phí, doanh số &amp; đơn hàng theo giờ</h2>
+            <div class="hourly-chart-canvas"><canvas id="adsSalesChart"></canvas></div>
+          </section>
+          <section class="analytics-panel hourly-chart-panel">
+            <h2 id="adsEngagementTimeSeriesTitle">Hiển thị, Click &amp; CR theo giờ</h2>
+            <div class="hourly-chart-canvas"><canvas id="adsEngagementChart"></canvas></div>
+          </section>
+        </div>
         <section class="gmv-analysis-panel cost-analysis-panel">
           <header class="gmv-analysis-head"><h2>Phân tích COST</h2></header>
           <div id="costAttributionEmpty" class="analytics-unavailable"><div><strong>Đang tải dữ liệu nguồn COST</strong><span>Dữ liệu được tổng hợp từ các creative trong khoảng ngày đã chọn.</span></div></div>
@@ -772,21 +780,23 @@
           </table>
           <div id="empty" class="empty hidden">Không có dữ liệu trong khoảng ngày này.</div>
         </div>
-        <div class="section-title-row"><h2 class="section-title">Video nên boost thêm ngân sách</h2><button id="boostVideoMore" class="recommendation-more hidden" type="button">Thêm</button></div>
-        <div class="table-wrap">
-          <table class="recommendation-table">
-            <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
-            <tbody id="boostVideoRows"></tbody>
-          </table>
-          <div id="boostVideoEmpty" class="empty">Đang đánh giá video...</div>
-        </div>
-        <div class="section-title-row"><h2 class="section-title">Video nên tắt</h2><button id="stopVideoMore" class="recommendation-more hidden" type="button">Thêm</button></div>
-        <div class="table-wrap">
-          <table class="recommendation-table">
-            <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
-            <tbody id="stopVideoRows"></tbody>
-          </table>
-          <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
+        <div id="adsVideoRecommendations">
+          <div class="section-title-row"><h2 class="section-title">Video nên boost thêm ngân sách</h2><button id="boostVideoMore" class="recommendation-more hidden" type="button">Thêm</button></div>
+          <div class="table-wrap">
+            <table class="recommendation-table">
+              <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
+              <tbody id="boostVideoRows"></tbody>
+            </table>
+            <div id="boostVideoEmpty" class="empty">Đang đánh giá video...</div>
+          </div>
+          <div class="section-title-row"><h2 class="section-title">Video nên tắt</h2><button id="stopVideoMore" class="recommendation-more hidden" type="button">Thêm</button></div>
+          <div class="table-wrap">
+            <table class="recommendation-table">
+              <thead><tr><th>ID video</th><th>Campaign</th><th>Cost</th><th>SKU orders</th><th>Cost / order</th><th>Gross revenue</th><th>Click</th><th>ROI</th><th>Lý do</th></tr></thead>
+              <tbody id="stopVideoRows"></tbody>
+            </table>
+            <div id="stopVideoEmpty" class="empty">Đang đánh giá video...</div>
+          </div>
         </div>
       </section>
       <section id="cadsReport" class="hidden">
@@ -1051,7 +1061,8 @@
       var revenueCustomersChart = null;
       var revenueProvinceChart = null;
       var revenueAttributionChart = null;
-      var hourlyPerformanceChart = null;
+      var adsSalesChart = null;
+      var adsEngagementChart = null;
       var costAttributionChart = null;
       var cancelReasonsChart = null;
       var returnReasonsChart = null;
@@ -1165,6 +1176,7 @@
         ['startDate','endDate'].forEach(function(id){var field=document.getElementById(id);field.readOnly=contentLocked;field.classList.toggle('role-date-locked',contentLocked);field.setAttribute('aria-readonly',String(contentLocked));});
         document.getElementById('sessionRole').textContent = dashboardRole === 'admin' ? 'Admin' : dashboardRole === 'ceo' ? 'CEO' : dashboardRole === 'ads' ? 'ADS' : 'Content';
         form.classList.toggle('ads-role', dashboardRole === 'ads');
+        document.getElementById('adsVideoRecommendations').classList.toggle('hidden', dashboardRole === 'ads');
         document.getElementById('sellerConnectButton').classList.toggle('hidden', dashboardRole !== 'admin');
       }
 
@@ -2868,10 +2880,12 @@
           summary.appendChild(box);
         });
         var reportUsesDailySeries = data.startDate !== data.endDate;
-        document.getElementById('adsTimeSeriesTitle').textContent = reportUsesDailySeries ? 'Dữ liệu theo ngày' :
-          (data.hourlyMode === 'cumulative' ? 'Dữ liệu lũy kế trong ngày' : 'Dữ liệu theo giờ');
+        var seriesPeriod = reportUsesDailySeries ? 'ngày' :
+          (data.hourlyMode === 'cumulative' ? 'thời điểm trong ngày' : 'giờ');
+        document.getElementById('adsSalesTimeSeriesTitle').textContent = 'Chi phí, doanh số & đơn hàng theo ' + seriesPeriod;
+        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị, Click & CR theo ' + seriesPeriod;
         currentReportHourly = reportUsesDailySeries ? (data.daily || []) : (data.hourly || []);
-        renderHourlyChart(currentReportHourly);
+        renderAdsPerformanceCharts(currentReportHourly);
 
         var rows = document.getElementById('productRows');
         rows.replaceChildren();
@@ -2940,25 +2954,35 @@
         if (activeReportView !== 'ads') setReportView(activeReportView);
       }
 
-      function renderHourlyChart(hours) {
-        if (hourlyPerformanceChart) hourlyPerformanceChart.destroy();
-        hourlyPerformanceChart = new Chart(document.getElementById('hourlyPerformanceChart'), {
-          type: 'bar',
-          data: { labels: hours.map(function (hour) { return hour.label; }), datasets: [
-            { type: 'bar', label: 'Cost', data: hours.map(function (hour) { return hour.metrics.cost || 0; }), yAxisID: 'money', backgroundColor: 'rgba(37, 99, 235, .82)', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4 },
-            { type: 'bar', label: 'Gross revenue', data: hours.map(function (hour) { return hour.metrics.grossRevenue || 0; }), yAxisID: 'money', backgroundColor: 'rgba(15, 118, 110, .78)', borderColor: '#0f766e', borderWidth: 1, borderRadius: 4 },
-            { type: 'line', label: 'ROI', data: hours.map(function (hour) { return hour.metrics.roi || 0; }), yAxisID: 'roi', borderColor: '#7c3aed', backgroundColor: '#7c3aed', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
-          ] },
-          options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 11 } } },
-              tooltip: { callbacks: { label: function (context) { return context.dataset.label + ': ' + (context.dataset.yAxisID === 'roi' ? number(context.raw) : moneyWhole(context.raw)); } } } },
-            scales: {
-              x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 0, autoSkip: true } },
-              money: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'VND' }, ticks: { color: '#64748b', callback: compactNumber } },
-              roi: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'ROI' }, grid: { drawOnChartArea: false }, ticks: { color: '#64748b' } }
-            }
+      function adsTimeSeriesOptions(leftTitle, rightTitle, rightIsPercent) {
+        return { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 10 } } },
+            tooltip: { callbacks: { label: function (context) {
+              if (context.dataset.yAxisID === 'secondary') return context.dataset.label + ': ' + (rightIsPercent ? percent(context.raw) : integer(context.raw));
+              return context.dataset.label + ': ' + (leftTitle === 'VND' ? moneyWhole(context.raw) + ' VND' : integer(context.raw));
+            } } } },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 0, autoSkip: true, font: { family: 'Inter', size: 10 } } },
+            primary: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: leftTitle }, grid: { color: '#e8edf3' }, ticks: { color: '#64748b', callback: compactNumber, font: { family: 'Inter', size: 10 } } },
+            secondary: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: rightTitle }, grid: { drawOnChartArea: false }, ticks: { color: '#64748b', callback: rightIsPercent ? function (value) { return percent(value); } : compactNumber, font: { family: 'Inter', size: 10 } } }
           }
-        });
+        };
+      }
+
+      function renderAdsPerformanceCharts(points) {
+        if (adsSalesChart) adsSalesChart.destroy();
+        if (adsEngagementChart) adsEngagementChart.destroy();
+        var labels = points.map(function (point) { return point.label; });
+        adsSalesChart = new Chart(document.getElementById('adsSalesChart'), { data: { labels: labels, datasets: [
+          { type: 'bar', label: 'Chi phí', data: points.map(function (point) { return point.metrics.cost || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(37,99,235,.82)', borderColor: '#2563eb', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
+          { type: 'bar', label: 'Doanh số', data: points.map(function (point) { return point.metrics.grossRevenue || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(15,159,154,.78)', borderColor: '#0f9f9a', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
+          { type: 'line', label: 'Đơn hàng', data: points.map(function (point) { return point.metrics.orders || 0; }), yAxisID: 'secondary', borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
+        ] }, options: adsTimeSeriesOptions('VND', 'Đơn hàng', false) });
+        adsEngagementChart = new Chart(document.getElementById('adsEngagementChart'), { data: { labels: labels, datasets: [
+          { type: 'bar', label: 'Hiển thị', data: points.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
+          { type: 'bar', label: 'Click', data: points.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
+          { type: 'line', label: 'CR', data: points.map(function (point) { return point.metrics.traffic ? Number(point.metrics.orders || 0) / Number(point.metrics.traffic) : 0; }), yAxisID: 'secondary', borderColor: '#7c3aed', backgroundColor: '#7c3aed', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
+        ] }, options: adsTimeSeriesOptions('Lượt', 'CR', true) });
       }
 
       function openProductVideos(product) {
@@ -3051,6 +3075,7 @@
             availableProducts: currentAvailableProductCount,
             startDate: document.getElementById('startDate').value,
             endDate: document.getElementById('endDate').value,
+            includeTimeline: true,
             forceRefresh: forceRefresh === true
           });
       }
@@ -3066,7 +3091,7 @@
         currentCreativeSummary = data;
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
-        applyHourlyTraffic(data.hourlyTraffic || []);
+        applyPerformanceTimeline(data.performanceTimeline || []);
         videoContextByItemId = {};
         (data.summaries || []).forEach(function (item) {
           var cell = document.getElementById(productTrafficElementId(item));
@@ -3171,19 +3196,23 @@
         requestVideoStats();
       }
 
-      function applyHourlyTraffic(hourlyTraffic) {
-        var currentByHour = {};
-        currentReportHourly.forEach(function (hour) { currentByHour[hour.hour] = hour; });
-        hourlyTraffic.forEach(function (item) {
-          if (!item.available) return;
-          var hour = currentByHour[item.hour];
-          if (hour) {
-            hour.metrics.traffic = Number(item.traffic) || 0;
-            hour.metrics.trafficAvailable = true;
-          }
-          var cell = document.getElementById('hour-traffic-' + item.hour);
-          if (cell) cell.textContent = integer(item.traffic);
+      function applyPerformanceTimeline(timeline) {
+        if (!timeline.length || !currentReportHourly.length) return;
+        var daily = Boolean(currentReportHourly[0] && currentReportHourly[0].date);
+        var currentByKey = {};
+        currentReportHourly.forEach(function (point, index) {
+          currentByKey[daily ? point.date : String(index).padStart(2, '0')] = point;
         });
+        timeline.forEach(function (item) {
+          var point = currentByKey[item.key]; if (!point) return;
+          var metrics = item.metrics || {};
+          ['cost','orders','grossRevenue','traffic','impressions'].forEach(function (key) { point.metrics[key] = Number(metrics[key]) || 0; });
+          point.metrics.trafficAvailable = metrics.trafficAvailable === true;
+          point.metrics.impressionsAvailable = metrics.impressionsAvailable === true;
+          point.metrics.costPerOrder = point.metrics.orders ? point.metrics.cost / point.metrics.orders : null;
+          point.metrics.roi = point.metrics.cost ? point.metrics.grossRevenue / point.metrics.cost : null;
+        });
+        renderAdsPerformanceCharts(currentReportHourly);
       }
 
       function creativeSummaryMemoryKey(products) {
