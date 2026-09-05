@@ -2,7 +2,6 @@ import type { Env } from './types';
 import type { McpRow } from './types';
 import { createSession, pagedReport } from './mcp';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
-import { loadAdsTrafficTimeline } from './cads';
 
 type Action = { action_type?: string; value?: string | number };
 type FacebookMetrics = {
@@ -123,17 +122,13 @@ async function loadTikTokOverview(env:Env,input:any,previousDates:{startDate:str
 }
 
 export async function loadAdsOverview(env:Env,input:any):Promise<any>{
-  const key=stableKey('ads-overview-v9',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
+  const key=stableKey('ads-overview-v10',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
   const previousDates=comparisonDates(input.startDate,input.endDate),chartStartDate=minimumChartStartDate(input.startDate,input.endDate);
-  const [facebook,tiktok,tiktokTraffic]=await Promise.all([loadFacebookAdsReport(env,input),loadTikTokOverview(env,input,previousDates,chartStartDate),
-    loadAdsTrafficTimeline(env,{...input,startDate:chartStartDate})]);
-  const currentTraffic=(tiktokTraffic.points||[]).filter((point:any)=>point.key>=input.startDate&&point.key<=input.endDate)
-    .reduce((sum:any,point:any)=>({clicks:sum.clicks+numberValue(point.metrics?.clicks),impressions:sum.impressions+numberValue(point.metrics?.impressions)}),{clicks:0,impressions:0});
-  const facebookPlatform=platformMetrics(facebook.totals),tiktokPlatform=platformMetrics({...tiktok.current,...currentTraffic});
+  const [facebook,tiktok]=await Promise.all([loadFacebookAdsReport(env,input),loadTikTokOverview(env,input,previousDates,chartStartDate)]);
+  const facebookPlatform=platformMetrics(facebook.totals),tiktokPlatform=tiktok.current;
   const previousFacebook=platformMetrics(facebook.previousTotals),previousTiktok=tiktok.previous;
   const daily=tiktok.daily.map((day:any)=>({date:day.date,endDate:day.endDate,label:day.label,facebook:{cost:0,clicks:0,orders:0},
     tiktok:{cost:numberValue(day.metrics?.cost),clicks:0,orders:numberValue(day.metrics?.orders)}}));
-  for(const point of tiktokTraffic.points||[]){const target=daily.find((day:any)=>point.key>=day.date&&point.key<=day.endDate);if(target)target.tiktok.clicks+=numberValue(point.metrics?.clicks);}
   for(const day of facebook.daily){const target=daily.find((point:any)=>day.date>=point.date&&day.date<=point.endDate);if(target){target.facebook.cost+=day.metrics.spend;target.facebook.clicks+=day.metrics.clicks;target.facebook.orders+=day.metrics.orders;}}
   const result={startDate:input.startDate,endDate:input.endDate,chartStartDate,generatedAt:new Date().toISOString(),totals:totalPlatforms(facebookPlatform,tiktokPlatform),
     previousTotals:totalPlatforms(previousFacebook,previousTiktok),platforms:{facebook:facebookPlatform,tiktok:tiktokPlatform},daily,

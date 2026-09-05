@@ -1085,6 +1085,7 @@
       var facebookSpendChart = null;
       var currentAdsOverviewData = null;
       var overviewSourceRequestId = 0;
+      var overviewTrafficRequestId = 0;
       var adsTrafficRequestId = 0;
       var currentCAdsVideos = [];
       var cadsVideoExpanded = false;
@@ -1554,14 +1555,6 @@
       function applyOverviewCreativeSummary(summary) {
         if(!currentAdsOverviewData)return;
         renderOverviewTikTokSource(summary.costAttribution||{});
-        var platforms=currentAdsOverviewData.platforms||{},tiktok=platforms.tiktok||{},facebook=platforms.facebook||{},totals=currentAdsOverviewData.totals||{};
-        tiktok.impressions=Number(summary.impressions)||0;tiktok.clicks=Number(summary.traffic)||0;
-        tiktok.ctr=tiktok.impressions?tiktok.clicks/tiktok.impressions:0;tiktok.cr=tiktok.clicks?tiktok.orders/tiktok.clicks:0;
-        tiktok.cpc=tiktok.clicks?tiktok.cost/tiktok.clicks:0;tiktok.cpm=tiktok.impressions?tiktok.cost*1000/tiktok.impressions:0;
-        totals.impressions=(Number(facebook.impressions)||0)+tiktok.impressions;totals.clicks=(Number(facebook.clicks)||0)+tiktok.clicks;
-        totals.ctr=totals.impressions?totals.clicks/totals.impressions:0;totals.cr=totals.clicks?totals.orders/totals.clicks:0;
-        totals.cpc=totals.clicks?totals.cost/totals.clicks:0;totals.cpm=totals.impressions?totals.cost*1000/totals.impressions:0;
-        renderPlatformComparison(platforms,totals);
       }
 
       function requestOverviewTikTokSources(force) {
@@ -1580,6 +1573,27 @@
         }).loadReport(Object.assign({},scope,{forceRefresh:force===true}));
       }
 
+      function requestOverviewTikTokTraffic(force) {
+        var requestId=++overviewTrafficRequestId,scope=reportScope(),scopeKey=JSON.stringify(scope);
+        google.script.run.withSuccessHandler(function (timeline) {
+          if(requestId!==overviewTrafficRequestId||scopeKey!==JSON.stringify(reportScope())||!currentAdsOverviewData)return;
+          var daily=currentAdsOverviewData.daily||[],platforms=currentAdsOverviewData.platforms||{},tiktok=platforms.tiktok||{},facebook=platforms.facebook||{},totals=currentAdsOverviewData.totals||{};
+          var scopeStart=scope.startDate,scopeEnd=scope.endDate,totalImpressions=0,totalClicks=0;
+          (timeline.points||[]).forEach(function (point) {
+            var metrics=point.metrics||{},impressions=Number(metrics.impressions)||0,clicks=Number(metrics.clicks!=null?metrics.clicks:metrics.traffic)||0;
+            var target=daily.find(function (day) { return point.key>=day.date&&point.key<=day.endDate; });
+            if(target){target.tiktok.impressions=impressions;target.tiktok.clicks=clicks;}
+            if(point.key>=scopeStart&&point.key<=scopeEnd){totalImpressions+=impressions;totalClicks+=clicks;}
+          });
+          tiktok.impressions=totalImpressions;tiktok.clicks=totalClicks;tiktok.ctr=totalImpressions?totalClicks/totalImpressions:0;tiktok.cr=totalClicks?(Number(tiktok.orders)||0)/totalClicks:0;tiktok.cpc=totalClicks?(Number(tiktok.cost)||0)/totalClicks:0;tiktok.cpm=totalImpressions?(Number(tiktok.cost)||0)*1000/totalImpressions:0;
+          totals.impressions=(Number(facebook.impressions)||0)+totalImpressions;totals.clicks=(Number(facebook.clicks)||0)+totalClicks;totals.ctr=totals.impressions?totals.clicks/totals.impressions:0;totals.cr=totals.clicks?(Number(totals.orders)||0)/totals.clicks:0;totals.cpc=totals.clicks?(Number(totals.cost)||0)/totals.clicks:0;totals.cpm=totals.impressions?(Number(totals.cost)||0)*1000/totals.impressions:0;
+          renderAdsOverviewCharts(daily);
+          renderPlatformComparison(platforms,totals);
+        }).withFailureHandler(function (error) {
+          if(requestId===overviewTrafficRequestId)console.error('Không tải được Click TikTok theo ngày',error&&error.message||error);
+        }).loadAdsTrafficTimeline(Object.assign({},scope,{forceRefresh:force===true}));
+      }
+
       function renderAdsOverview(data, forceSourceRefresh) {
         setPlatformUpdatedAt(data.generatedAt);
         currentAdsOverviewData=data;
@@ -1596,6 +1610,7 @@
         platformDonut('adsOverviewFacebookResultChart','facebook',results.map(function(item){return item.label;}),results.map(function(item){return item.cost;}),['#2563eb','#f59e0b','#10b981','#8b5cf6','#ec4899'],'Facebook Cost');
         renderPlatformComparison(data.platforms||{},totals);
         requestOverviewTikTokSources(forceSourceRefresh===true);
+        requestOverviewTikTokTraffic(forceSourceRefresh===true);
       }
 
       function renderAdsOverviewCharts(daily) {
@@ -2998,8 +3013,12 @@
         google.script.run.withSuccessHandler(function (data) {
           if (requestId !== adsTrafficRequestId || scopeKey !== JSON.stringify(reportScope())) return;
           applyAdsTrafficTimeline(data.points || [], data.source, data.granularity);
+          var impressions=0,clicks=0;
+          (data.points||[]).forEach(function(point){if(point.key>=scope.startDate&&point.key<=scope.endDate){impressions+=Number(point.metrics&&point.metrics.impressions)||0;clicks+=Number(point.metrics&&(point.metrics.clicks!=null?point.metrics.clicks:point.metrics.traffic))||0;}});
+          document.getElementById('metric-impressions').textContent=integer(impressions);
+          document.getElementById('metric-traffic').textContent=integer(clicks);
         }).withFailureHandler(function (error) {
-          if (requestId === adsTrafficRequestId) console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));
+          if (requestId === adsTrafficRequestId) {document.getElementById('metric-impressions').textContent='—';document.getElementById('metric-traffic').textContent='—';console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));}
         }).loadAdsTrafficTimeline(Object.assign({}, scope, { forceRefresh: forceRefresh === true }));
       }
 
@@ -3076,8 +3095,6 @@
           .withFailureHandler(function (error) {
             if (generation !== prefetchGeneration) return;
             document.getElementById('metric-totalCreatives').textContent = '-';
-            document.getElementById('metric-impressions').textContent = '-';
-            document.getElementById('metric-traffic').textContent = '-';
             currentReportProducts.forEach(function (product) {
               var cell = document.getElementById(productTrafficElementId(product));
               if (cell) cell.textContent = '-';
@@ -3099,21 +3116,11 @@
 
       function renderCreativeSummaries(data) {
         var creativeElement = document.getElementById('metric-totalCreatives');
-        var impressionsElement = document.getElementById('metric-impressions');
-        var trafficElement = document.getElementById('metric-traffic');
-        if (!creativeElement || !impressionsElement || !trafficElement) return;
+        if (!creativeElement) return;
         creativeElement.textContent = integer(data.totalCreatives);
-        impressionsElement.textContent = integer(data.impressions);
-        trafficElement.textContent = integer(data.traffic);
         currentCreativeSummary = data;
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
-        if (!adsTrafficTimelineAvailable && (Number(data.impressions) || Number(data.traffic))) {
-          currentAdsEngagementPoints = [{ label: 'Tổng kỳ', metrics: { impressions: Number(data.impressions) || 0,
-            traffic: Number(data.traffic) || 0, orders: Number(currentReportTotals && currentReportTotals.orders) || 0 } }];
-          document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click trong kỳ';
-          renderAdsPerformanceCharts(currentReportHourly);
-        }
         videoContextByItemId = {};
         (data.summaries || []).forEach(function (item) {
           var cell = document.getElementById(productTrafficElementId(item));

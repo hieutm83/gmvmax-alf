@@ -32,6 +32,8 @@ export interface Env {
   ZALO_ORDER_GROUP_CHAT_NAME?: string;
   TIKTOK_SHOP_APP_KEY?: string;
   TIKTOK_SHOP_APP_SECRET?: string;
+  // TikTok for Business Marketing API token, kept separate from the MCP OAuth token.
+  TIKTOK_ADS_ACCESS_TOKEN?: string;
   TIKTOK_SHOP_SERVICE_ID?: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
