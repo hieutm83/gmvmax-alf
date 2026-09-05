@@ -120,10 +120,13 @@ async function creativeTrafficRows(env:Env,session:McpSession,input:any,startDat
     }).catch(()=>[])));
     rows.push(...values.flat());
   }
-  if(rows.some((row)=>numberValue(row.metrics?.product_impressions)||numberValue(row.metrics?.product_clicks)))return rows;
   // Use exactly the same creative-level shape as the COST attribution table.
-  // Asking one date at a time avoids accounts that reject/empty stat_time_day.
+  // Asking missing dates one at a time also repairs accounts that return only a
+  // partial stat_time_day series even though the period totals are complete.
   for(let date=startDate;date<=endDate;date=shiftDate(date,1)){
+    const dateHasData=rows.some((row)=>pointKey(row,'stat_time_day')===date&&
+      (numberValue(row.metrics?.product_impressions)||numberValue(row.metrics?.product_clicks)));
+    if(dateHasData)continue;
     for(let offset=0;offset<contexts.length;offset+=4){
       const values=await Promise.all(contexts.slice(offset,offset+4).map((context)=>pagedReport(env,session,{
         advertiser_id:input.advertiserId,store_ids:[input.storeId],dimensions:['item_id'],metrics:['product_impressions','product_clicks'],
@@ -137,7 +140,7 @@ async function creativeTrafficRows(env:Env,session:McpSession,input:any,startDat
 
 export async function loadAdsTrafficTimeline(env:Env,input:any):Promise<any>{
   const chartStartDate=adsTrafficChartStartDate(input.startDate,input.endDate);
-  const cacheKey=stableKey('ads-traffic-v3',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate,chartStartDate});
+  const cacheKey=stableKey('ads-traffic-v4',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate,chartStartDate});
   if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
   const session=await createSession(env),dimension='stat_time_day';
   let gmvRows=await creativeTrafficRows(env,session,input,chartStartDate,input.endDate).catch(()=>[]),source='gmv_max_creatives';

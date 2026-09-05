@@ -123,7 +123,7 @@ async function loadTikTokOverview(env:Env,input:any,previousDates:{startDate:str
 }
 
 export async function loadAdsOverview(env:Env,input:any):Promise<any>{
-  const key=stableKey('ads-overview-v8',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
+  const key=stableKey('ads-overview-v9',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});if(!input.forceRefresh){const cached=await cacheGet<any>(env,key);if(cached)return cached;}
   const previousDates=comparisonDates(input.startDate,input.endDate),chartStartDate=minimumChartStartDate(input.startDate,input.endDate);
   const [facebook,tiktok,tiktokTraffic]=await Promise.all([loadFacebookAdsReport(env,input),loadTikTokOverview(env,input,previousDates,chartStartDate),
     loadAdsTrafficTimeline(env,{...input,startDate:chartStartDate})]);
