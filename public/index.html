@@ -644,6 +644,8 @@
       .platform-summary { margin-bottom:18px; }
       .platform-summary .metric { min-height:108px; padding:17px 18px; }
       .platform-summary .metric strong { font-size:27px; }
+      #summary .metric { min-height:108px; padding:17px 18px; }
+      #summary .metric strong { font-size:27px; }
       .platform-chart-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-bottom:16px; }
       .platform-card, .platform-table-card {
         min-width:0; padding:20px 22px; background:#fff; border:1px solid #e5eaf1;
@@ -1537,6 +1539,7 @@
         if (chartId === 'facebook' && adsOverviewFacebookResultChart) adsOverviewFacebookResultChart.destroy();
         var total = values.reduce(function (sum, value) { return sum + Number(value || 0); }, 0);
         var centerPlugin = { id:'platformDonutCenter' + chartId, afterDraw:function (chart) {
+          if(chart.tooltip&&chart.tooltip.getActiveElements&&chart.tooltip.getActiveElements().length)return;
           var area=chart.chartArea;if(!area)return;var x=(area.left+area.right)/2,y=(area.top+area.bottom)/2,context=chart.ctx;
           context.save();context.textAlign='center';context.textBaseline='middle';context.fillStyle='#64748b';context.font='700 11px Inter';context.fillText(centerLabel,x,y-11);
           context.fillStyle='#172033';context.font='800 18px Inter';context.fillText(compactMoney(total),x,y+12);context.restore();
@@ -1622,8 +1625,8 @@
         ]},options:platformChartOptions(true,false)});
         var options=platformChartOptions(true,true);options.scales.y.ticks.callback=chartNumberTick;
         adsOverviewPerformanceChart=new Chart(document.getElementById('adsOverviewPerformanceChart'),{data:{labels:labels,datasets:[
-          {type:'bar',label:'Facebook Click',data:daily.map(function(day){return day.facebook.clicks;}),backgroundColor:'rgba(37,99,235,.68)',borderRadius:3,stack:'clicks',yAxisID:'y'},
-          {type:'bar',label:'TikTok Click',data:daily.map(function(day){return day.tiktok.clicks;}),backgroundColor:'rgba(245,158,11,.72)',borderRadius:3,stack:'clicks',yAxisID:'y'},
+          {type:'bar',label:'Facebook Click',data:daily.map(function(day){return day.facebook.clicks;}),backgroundColor:'rgba(37,99,235,.68)',borderRadius:3,stack:'clicks',yAxisID:'y',maxBarThickness:30,categoryPercentage:.62,barPercentage:.68},
+          {type:'bar',label:'TikTok Click',data:daily.map(function(day){return day.tiktok.clicks;}),backgroundColor:'rgba(245,158,11,.72)',borderRadius:3,stack:'clicks',yAxisID:'y',maxBarThickness:30,categoryPercentage:.62,barPercentage:.68},
           {type:'line',label:'Facebook Orders',data:daily.map(function(day){return day.facebook.orders;}),borderColor:'#10b981',backgroundColor:'#10b981',pointRadius:3,borderWidth:2,tension:.28,yAxisID:'y1'},
           {type:'line',label:'TikTok Orders',data:daily.map(function(day){return day.tiktok.orders;}),borderColor:'#ef4444',backgroundColor:'#ef4444',pointRadius:3,borderWidth:2,tension:.28,yAxisID:'y1'}
         ]},options:options});
@@ -2903,7 +2906,9 @@
         document.getElementById('adsSalesTimeSeriesTitle').textContent = 'Chi phí, doanh số & đơn hàng theo ' + seriesPeriod;
         document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ngày';
         currentReportHourly = reportUsesDailySeries ? (data.daily || []) : (data.hourly || []);
-        currentAdsEngagementPoints = [];
+        // The direct Ads API is the sole source for these traffic metrics.
+        // Never show a temporary MCP/report series while that request is pending.
+        currentAdsEngagementPoints = currentReportHourly.map(function(point){return {date:point.date||'',label:point.label,metrics:{impressions:0,traffic:0}};});
         adsTrafficTimelineAvailable = false;
         renderAdsPerformanceCharts(currentReportHourly);
         requestAdsTrafficTimeline(forceCreativeRefresh === true);
@@ -3002,9 +3007,9 @@
           { type: 'line', label: 'Đơn hàng', data: points.map(function (point) { return point.metrics.orders || 0; }), yAxisID: 'secondary', borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
         ] }, options: adsTimeSeriesOptions('VND', 'Đơn hàng', false) });
         adsEngagementChart = new Chart(document.getElementById('adsEngagementChart'), { data: { labels: engagementPoints.map(function (point) { return point.label; }), datasets: [
-          { type: 'bar', label: 'Hiển thị', data: engagementPoints.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 34, categoryPercentage: .72, barPercentage: .94 },
-          { type: 'bar', label: 'Click', data: engagementPoints.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 34, categoryPercentage: .72, barPercentage: .94 }
-        ] }, options: adsTimeSeriesOptions('Lượt', '', false, false) });
+          { type: 'bar', label: 'Hiển thị', data: engagementPoints.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 30, categoryPercentage: .72, barPercentage: .84 },
+          { type: 'bar', label: 'Click', data: engagementPoints.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'secondary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 30, categoryPercentage: .72, barPercentage: .84 }
+        ] }, options: adsTimeSeriesOptions('Hiển thị', 'Click', false, true) });
       }
 
       function requestAdsTrafficTimeline(forceRefresh) {
@@ -3017,6 +3022,7 @@
           (data.points||[]).forEach(function(point){if(point.key>=scope.startDate&&point.key<=scope.endDate){impressions+=Number(point.metrics&&point.metrics.impressions)||0;clicks+=Number(point.metrics&&(point.metrics.clicks!=null?point.metrics.clicks:point.metrics.traffic))||0;}});
           document.getElementById('metric-impressions').textContent=integer(impressions);
           document.getElementById('metric-traffic').textContent=integer(clicks);
+          ['impressions','traffic'].forEach(function(key){var change=document.getElementById('metric-change-'+key);if(change){change.className='metric-change neutral';change.textContent='TikTok Ads API';}});
         }).withFailureHandler(function (error) {
           if (requestId === adsTrafficRequestId) {document.getElementById('metric-impressions').textContent='—';document.getElementById('metric-traffic').textContent='—';console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));}
         }).loadAdsTrafficTimeline(Object.assign({}, scope, { forceRefresh: forceRefresh === true }));

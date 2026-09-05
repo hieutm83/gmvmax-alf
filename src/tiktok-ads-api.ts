@@ -20,19 +20,24 @@ function rowDate(row: any): string { return String(row?.dimensions?.stat_time_da
 /** Direct TikTok Ads API traffic: no MCP calls for display/click KPIs or charts. */
 export async function loadTikTokAdsTraffic(env: Env, input: any): Promise<any> {
   const chartStartDate = adsTrafficChartStartDate(input.startDate, input.endDate);
-  const cacheKey = stableKey('tiktok-ads-api-traffic-v1', { advertiserId: input.advertiserId, startDate: input.startDate, endDate: input.endDate, chartStartDate });
+  const cacheKey = stableKey('tiktok-ads-api-traffic-v2', { advertiserId: input.advertiserId, startDate: input.startDate, endDate: input.endDate, chartStartDate });
   if (!input.forceRefresh) { const cached = await cacheGet<any>(env, cacheKey); if (cached) return cached; }
   const url = new URL('https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/');
-  const params: Record<string, string> = { advertiser_id: String(input.advertiserId), report_type: 'BASIC', data_level: 'AUCTION_AD', dimensions: JSON.stringify(['stat_time_day']), metrics: JSON.stringify(['impressions', 'clicks']), start_date: chartStartDate, end_date: input.endDate, page: '1', page_size: '1000', query_mode: 'CHUNK' };
-  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  const params: Record<string, string> = { advertiser_id: String(input.advertiserId), report_type: 'BASIC', data_level: 'AUCTION_AD', dimensions: JSON.stringify(['ad_id', 'stat_time_day']), metrics: JSON.stringify(['impressions', 'clicks']), start_date: chartStartDate, end_date: input.endDate, page_size: '1000', filtering: JSON.stringify([{ field_name: 'ad_status', filter_type: 'IN', filter_value: '["STATUS_ALL"]' }]) };
   // The token issued for open_mcp is not an Ads API credential. Keeping these
   // credentials separate prevents a hidden MCP fallback and avoids overload.
   if (!env.TIKTOK_ADS_ACCESS_TOKEN) throw new Error('Chưa cấu hình TikTok Ads API. Hãy đặt Cloudflare secret TIKTOK_ADS_ACCESS_TOKEN.');
-  const response = await fetch(url.toString(), { headers: { 'Access-Token': env.TIKTOK_ADS_ACCESS_TOKEN, 'Content-Type': 'application/json' } });
-  const raw = await response.text(); let body: any = {}; try { body = JSON.parse(raw); } catch { /* error below includes status */ }
-  if (!response.ok || Number(body?.code) !== 0) throw new Error(`TikTok Ads API: ${body?.message || body?.msg || `HTTP ${response.status}`}`);
+  const rows: any[] = [];
+  for (let page = 1, totalPages = 1; page <= totalPages; page += 1) {
+    url.searchParams.set('page', String(page)); Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    const response = await fetch(url.toString(), { headers: { 'Access-Token': env.TIKTOK_ADS_ACCESS_TOKEN, 'Content-Type': 'application/json' } });
+    const raw = await response.text(); let body: any = {}; try { body = JSON.parse(raw); } catch { /* error below includes status */ }
+    if (!response.ok || Number(body?.code) !== 0) throw new Error(`TikTok Ads API: ${body?.message || body?.msg || `HTTP ${response.status}`}`);
+    rows.push(...responseRows(body));
+    totalPages = Math.min(20, Number(body?.data?.page_info?.total_page ?? body?.data?.page_info?.total_pages ?? 1) || 1);
+  }
   const points = dailyPoints(chartStartDate, input.endDate), byDate = new Map(points.map((point) => [point.key, point.metrics]));
-  for (const row of responseRows(body)) { const metrics = byDate.get(rowDate(row)); if (!metrics) continue; const values = row?.metrics || row || {}; metrics.impressions += numberValue(values.impressions); metrics.clicks += numberValue(values.clicks); }
+  for (const row of rows) { const metrics = byDate.get(rowDate(row)); if (!metrics) continue; const values = row?.metrics || row || {}; metrics.impressions += numberValue(values.impressions); metrics.clicks += numberValue(values.clicks); }
   points.forEach((point) => { point.metrics.traffic = point.metrics.clicks; });
   const result = { generatedAt: new Date().toISOString(), source: 'tiktok_ads_api', granularity: 'day', chartStartDate, points };
   await cachePut(env, cacheKey, result, 300); return result;
