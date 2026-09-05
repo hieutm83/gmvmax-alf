@@ -750,7 +750,7 @@
             <div class="hourly-chart-canvas"><canvas id="adsSalesChart"></canvas></div>
           </section>
           <section class="analytics-panel hourly-chart-panel">
-            <h2 id="adsEngagementTimeSeriesTitle">Hiển thị, Click &amp; CR theo giờ</h2>
+            <h2 id="adsEngagementTimeSeriesTitle">Hiển thị &amp; Click theo ngày</h2>
             <div class="hourly-chart-canvas"><canvas id="adsEngagementChart"></canvas></div>
           </section>
         </div>
@@ -2886,7 +2886,7 @@
         var seriesPeriod = reportUsesDailySeries ? 'ngày' :
           (data.hourlyMode === 'cumulative' ? 'thời điểm trong ngày' : 'giờ');
         document.getElementById('adsSalesTimeSeriesTitle').textContent = 'Chi phí, doanh số & đơn hàng theo ' + seriesPeriod;
-        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị, Click & CR theo ' + seriesPeriod;
+        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ngày';
         currentReportHourly = reportUsesDailySeries ? (data.daily || []) : (data.hourly || []);
         currentAdsEngagementPoints = [];
         adsTrafficTimelineAvailable = false;
@@ -2960,18 +2960,19 @@
         if (activeReportView !== 'ads') setReportView(activeReportView);
       }
 
-      function adsTimeSeriesOptions(leftTitle, rightTitle, rightIsPercent) {
+      function adsTimeSeriesOptions(leftTitle, rightTitle, rightIsPercent, showSecondary) {
+        var scales = {
+          x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 0, autoSkip: true, font: { family: 'Inter', size: 10 } } },
+          primary: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: leftTitle }, grid: { color: '#e8edf3' }, ticks: { color: '#64748b', callback: compactNumber, font: { family: 'Inter', size: 10 } } }
+        };
+        if (showSecondary !== false) scales.secondary = { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: rightTitle }, grid: { drawOnChartArea: false }, ticks: { color: '#64748b', callback: rightIsPercent ? function (value) { return percent(value); } : compactNumber, font: { family: 'Inter', size: 10 } } };
         return { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
           plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, color: '#475569', font: { family: 'Inter', size: 10 } } },
             tooltip: { callbacks: { label: function (context) {
               if (context.dataset.yAxisID === 'secondary') return context.dataset.label + ': ' + (rightIsPercent ? percent(context.raw) : integer(context.raw));
               return context.dataset.label + ': ' + (leftTitle === 'VND' ? moneyWhole(context.raw) + ' VND' : integer(context.raw));
             } } } },
-          scales: {
-            x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 0, autoSkip: true, font: { family: 'Inter', size: 10 } } },
-            primary: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: leftTitle }, grid: { color: '#e8edf3' }, ticks: { color: '#64748b', callback: compactNumber, font: { family: 'Inter', size: 10 } } },
-            secondary: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: rightTitle }, grid: { drawOnChartArea: false }, ticks: { color: '#64748b', callback: rightIsPercent ? function (value) { return percent(value); } : compactNumber, font: { family: 'Inter', size: 10 } } }
-          }
+          scales: scales
         };
       }
 
@@ -2986,10 +2987,9 @@
           { type: 'line', label: 'Đơn hàng', data: points.map(function (point) { return point.metrics.orders || 0; }), yAxisID: 'secondary', borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
         ] }, options: adsTimeSeriesOptions('VND', 'Đơn hàng', false) });
         adsEngagementChart = new Chart(document.getElementById('adsEngagementChart'), { data: { labels: engagementPoints.map(function (point) { return point.label; }), datasets: [
-          { type: 'bar', label: 'Hiển thị', data: engagementPoints.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
-          { type: 'bar', label: 'Click', data: engagementPoints.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 34 },
-          { type: 'line', label: 'CR', data: engagementPoints.map(function (point) { var conversions=point.metrics.adConversions;return point.metrics.traffic ? Number(conversions == null ? point.metrics.orders || 0 : conversions) / Number(point.metrics.traffic) : 0; }), yAxisID: 'secondary', borderColor: '#7c3aed', backgroundColor: '#7c3aed', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, tension: .28 }
-        ] }, options: adsTimeSeriesOptions('Lượt', 'CR', true) });
+          { type: 'bar', label: 'Hiển thị', data: engagementPoints.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 34, categoryPercentage: .72, barPercentage: .94 },
+          { type: 'bar', label: 'Click', data: engagementPoints.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 34, categoryPercentage: .72, barPercentage: .94 }
+        ] }, options: adsTimeSeriesOptions('Lượt', '', false, false) });
       }
 
       function requestAdsTrafficTimeline(forceRefresh) {
@@ -2997,9 +2997,9 @@
         var scope = reportScope(); var scopeKey = JSON.stringify(scope);
         google.script.run.withSuccessHandler(function (data) {
           if (requestId !== adsTrafficRequestId || scopeKey !== JSON.stringify(reportScope())) return;
-          applyAdsTrafficTimeline(data.points || [], data.source);
+          applyAdsTrafficTimeline(data.points || [], data.source, data.granularity);
         }).withFailureHandler(function (error) {
-          if (requestId === adsTrafficRequestId) console.error('Không tải được timeline Hiển thị/Click/CR', error && (error.message || error));
+          if (requestId === adsTrafficRequestId) console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));
         }).loadAdsTrafficTimeline(Object.assign({}, scope, { forceRefresh: forceRefresh === true }));
       }
 
@@ -3111,7 +3111,7 @@
         if (!adsTrafficTimelineAvailable && (Number(data.impressions) || Number(data.traffic))) {
           currentAdsEngagementPoints = [{ label: 'Tổng kỳ', metrics: { impressions: Number(data.impressions) || 0,
             traffic: Number(data.traffic) || 0, orders: Number(currentReportTotals && currentReportTotals.orders) || 0 } }];
-          document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị, Click & CR trong kỳ';
+          document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click trong kỳ';
           renderAdsPerformanceCharts(currentReportHourly);
         }
         videoContextByItemId = {};
@@ -3218,26 +3218,16 @@
         requestVideoStats();
       }
 
-      function applyAdsTrafficTimeline(timeline, source) {
+      function applyAdsTrafficTimeline(timeline, source, granularity) {
         if (!timeline.length || !currentReportHourly.length) return;
-        var hasData = timeline.some(function (item) { var metrics=item.metrics||{};return Number(metrics.impressions)||Number(metrics.clicks)||Number(metrics.orders); });
-        if (!hasData) return;
         adsTrafficTimelineAvailable = true;
-        currentAdsEngagementPoints = currentReportHourly;
-        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị, Click & CR theo ' +
-          (currentReportHourly[0] && currentReportHourly[0].date ? 'ngày' : 'giờ');
-        var daily = Boolean(currentReportHourly[0] && currentReportHourly[0].date);
-        var currentByKey = {};
-        currentReportHourly.forEach(function (point, index) {
-          currentByKey[daily ? point.date : String(index).padStart(2, '0')] = point;
-        });
-        timeline.forEach(function (item) {
-          var point = currentByKey[item.key]; if (!point) return;
+        currentAdsEngagementPoints = timeline.map(function (item) {
           var metrics = item.metrics || {};
-          point.metrics.impressions = Number(metrics.impressions) || 0;
-          point.metrics.traffic = Number(metrics.clicks) || 0;
-          if (source === 'integrated_ads') point.metrics.adConversions = Number(metrics.orders) || 0;
+          return { date: granularity === 'day' ? item.key : '', label: item.label, metrics: {
+            impressions: Number(metrics.impressions) || 0, traffic: Number(metrics.clicks) || 0
+          } };
         });
+        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ' + (granularity === 'day' ? 'ngày' : 'giờ');
         renderAdsPerformanceCharts(currentReportHourly);
       }
 

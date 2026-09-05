@@ -47,7 +47,7 @@ async function contextsRows(env: Env, session: McpSession, advertiserId: string,
 }
 
 export async function loadMainReport(env: Env, input: any, force = false): Promise<any> {
-  const key = stableKey('main-v6', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
+  const key = stableKey('main-v7', input); if (!force) { const hit = await cacheGet<any>(env, key); if (hit) return hit; }
   const { advertiserId, storeId, startDate, endDate } = input;
   const multiDay = startDate !== endDate;
   const session = await createSession(env);
@@ -161,8 +161,9 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
   }
   const daily: any[] = [];
   if (multiDay) {
+    const financialMetrics = ['cost','orders','gross_revenue'];
     const dailyRows = await pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId],
-      dimensions: ['campaign_id','stat_time_day'], metrics: ['cost','orders','gross_revenue','product_clicks'],
+      dimensions: ['campaign_id','stat_time_day'], metrics: financialMetrics,
       start_date: startDate, end_date: endDate });
     const dailyByDate = new Map<string, any>();
     for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
@@ -172,6 +173,20 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
     for (const row of dailyRows) {
       const date = String(row.dimensions?.stat_time_day || row.metrics?.stat_time_day || '').slice(0, 10);
       const point = dailyByDate.get(date); if (point) add(point.metrics, metric(row.metrics || {}));
+    }
+    // Some GMV Max accounts accept stat_time_day but return empty metrics when it
+    // is combined with campaign_id. Re-query each date at the proven campaign
+    // aggregation level so the chart never silently collapses to zero.
+    const hasDailyFinancials = daily.some((point) => point.metrics.cost || point.metrics.orders || point.metrics.grossRevenue);
+    if (!hasDailyFinancials && (totals.cost || totals.orders || totals.grossRevenue)) {
+      for (let offset = 0; offset < daily.length; offset += 4) {
+        const batch = daily.slice(offset, offset + 4);
+        const values = await Promise.all(batch.map(async (point) => ({ point, rows: await pagedReport(env, session, {
+          advertiser_id: advertiserId, store_ids: [storeId], dimensions: ['campaign_id'], metrics: financialMetrics,
+          start_date: point.date, end_date: point.date
+        }) })));
+        for (const value of values) for (const row of value.rows) add(value.point.metrics, metric(row.metrics || {}));
+      }
     }
   }
   const result = { advertiserId, store: { storeId }, startDate, endDate, generatedAt: new Date().toISOString(), totals,
