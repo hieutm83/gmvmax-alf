@@ -264,20 +264,25 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     }
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
     try{
-      const storeId=await resolveDefaultStore(runtime); let date=next;
-      // Process a larger bounded chunk per queue message. Calls remain
-      // sequential to avoid provider rate limits and protect Zalo workers.
-      for(let count=0;count<15&&date<=yesterday;count+=1,date=shiftDate(date,1)){
-        const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:date,endDate:date};
-        // A revoked provider token must not block the whole historical cursor.
-        // Persist whichever provider succeeds, then advance this date so the
-        // queue keeps making progress; failed dates can be retried after auth
-        // is restored.
-        const results=await Promise.allSettled([loadMainReport(runtime,input,true),loadFacebookAdsReport(runtime,input)]);
-        const failures=results.filter((result):result is PromiseRejectedResult=>result.status==='rejected');
-        if(failures.length) console.warn('ADS_BACKFILL_PARTIAL',date,failures.map((failure)=>String(failure.reason)).join(' | '));
-        await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_NEXT_DATE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(shiftDate(date,1)).run();
+      const storeId=await resolveDefaultStore(runtime); const date=next;
+      // Refresh a bounded range with the same BASIC + GMV MAX layers used by
+      // the Google Sheet, then hydrate Shop Analytics source traffic. This
+      // repairs dates that were previously advanced after a provider error.
+      const chunkEnd=(()=>{let value=date;for(let count=1;count<15&&value<yesterday;count+=1)value=shiftDate(value,1);return value;})();
+      const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:date,endDate:chunkEnd};
+      const results=await Promise.allSettled([
+        refreshTikTokDailySnapshot(runtime,input),
+        loadFacebookAdsReport(env,{startDate:date,endDate:chunkEnd,forceRefresh:true}),
+        loadShopSourceRows(runtime,date,chunkEnd)
+      ]);
+      const sourceResult=results[2];
+      if(sourceResult.status==='fulfilled'){
+        for(const row of sourceResult.value)await env.DB.prepare(`INSERT INTO tiktok_ads_source_daily(advertiser_id,store_id,report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(advertiser_id,store_id,report_date,source,product_id) DO UPDATE SET title=excluded.title,cost=excluded.cost,gross_revenue=excluded.gross_revenue,sku_orders=excluded.sku_orders,impressions=excluded.impressions,clicks=excluded.clicks,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`).bind(row.advertiserId,row.storeId,row.reportDate,row.source,row.productId,row.title,row.cost,row.grossRevenue,row.skuOrders,row.impressions,row.clicks,JSON.stringify(row.payload||{})).run();
+        await env.DB.prepare(`UPDATE tiktok_ads_daily SET impressions=(SELECT COALESCE(SUM(impressions),0) FROM tiktok_ads_source_daily s WHERE s.advertiser_id=tiktok_ads_daily.advertiser_id AND s.store_id=tiktok_ads_daily.store_id AND s.report_date=tiktok_ads_daily.report_date), clicks=(SELECT COALESCE(SUM(clicks),0) FROM tiktok_ads_source_daily s WHERE s.advertiser_id=tiktok_ads_daily.advertiser_id AND s.store_id=tiktok_ads_daily.store_id AND s.report_date=tiktok_ads_daily.report_date), ctr=CASE WHEN impressions>0 THEN CAST(clicks AS REAL)/impressions ELSE 0 END, cr=CASE WHEN clicks>0 THEN CAST(sku_orders AS REAL)/clicks ELSE 0 END WHERE report_date BETWEEN ? AND ?`).bind(date,chunkEnd).run();
       }
+      const failures=results.filter((result):result is PromiseRejectedResult=>result.status==='rejected');
+      if(failures.length)console.warn('ADS_BACKFILL_PARTIAL',date,failures.map((failure)=>String(failure.reason)).join(' | '));
+      await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_NEXT_DATE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(shiftDate(chunkEnd,1)).run();
     } finally { await env.DB.prepare("DELETE FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").run(); }
     return;
   }
