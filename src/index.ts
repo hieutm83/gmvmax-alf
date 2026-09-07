@@ -247,6 +247,9 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
       await env.DB.prepare(`WITH RECURSIVE dates(d) AS (SELECT '2026-01-01' UNION ALL SELECT date(d,'+1 day') FROM dates WHERE d<'${yesterday}')
         INSERT OR IGNORE INTO tiktok_ads_daily(advertiser_id,store_id,report_date,payload_json,source)
         SELECT ?,?,d, '{}','backfill-missing' FROM dates`).bind(runtime.DEFAULT_ADVERTISER_ID,await resolveDefaultStore(runtime)).run().catch(()=>undefined);
+      await env.DB.prepare(`WITH RECURSIVE dates(d) AS (SELECT '2026-01-01' UNION ALL SELECT date(d,'+1 day') FROM dates WHERE d<'${yesterday}')
+        INSERT OR IGNORE INTO facebook_ads_daily(ad_account_id,report_date,payload_json)
+        SELECT ad_account_id,d,'{}' FROM (SELECT DISTINCT ad_account_id FROM facebook_ads_daily) accounts CROSS JOIN dates`).run().catch(()=>undefined);
       return;
     }
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
