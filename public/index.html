@@ -3025,7 +3025,7 @@
           document.getElementById('metric-traffic').textContent=integer(clicks);
           ['impressions','traffic'].forEach(function(key){var change=document.getElementById('metric-change-'+key);if(change){change.className='metric-change neutral';change.textContent='TikTok Ads API';}});
         }).withFailureHandler(function (error) {
-          if (requestId === adsTrafficRequestId) {document.getElementById('metric-impressions').textContent='—';document.getElementById('metric-traffic').textContent='—';console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));}
+          if (requestId === adsTrafficRequestId) {document.getElementById('metric-impressions').textContent='—';document.getElementById('metric-traffic').textContent='—';showError({message:'TikTok Ads API: '+(error && (error.message || error) || 'Không tải được Hiển thị/Click')});console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));}
         }).loadAdsTrafficTimeline(Object.assign({}, scope, { forceRefresh: forceRefresh === true }));
       }
 

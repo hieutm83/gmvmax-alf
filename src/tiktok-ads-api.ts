@@ -21,10 +21,13 @@ function rowDate(row: any): string { return String(row?.dimensions?.stat_time_da
 /** Direct TikTok Ads API traffic: no MCP calls for display/click KPIs or charts. */
 export async function loadTikTokAdsTraffic(env: Env, input: any): Promise<any> {
   const chartStartDate = adsTrafficChartStartDate(input.startDate, input.endDate);
-  const cacheKey = stableKey('tiktok-ads-api-traffic-v2', { advertiserId: input.advertiserId, startDate: input.startDate, endDate: input.endDate, chartStartDate });
+  const cacheKey = stableKey('tiktok-ads-api-traffic-v3', { advertiserId: input.advertiserId, startDate: input.startDate, endDate: input.endDate, chartStartDate });
   if (!input.forceRefresh) { const cached = await cacheGet<any>(env, cacheKey); if (cached) return cached; }
   const url = new URL('https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/');
-  const params: Record<string, string> = { advertiser_id: String(input.advertiserId), report_type: 'BASIC', data_level: 'AUCTION_AD', dimensions: JSON.stringify(['ad_id', 'stat_time_day']), metrics: JSON.stringify(['impressions', 'clicks']), start_date: chartStartDate, end_date: input.endDate, page_size: '1000', filtering: JSON.stringify([{ field_name: 'ad_status', filter_type: 'IN', filter_value: '["STATUS_ALL"]' }]) };
+  // Advertiser/day grain is the authoritative aggregate for these two KPIs.
+  // It avoids ad-level pagination and prevents a partial series for accounts
+  // with many creatives.
+  const params: Record<string, string> = { advertiser_id: String(input.advertiserId), report_type: 'BASIC', data_level: 'AUCTION_ADVERTISER', dimensions: JSON.stringify(['stat_time_day']), metrics: JSON.stringify(['impressions', 'clicks']), start_date: chartStartDate, end_date: input.endDate, page: '1', page_size: '1000' };
   // Data is always fetched from the official Ads API. A dedicated API token is
   // preferred; the existing OAuth token is only used as credential fallback,
   // never as an MCP report call.
