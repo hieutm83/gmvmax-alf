@@ -257,13 +257,13 @@ export async function refreshTikTokDailySnapshot(env: Env, input: any): Promise<
   const missingDates = [...byDate.values()].filter((point) =>
     !point.metrics.cost && !point.metrics.grossRevenue && !point.metrics.orders);
   if (missingDates.length) {
-    const fallback = await callTool(env, session, 'gmv_max_report_get', {
+    const fallback = await pagedReport(env, session, {
       advertiser_id: input.advertiserId, store_ids: [input.storeId],
       dimensions: ['campaign_id', 'stat_time_day'],
       metrics: ['cost', 'orders', 'gross_revenue'], start_date: input.startDate,
-      end_date: input.endDate, page: 1, page_size: 1000
-    }).catch(() => null);
-    for (const row of rowsOf(fallback)) {
+      end_date: input.endDate
+    }).catch(() => []);
+    for (const row of fallback) {
       const date = String(row?.dimensions?.stat_time_day || row?.metrics?.stat_time_day || '').slice(0, 10);
       const point = byDate.get(date);
       if (!point || !missingDates.includes(point)) continue;
