@@ -63,10 +63,12 @@ async function routeApi(request: Request, env: Env, url: URL, session: Dashboard
   }
   if(request.method==='GET'&&url.pathname==='/api/oauth/connect')return ok(await createAuthorizationUrl(env,url.origin));
   if(request.method==='GET'&&url.pathname==='/api/finance-sku-cost')return ok(await loadSkuUnitCosts(env));
+  if(request.method==='GET'&&url.pathname==='/api/admin/supabase-sync'){const row=await env.DB.prepare("SELECT value,updated_at FROM app_settings WHERE key='SUPABASE_MANUAL_SYNC_STATUS'").first<any>();return ok({...(row?.value?JSON.parse(row.value):{status:'IDLE',progress:0}),updatedAt:row?.updated_at||null});}
   if(request.method==='POST'&&url.pathname==='/api/oauth/refresh')return ok(await refreshAccessToken(env));
   if(request.method==='POST'&&url.pathname==='/api/oauth/disconnect'){await disconnect(env);return ok(true);}
   if(request.method==='POST'&&url.pathname==='/api/seller/disconnect'){await disconnectSeller(env);return ok(true);}
   if(request.method==='POST'&&url.pathname==='/api/admin/verify'){const value=await readJson<any>(request);return ok(String(value||'')===env.ADMIN_PASSWORD);}
+  if(request.method==='POST'&&url.pathname==='/api/admin/supabase-sync'){const value=await readJson<any>(request);const start=validateDate(value.startDate,'startDate'),end=validateDate(value.endDate,'endDate');if(start>end)throw new HttpError(400,'Khoảng ngày không hợp lệ.');const tables=Array.isArray(value.tables)?value.tables.map(String):['all'];await env.TASK_QUEUE.send({type:'supabase-manual-sync',startDate:start,endDate:end,tables});await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'QUEUED',startDate:start,endDate:end,progress:0,tables})).run();return ok({queued:true});}
   if(request.method==='POST'&&url.pathname==='/api/stores'){const advertiserId=validateId(await readJson<any>(request),'Advertiser ID');return ok(await listStores(env,await createSession(env),advertiserId));}
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const rawInput=await readJson<any>(request);
@@ -201,6 +203,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
   if(message.type==='tracking-sync')return syncTrackingOrder(env,message.orderId,message.shopCipher);
   if(message.type==='supabase-backup')return syncSupabaseBackup(env,message.reportDate);
+  if(message.type==='supabase-manual-sync'){let date=message.startDate,total=0;while(date<=message.endDate){await syncSupabaseBackup(env,date).catch(()=>undefined);total+=1;await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'RUNNING',startDate:message.startDate,endDate:message.endDate,progress:Math.round(total/(Math.max(1,Math.round((Date.parse(message.endDate)-Date.parse(message.startDate))/86400000)+1))*100),tables:message.tables})).run();date=shiftDate(date,1);}await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'SUCCESS',startDate:message.startDate,endDate:message.endDate,progress:100,tables:message.tables})).run();return;}
   if(message.type==='ads-snapshot'){
     const storeId=await resolveDefaultStore(runtime);
     const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate};

@@ -6,6 +6,8 @@
     refreshTikTokToken: ['POST', '/api/oauth/refresh'],
     disconnectTikTok: ['POST', '/api/oauth/disconnect'],
     verifyAdminPassword: ['POST', '/api/admin/verify'],
+    startSupabaseSync: ['POST', '/api/admin/supabase-sync'],
+    getSupabaseSyncStatus: ['GET', '/api/admin/supabase-sync'],
     getGmvMaxStores: ['POST', '/api/stores'],
     getTikTokConnectUrl: ['GET', '/api/oauth/connect'],
     loadReport: ['POST', '/api/report'],

@@ -66,7 +66,8 @@ export type TaskMessage =
   | { type: 'supabase-backup'; reportDate: string }
   | { type: 'sheet-backup'; reportDate: string }
   | { type: 'ads-snapshot'; reportDate: string }
-  | { type: 'ads-backfill' };
+  | { type: 'ads-backfill' }
+  | { type: 'supabase-manual-sync'; startDate: string; endDate: string; tables: string[] };
 
 export interface OAuthTokenSet {
   accessToken: string;
