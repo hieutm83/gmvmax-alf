@@ -212,9 +212,14 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     if(next>yesterday)return;
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
     try{
-      const storeId=await resolveDefaultStore(runtime); const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:next,endDate:next};
-      await Promise.all([loadMainReport(runtime,input,true),loadFacebookAdsReport(runtime,input)]);
-      await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_NEXT_DATE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(shiftDate(next,1)).run();
+      const storeId=await resolveDefaultStore(runtime); let date=next;
+      // Three sequential days per queue message keeps subrequests bounded,
+      // while reducing the Jan-to-now backfill from ~40 hours to ~14 hours.
+      for(let count=0;count<3&&date<=yesterday;count+=1,date=shiftDate(date,1)){
+        const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:date,endDate:date};
+        await Promise.all([loadMainReport(runtime,input,true),loadFacebookAdsReport(runtime,input)]);
+        await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_NEXT_DATE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(shiftDate(date,1)).run();
+      }
     } finally { await env.DB.prepare("DELETE FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").run(); }
     return;
   }
