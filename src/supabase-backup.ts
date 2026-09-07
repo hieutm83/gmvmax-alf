@@ -77,6 +77,16 @@ async function upsertTable(config: { url: string; key: string }, table: string, 
   }
   throw new Error(lastError || `Supabase table ${table} failed.`);
 }
+
+async function removeLegacyCipherRows(config: { url: string; key: string }, table: string): Promise<void> {
+  // Older syncs accidentally persisted the Shop API cipher (ROW_...) in the
+  // store_id column. Remove only those known-invalid keys before inserting the
+  // canonical numeric rows so Supabase does not retain duplicate histories.
+  const response = await fetch(`${config.url}/rest/v1/${table}?store_id=like.ROW_*`, {
+    method: 'DELETE', headers: headers(config.key, { Prefer: 'return=minimal' })
+  });
+  if (!response.ok) throw new Error(`Supabase cleanup ${table} HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+}
 function tableRow(table: string, row: any): any {
   const fields: Record<string, string[]> = {
     tiktok_ads_daily: ['advertiser_id','store_id','report_date','cost','gross_revenue','cost_per_order','sku_orders','aov','impressions','clicks','ctr','cr','source','payload_json'],
@@ -151,6 +161,11 @@ export async function syncSupabaseBackup(env: Env, reportDate: string): Promise<
       uploadJson(config, files[0], current), uploadJson(config, files[1], previous), uploadJson(config, files[2], monitoring),
       ...adsFiles.map(([path,value])=>uploadJson(config,path,{schemaVersion:1,reportDate,generatedAt:new Date().toISOString(),rows:value||[]}))
     ]);
+    const cleanup = ['affiliate_mass_authorization','official_account','product_card']
+      .map((name) => removeLegacyCipherRows(config, `tiktok_ads_${name}`));
+    const cleanupResults = await Promise.allSettled(cleanup);
+    const cleanupErrors = cleanupResults.filter((item): item is PromiseRejectedResult => item.status === 'rejected')
+      .map((item) => String(item.reason));
     const tableWrites = [
       upsertTable(config, 'tiktok_ads_daily', current.tiktokAdsDaily.map((row:any)=>tableRow('tiktok_ads_daily',row))),
       upsertTable(config, 'tiktok_ads_campaigns', current.tiktokAdsCampaigns.map((row:any)=>tableRow('tiktok_ads_campaigns',row))),
@@ -159,7 +174,7 @@ export async function syncSupabaseBackup(env: Env, reportDate: string): Promise<
       ...[['affiliate_mass_authorization','affiliate'],['official_account','seller'],['product_card','productCard']].map(([name,source])=>upsertTable(config, 'tiktok_ads_'+name, (current.tiktokSources||[]).filter((row:any)=>row.source===source).map((row:any)=>tableRow('tiktok_ads_'+name,{...row,payload_json:row.payload}))))
     ];
     const tableResults = await Promise.allSettled(tableWrites);
-    const tableErrors = tableResults.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map((item) => String(item.reason));
+    const tableErrors = [...cleanupErrors, ...tableResults.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map((item) => String(item.reason))];
     await saveStatus(env, { status: tableErrors.length ? 'PARTIAL' : 'SUCCESS', startedAt, completedAt: new Date().toISOString(), bucket: config.bucket, files: [...files,...adsFiles.map(([path])=>path)], tableErrors });
   } catch (error) {
     await saveStatus(env, { status: 'FAILED', startedAt, completedAt: new Date().toISOString(),
