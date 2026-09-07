@@ -3,6 +3,7 @@ import { callTool, createSession, forEachReportPage, pagedReport, resolveTool } 
 import { cacheGet, cachePut, dateInTimezone, hourInTimezone, numberValue, shiftDate, stableKey, unique } from './utils';
 import { evaluateVideos } from './evaluator';
 import { sellerOwnedVideoIds } from './seller';
+import { saveTikTokAdsSnapshot } from './ads-snapshots';
 
 const SELLER_TIKTOK_USERNAMES = ['anlanh.farm', 'anlanhfarmvn', 'tracagaileoalf', 'anlanhherbs'];
 
@@ -193,6 +194,7 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
     products: products.filter((p) => (p.campaignActive && p.status === 'AVAILABLE') || p.metrics.cost > 0).sort((a,b) => b.metrics.cost-a.metrics.cost),
     availableProductCount: products.filter((p) => p.campaignActive && p.status === 'AVAILABLE').length,
     creativeContexts: contexts, hourly, hourlyMode, daily };
+  await saveTikTokAdsSnapshot(env, input, result).catch(() => undefined);
   await cachePut(env, key, result, endDate === new Date().toISOString().slice(0,10) ? 240 : 86400);
   return result;
 }

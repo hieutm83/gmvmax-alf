@@ -1,6 +1,7 @@
 import type { Env } from './types';
 import { getAccessToken } from './oauth';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
+import { saveTikTokTrafficSnapshot } from './ads-snapshots';
 
 type TrafficPoint = { key: string; label: string; metrics: { impressions: number; clicks: number; traffic: number } };
 
@@ -45,5 +46,6 @@ export async function loadTikTokAdsTraffic(env: Env, input: any): Promise<any> {
   for (const row of rows) { const metrics = byDate.get(rowDate(row)); if (!metrics) continue; const values = row?.metrics || row || {}; metrics.impressions += numberValue(values.impressions); metrics.clicks += numberValue(values.clicks); }
   points.forEach((point) => { point.metrics.traffic = point.metrics.clicks; });
   const result = { generatedAt: new Date().toISOString(), source: 'tiktok_ads_api', granularity: 'day', chartStartDate, points };
+  await saveTikTokTrafficSnapshot(env, input, result).catch(() => undefined);
   await cachePut(env, cacheKey, result, 300); return result;
 }

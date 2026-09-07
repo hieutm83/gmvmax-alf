@@ -2,6 +2,7 @@ import type { Env } from './types';
 import type { McpRow } from './types';
 import { createSession, pagedReport } from './mcp';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
+import { saveFacebookAdsSnapshot } from './ads-snapshots';
 
 type Action = { action_type?: string; value?: string | number };
 type FacebookMetrics = {
@@ -77,6 +78,7 @@ export async function loadFacebookAdsReport(env:Env,input:{startDate:string;endD
   const [currentRows,previousRows,chartRows]=await Promise.all([currentPromise,insights(env,previous.startDate,previous.endDate),chartPromise]);
   const current=summarizeFacebookRows(currentRows),previousReport=summarizeFacebookRows(previousRows);const result={...current,daily:facebookDaily(chartRows,chartStartDate,input.endDate),
     previousTotals:previousReport.totals,startDate:input.startDate,endDate:input.endDate,chartStartDate,generatedAt:new Date().toISOString()};
+  await saveFacebookAdsSnapshot(env,String(env.FB_ACT_ID||''),result).catch(() => undefined);
   await cachePut(env,key,result,input.endDate<new Date().toISOString().slice(0,10)?86400:300).catch(()=>undefined);return result;
 }
 
