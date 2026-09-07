@@ -82,10 +82,20 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
     if (path === '/api/state') {
       const tokens = await readTokens(env); let advertisers: any[] = []; let connectionError: string | undefined;
       if (tokens) { try { advertisers = await listAdvertisers(env, await createSession(env)); } catch (error) { connectionError = error instanceof Error ? error.message : String(error); } }
+      // Some valid MCP grants return an empty auth_advertiser_get listing.
+      // The legacy account already has a configured, authorized advertiser ID;
+      // expose it so the dashboard can load the same account as the Sheet.
+      if (!advertisers.length && env.DEFAULT_ADVERTISER_ID) advertisers = [{ advertiserId: env.DEFAULT_ADVERTISER_ID, advertiserName: `Advertiser ${env.DEFAULT_ADVERTISER_ID}` }];
       const today = dateInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
       return json({ ok: true, data: { connected: Boolean(tokens), startDate: today, endDate: today, adsOAuth: oauthConnectionState(tokens, env.MCP_SCOPE), sellerOAuth: await sellerOAuthState(env), dashboardRole: 'admin', defaultAdvertiserId: env.DEFAULT_ADVERTISER_ID, defaultStoreCode: env.DEFAULT_STORE_CODE, advertisers, connectionError } });
     }
-    if (path === '/api/stores') return json({ ok: true, data: await listStores(env, await createSession(env), String(input?.advertiserId || input || env.DEFAULT_ADVERTISER_ID)) });
+    if (path === '/api/stores') {
+      const advertiserId = String(input?.advertiserId || input || env.DEFAULT_ADVERTISER_ID);
+      let stores: any[] = [];
+      try { stores = await listStores(env, await createSession(env), advertiserId); } catch { /* use configured Shop ID below */ }
+      if (!stores.length && env.ZALO_STORE_ID) stores = [{ storeId: env.ZALO_STORE_ID, storeName: 'TikTok Shop', storeCode: env.DEFAULT_STORE_CODE }];
+      return json({ ok: true, data: stores });
+    }
     if (path === '/api/oauth/connect') return json({ ok: true, data: await createAuthorizationUrl(env, String(input?.origin || env.PUBLIC_BASE_URL)) });
     if (path === '/api/oauth/refresh') return json({ ok: true, data: await refreshAccessToken(env) });
     if (path === '/api/oauth/disconnect') { await disconnect(env); return json({ ok: true, data: true }); }
