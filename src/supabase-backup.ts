@@ -59,11 +59,23 @@ async function uploadJson(config: { url: string; key: string; bucket: string }, 
 
 async function upsertTable(config: { url: string; key: string }, table: string, rows: any[]): Promise<void> {
   if (!rows.length) return;
-  const response = await fetch(`${config.url}/rest/v1/${table}`, {
-    method: 'POST', headers: headers(config.key, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
-    body: JSON.stringify(rows)
-  });
-  if (!response.ok) throw new Error(`Supabase table ${table} HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  const body = JSON.stringify(rows);
+  let lastError = '';
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(`${config.url}/rest/v1/${table}`, {
+      method: 'POST', headers: headers(config.key, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }), body
+    });
+    if (response.ok) return;
+    const details = (await response.text()).slice(0, 500);
+    lastError = `Supabase table ${table} HTTP ${response.status}: ${details}`;
+    // Supabase can briefly reject a freshly-issued secret JWT when its clock
+    // is ahead. Retry this and other transient provider failures before
+    // marking the backup partial.
+    const transient = response.status >= 500 || /PGRST303|JWT issued at future|temporar|rate.?limit/i.test(details);
+    if (!transient || attempt === 3) throw new Error(lastError);
+    await new Promise((resolve) => setTimeout(resolve, [1000, 2500, 5000][attempt]));
+  }
+  throw new Error(lastError || `Supabase table ${table} failed.`);
 }
 function tableRow(table: string, row: any): any {
   const fields: Record<string, string[]> = {
