@@ -336,6 +336,11 @@ async function productGmvAttribution(env: Env, startDate: string, endDate: strin
 /** GAS-compatible daily source breakdown from TikTok Shop Analytics. */
 export async function loadShopSourceRows(env: Env, startDate: string, endDate: string): Promise<any[]> {
   const shop = await authorizedShop(env); const cipher = String(shop?.cipher || shop?.shop_cipher || ''); if (!cipher) return [];
+  // Shop Analytics requires the opaque shop_cipher (ROW_...), but the ads
+  // replicas use the canonical numeric GMV store id.  Persist the canonical
+  // id so source rows can be joined to tiktok_ads_daily; keeping the cipher
+  // here makes those joins silently return zero traffic.
+  const canonicalStoreId = String(env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE || cipher);
   const rows: any[] = [];
   const today = new Date().toISOString().slice(0, 10); const earliest = shiftDate(today, -180);
   const requestForDate = async (date: string): Promise<any> => {
@@ -368,7 +373,7 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
       for (const product of Array.isArray(data.products) ? data.products : []) {
         const id = String(product.id || product.product_id || ''); if (!id) continue;
         const groups: Array<[string, any]> = [['affiliate', product.affiliate_video_performance], ['seller', product.seller_video_performance], ['productCard', product.seller_product_card_performance]];
-        for (const [source, raw] of groups) { const value = raw || {}; rows.push({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: cipher, reportDate: date, source, productId: id, title: String(product.product_name || product.name || product.title || id), cost: gmvAmount(value.cost), grossRevenue: gmvAmount(value.attributed_gmv || value.gmv), skuOrders: gmvAmount(value.attributed_sku_orders || value.orders), impressions: gmvAmount(value.product_impressions), clicks: gmvAmount(value.product_clicks), payload: value }); }
+        for (const [source, raw] of groups) { const value = raw || {}; rows.push({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: canonicalStoreId, reportDate: date, source, productId: id, title: String(product.product_name || product.name || product.title || id), cost: gmvAmount(value.cost), grossRevenue: gmvAmount(value.attributed_gmv || value.gmv), skuOrders: gmvAmount(value.attributed_sku_orders || value.orders), impressions: gmvAmount(value.product_impressions), clicks: gmvAmount(value.product_clicks), payload: value }); }
       }
       token = String(data.next_page_token || ''); pages += 1;
     } while (token && pages < 50);
