@@ -392,7 +392,7 @@ export default {
     if([3,9,12].includes(localHour)&&localMinute===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:shiftDate(localDate, -1)}));
     if(localMinute%5===0){
-      ctx.waitUntil((async()=>{const row=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").first<{value:string}>();if(!row)await env.TASK_QUEUE.send({type:'ads-backfill'});})());
+      ctx.waitUntil((async()=>{const row=await env.DB.prepare("SELECT value,updated_at FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").first<{value:string;updated_at:string}>();const stale=!row||Date.now()-Date.parse(String(row.updated_at||''))>15*60*1000;if(stale)await env.TASK_QUEUE.send({type:'ads-backfill'});})());
     }
     // Start at 08:00 and keep retrying until TikTok Shop data passes the
     // consistency check. The report table is the idempotency key.

@@ -84,10 +84,12 @@ async function dailySnapshot(env: Env, reportDate: string): Promise<any> {
     query(env, "SELECT cancellation_id,order_id,status,message_id,payload,created_at,updated_at FROM order_bot_cancellation_events WHERE date(updated_at,'+7 hours')=? ORDER BY updated_at", reportDate),
     query(env, 'SELECT advertiser_id,store_id,report_date,report_hour,metrics_json FROM hourly_metrics WHERE report_date=? ORDER BY report_hour', reportDate),
     query(env, 'SELECT advertiser_id,store_id,report_date,summary_json,products_json,creatives_json,created_at FROM daily_metrics WHERE report_date=?', reportDate),
-    query(env, 'SELECT * FROM tiktok_ads_daily WHERE report_date=?', reportDate),
-    query(env, 'SELECT * FROM tiktok_ads_campaigns WHERE report_date=?', reportDate),
-    query(env, 'SELECT * FROM facebook_ads_daily WHERE report_date=?', reportDate),
-    query(env, 'SELECT * FROM facebook_ads_campaigns WHERE report_date=?', reportDate),
+    // Sync the complete accumulated history, not only today's snapshot. This
+    // makes Supabase the fast read replica for the dashboard.
+    query(env, 'SELECT * FROM tiktok_ads_daily ORDER BY report_date'),
+    query(env, 'SELECT * FROM tiktok_ads_campaigns ORDER BY report_date'),
+    query(env, 'SELECT * FROM facebook_ads_daily ORDER BY report_date'),
+    query(env, 'SELECT * FROM facebook_ads_campaigns ORDER BY report_date'),
     query(env, 'SELECT state_key,payload,updated_at FROM order_bot_monitor_state WHERE state_key=?', `lifecycle:${reportDate}`)
   ]);
   return { schemaVersion: 2, reportDate, generatedAt: new Date().toISOString(), source: 'cloudflare-d1',
