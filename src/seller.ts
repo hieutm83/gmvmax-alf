@@ -337,7 +337,11 @@ async function productGmvAttribution(env: Env, startDate: string, endDate: strin
 export async function loadShopSourceRows(env: Env, startDate: string, endDate: string): Promise<any[]> {
   const shop = await authorizedShop(env); const cipher = String(shop?.cipher || shop?.shop_cipher || ''); if (!cipher) return [];
   const rows: any[] = [];
+  const today = new Date().toISOString().slice(0, 10); const earliest = shiftDate(today, -180);
   for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
+    // TikTok Shop Analytics only supports its documented lookback window.
+    // Keep the requested range intact while leaving older source rows empty.
+    if (date < earliest || date >= today) continue;
     let token = ''; let pages = 0;
     do {
       const data = await shopRequest(env, '/analytics/202605/shop_products/performance', 'GET', {
