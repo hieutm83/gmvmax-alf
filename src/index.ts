@@ -212,7 +212,12 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   if(message.type==='ads-backfill'){
     const row=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ADS_BACKFILL_NEXT_DATE'").first<{value:string}>();
     const next=String(row?.value||'2026-01-01'); const today=dateInTimezone(new Date(),env.TIMEZONE); const yesterday=shiftDate(today,-1);
-    if(next>yesterday)return;
+    if(next>yesterday){
+      await env.DB.prepare(`WITH RECURSIVE dates(d) AS (SELECT '2026-01-01' UNION ALL SELECT date(d,'+1 day') FROM dates WHERE d<'${yesterday}')
+        INSERT OR IGNORE INTO tiktok_ads_daily(advertiser_id,store_id,report_date,payload_json,source)
+        SELECT ?,?,d, '{}','backfill-missing' FROM dates`).bind(runtime.DEFAULT_ADVERTISER_ID,await resolveDefaultStore(runtime)).run().catch(()=>undefined);
+      return;
+    }
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
     try{
       const storeId=await resolveDefaultStore(runtime); let date=next;
