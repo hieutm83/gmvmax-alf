@@ -448,7 +448,7 @@ export default {
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
       const chartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
       if(chartMatch&&request.method==='GET')return chartImage(env,chartMatch[1]);
-      if(url.pathname==='/auth/login')return dashboardLogin(request,env);
+      if(url.pathname==='/auth/login')return await dashboardLogin(request,env);
       if(url.pathname==='/login'&&request.method==='GET')return assetResponse(request,env);
       if(url.pathname==='/FAVICON.png'&&request.method==='GET')return assetResponse(request,env);
 
