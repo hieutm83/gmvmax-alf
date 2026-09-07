@@ -280,6 +280,11 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     const entry=map.get(k)||{creativeCount:0,traffic:0,itemIds:[]}; impressions+=numberValue(m.product_impressions);traffic+=numberValue(m.product_clicks);
     if(numberValue(m.cost)||numberValue(m.orders)||numberValue(m.product_impressions)){if(id){ids.add(id);if(!entry.itemIds.includes(id))entry.itemIds.push(id);}entry.creativeCount++;entry.traffic+=numberValue(m.product_clicks);}map.set(k,entry);}
   for(const source of Object.values<any>(costAttribution.metrics))source.roi=source.cost?source.grossRevenue/source.cost:0;
+  await Promise.all(sourceRows.map((item)=>env.DB.prepare(`INSERT INTO tiktok_ads_source_daily
+    (advertiser_id,store_id,report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(advertiser_id,store_id,report_date,source,product_id) DO UPDATE SET title=excluded.title,cost=excluded.cost,gross_revenue=excluded.gross_revenue,sku_orders=excluded.sku_orders,impressions=excluded.impressions,clicks=excluded.clicks,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`)
+    .bind(input.advertiserId,input.storeId,item.date,item.source,item.productId||'unknown',item.title||'',numberValue(item.metrics?.cost),numberValue(item.metrics?.gross_revenue),numberValue(item.metrics?.orders),numberValue(item.metrics?.product_impressions),numberValue(item.metrics?.product_clicks),JSON.stringify(item)).run().catch(()=>undefined)));
   const result={generatedAt:new Date().toISOString(),summaries:(input.products||[]).map((p:any)=>({campaignId:p.campaignId,itemGroupId:p.itemGroupId,...(map.get(`${p.campaignId}:${p.itemGroupId}`)||{creativeCount:0,traffic:0,itemIds:[]})})),
     totalCreatives:ids.size,impressions,traffic,costAttribution,sourceRows,videoEvaluation:evaluateVideos(rows),hourlyTraffic:[],cacheStatus:'REFRESHED'};
   await cachePut(env,key,result,300);return result;

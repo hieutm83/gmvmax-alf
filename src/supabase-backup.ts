@@ -71,13 +71,16 @@ function tableRow(table: string, row: any): any {
     tiktok_ads_campaigns: ['advertiser_id','store_id','report_date','campaign_id','campaign_name','result','spend','gross_revenue','roas','payload_json'],
     facebook_ads_daily: ['ad_account_id','report_date','spend','gross_revenue','orders','impressions','clicks','ctr','cpm','cpc','messages','landing_page_views','roas','payload_json'],
     facebook_ads_campaigns: ['ad_account_id','report_date','campaign_id','campaign_name','result','result_type','cost_per_result','spend','reach','impressions','cpm','clicks','messages','purchases','gross_revenue','roas','payload_json']
+    ,tiktok_ads_affiliate_mass_authorization: ['advertiser_id','store_id','report_date','product_id','title','cost','gross_revenue','sku_orders','impressions','clicks','payload_json']
+    ,tiktok_ads_official_account: ['advertiser_id','store_id','report_date','product_id','title','cost','gross_revenue','sku_orders','impressions','clicks','payload_json']
+    ,tiktok_ads_product_card: ['advertiser_id','store_id','report_date','product_id','title','cost','gross_revenue','sku_orders','impressions','clicks','payload_json']
   };
   return Object.fromEntries((fields[table] || []).filter((key) => row[key] !== undefined).map((key) => [key, row[key]]));
 }
 
 async function dailySnapshot(env: Env, reportDate: string): Promise<any> {
   const [adsReports, operationsReports, orderReports, cancellations, hourlyMetrics, dailyMetrics,
-    tiktokAdsDaily, tiktokAdsCampaigns, facebookAdsDaily, facebookAdsCampaigns, monitorState] = await Promise.all([
+    tiktokAdsDaily, tiktokAdsCampaigns, facebookAdsDaily, facebookAdsCampaigns, tiktokSources, monitorState] = await Promise.all([
     query(env, 'SELECT report_date,report_hour,status,message_id,payload,updated_at FROM scheduled_reports WHERE report_date=? ORDER BY report_hour', reportDate),
     query(env, 'SELECT report_date,report_kind,status,message_id,payload,updated_at FROM operations_bot_reports WHERE report_date=? ORDER BY report_kind', reportDate),
     query(env, 'SELECT report_date,report_time,status,message_id,payload,updated_at FROM order_bot_reports WHERE report_date=? ORDER BY report_time', reportDate),
@@ -90,11 +93,12 @@ async function dailySnapshot(env: Env, reportDate: string): Promise<any> {
     query(env, 'SELECT * FROM tiktok_ads_campaigns ORDER BY report_date'),
     query(env, 'SELECT * FROM facebook_ads_daily ORDER BY report_date'),
     query(env, 'SELECT * FROM facebook_ads_campaigns ORDER BY report_date'),
+    query(env, 'SELECT * FROM tiktok_ads_source_daily ORDER BY report_date'),
     query(env, 'SELECT state_key,payload,updated_at FROM order_bot_monitor_state WHERE state_key=?', `lifecycle:${reportDate}`)
   ]);
   return { schemaVersion: 2, reportDate, generatedAt: new Date().toISOString(), source: 'cloudflare-d1',
     adsReports, operationsReports, orderReports, cancellations, hourlyMetrics, dailyMetrics,
-    tiktokAdsDaily, tiktokAdsCampaigns, facebookAdsDaily, facebookAdsCampaigns, monitorState };
+    tiktokAdsDaily, tiktokAdsCampaigns, facebookAdsDaily, facebookAdsCampaigns, tiktokSources, monitorState };
 }
 
 async function monitoringSnapshot(env: Env, reportDate: string): Promise<any> {
@@ -139,7 +143,8 @@ export async function syncSupabaseBackup(env: Env, reportDate: string): Promise<
       upsertTable(config, 'tiktok_ads_daily', current.tiktokAdsDaily.map((row:any)=>tableRow('tiktok_ads_daily',row))),
       upsertTable(config, 'tiktok_ads_campaigns', current.tiktokAdsCampaigns.map((row:any)=>tableRow('tiktok_ads_campaigns',row))),
       upsertTable(config, 'facebook_ads_daily', current.facebookAdsDaily.map((row:any)=>tableRow('facebook_ads_daily',row))),
-      upsertTable(config, 'facebook_ads_campaigns', current.facebookAdsCampaigns.map((row:any)=>tableRow('facebook_ads_campaigns',row)))
+      upsertTable(config, 'facebook_ads_campaigns', current.facebookAdsCampaigns.map((row:any)=>tableRow('facebook_ads_campaigns',row))),
+      ...[['affiliate_mass_authorization','affiliate'],['official_account','seller'],['product_card','productCard']].map(([name,source])=>upsertTable(config, 'tiktok_ads_'+name, (current.tiktokSources||[]).filter((row:any)=>row.source===source).map((row:any)=>tableRow('tiktok_ads_'+name,{...row,payload_json:row.payload}))))
     ];
     const tableResults = await Promise.allSettled(tableWrites);
     const tableErrors = tableResults.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map((item) => String(item.reason));
