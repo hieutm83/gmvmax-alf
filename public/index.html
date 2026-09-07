@@ -1538,12 +1538,13 @@
         if (chartId === 'tiktok' && adsOverviewTikTokSourceChart) adsOverviewTikTokSourceChart.destroy();
         if (chartId === 'facebook' && adsOverviewFacebookResultChart) adsOverviewFacebookResultChart.destroy();
         var total = values.reduce(function (sum, value) { return sum + Number(value || 0); }, 0);
-        var centerPlugin = { id:'platformDonutCenter' + chartId, afterDraw:function (chart) {
-          if(chart.tooltip&&chart.tooltip.getActiveElements&&chart.tooltip.getActiveElements().length)return;
+        var centerHidden=false;
+        var centerPlugin = { id:'platformDonutCenter' + chartId, beforeDraw:function (chart) {
+          if(centerHidden)return;
           var area=chart.chartArea;if(!area)return;var x=(area.left+area.right)/2,y=(area.top+area.bottom)/2,context=chart.ctx;
           context.save();context.textAlign='center';context.textBaseline='middle';context.fillStyle='#64748b';context.font='700 11px Inter';context.fillText(centerLabel,x,y-11);
           context.fillStyle='#172033';context.font='800 18px Inter';context.fillText(compactMoney(total),x,y+12);context.restore();
-        }};
+        },afterEvent:function(chart){var active=chart.tooltip&&chart.tooltip.getActiveElements&&chart.tooltip.getActiveElements().length>0;if(active!==centerHidden){centerHidden=active;chart.draw();}}};
         var chart = new Chart(document.getElementById(canvasId), {type:'doughnut',plugins:[centerPlugin],data:{labels:labels,datasets:[{data:values,backgroundColor:colors,borderColor:'#fff',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'64%',plugins:{legend:{position:'right',labels:{usePointStyle:true,boxWidth:8,color:'#475569',font:{family:'Inter',size:10}}},tooltip:{callbacks:{label:function(context){return context.label+': '+moneyWhole(context.raw)+' đ ('+number(total?Number(context.raw)/total*100:0)+'%)';}}}}}});
         if (chartId === 'tiktok') adsOverviewTikTokSourceChart = chart; else adsOverviewFacebookResultChart = chart;
       }
