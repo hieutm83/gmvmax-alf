@@ -148,6 +148,7 @@ function zaloRuntime(env:Env):Env{return {...env,
   DEFAULT_STORE_CODE:env.ZALO_STORE_ID||env.ZALO_STORE_CODE||env.DEFAULT_STORE_CODE} as Env;}
 
 async function processManualSupabaseSync(env:Env,message:Extract<TaskMessage,{type:'supabase-manual-sync'}>):Promise<void>{
+ try{
   let chunkEnd=message.startDate;for(let i=1;i<14&&chunkEnd<message.endDate;i+=1)chunkEnd=shiftDate(chunkEnd,1);
   const total=Math.max(1,Math.round((Date.parse(message.endDate)-Date.parse(message.startDate))/86400000)+1),done=Math.max(0,Math.round((Date.parse(chunkEnd)-Date.parse(message.startDate)+86400000)/86400000));
   await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'RUNNING',startDate:message.startDate,endDate:message.endDate,progress:Math.min(95,Math.round(done/total*95)),tables:message.tables})).run();
@@ -156,6 +157,10 @@ async function processManualSupabaseSync(env:Env,message:Extract<TaskMessage,{ty
   const next=shiftDate(chunkEnd,1);if(next<=message.endDate){await env.TASK_QUEUE.send({type:'supabase-manual-sync',startDate:next,endDate:message.endDate,tables:message.tables});return;}
   await syncSupabaseBackup(env,message.endDate);const backup=await env.DB.prepare("SELECT value FROM app_settings WHERE key='SUPABASE_BACKUP_STATUS'").first<any>();const state=backup?.value?JSON.parse(backup.value):{};if(state.status!=='SUCCESS'||(state.tableErrors||[]).length)throw new Error('Supabase backup '+String(state.status||'FAILED')+': '+JSON.stringify(state.tableErrors||[]));
   await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'SUCCESS',startDate:message.startDate,endDate:message.endDate,progress:100,tables:message.tables,sourceRows:sourceRows.length})).run();
+ }catch(error){
+  await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'FAILED',startDate:message.startDate,endDate:message.endDate,progress:100,tables:message.tables,error:String(error)})).run();
+  throw error;
+ }
 }
 
 async function webhook(request: Request, env: Env, url: URL, ctx:ExecutionContext): Promise<Response> {
