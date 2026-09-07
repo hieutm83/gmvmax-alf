@@ -18,12 +18,22 @@ function dailyPoints(startDate: string, endDate: string): TrafficPoint[] {
 }
 function responseRows(body: any): any[] { const data = body?.data || {}; return Array.isArray(data.list) ? data.list : Array.isArray(data.data_list) ? data.data_list : Array.isArray(body?.list) ? body.list : []; }
 function rowDate(row: any): string { return String(row?.dimensions?.stat_time_day ?? row?.stat_time_day ?? row?.dimension?.stat_time_day ?? '').slice(0, 10); }
+async function storedTraffic(env: Env, input: any, chartStartDate: string): Promise<any|null> {
+  const rows=await env.DB.prepare(`SELECT report_date,impressions,clicks FROM tiktok_ads_daily
+    WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ? ORDER BY report_date`)
+    .bind(input.advertiserId,input.storeId,chartStartDate,input.endDate).all<any>();
+  const values=rows.results||[]; if(!values.some((row:any)=>numberValue(row.impressions)||numberValue(row.clicks)))return null;
+  const points=dailyPoints(chartStartDate,input.endDate),byDate=new Map(points.map((point)=>[point.key,point.metrics]));
+  for(const row of values){const m=byDate.get(String(row.report_date));if(m){m.impressions=numberValue(row.impressions);m.clicks=numberValue(row.clicks);m.traffic=m.clicks;}}
+  return {generatedAt:new Date().toISOString(),source:'d1_ads_snapshot',granularity:'day',chartStartDate,points};
+}
 
 /** Direct TikTok Ads API traffic: no MCP calls for display/click KPIs or charts. */
 export async function loadTikTokAdsTraffic(env: Env, input: any): Promise<any> {
   const chartStartDate = adsTrafficChartStartDate(input.startDate, input.endDate);
   const cacheKey = stableKey('tiktok-ads-api-traffic-v3', { advertiserId: input.advertiserId, startDate: input.startDate, endDate: input.endDate, chartStartDate });
   if (!input.forceRefresh) { const cached = await cacheGet<any>(env, cacheKey); if (cached) return cached; }
+  if (!input.forceRefresh) { const stored=await storedTraffic(env,input,chartStartDate); if(stored)return stored; }
   const url = new URL('https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/');
   // Advertiser/day grain is the authoritative aggregate for these two KPIs.
   // It avoids ad-level pagination and prevents a partial series for accounts
@@ -38,7 +48,11 @@ export async function loadTikTokAdsTraffic(env: Env, input: any): Promise<any> {
     url.searchParams.set('page', String(page)); Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
     const response = await fetch(url.toString(), { headers: { 'Access-Token': accessToken, 'Content-Type': 'application/json' } });
     const raw = await response.text(); let body: any = {}; try { body = JSON.parse(raw); } catch { /* error below includes status */ }
-    if (!response.ok || Number(body?.code) !== 0) throw new Error(`TikTok Ads API: ${body?.message || body?.msg || `HTTP ${response.status}`}`);
+    if (!response.ok || Number(body?.code) !== 0) {
+      const stored=await storedTraffic(env,input,chartStartDate);
+      if(stored)return stored;
+      throw new Error(`TikTok Ads API: ${body?.message || body?.msg || `HTTP ${response.status}`}`);
+    }
     rows.push(...responseRows(body));
     totalPages = Math.min(20, Number(body?.data?.page_info?.total_page ?? body?.data?.page_info?.total_pages ?? 1) || 1);
   }

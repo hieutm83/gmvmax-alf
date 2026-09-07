@@ -105,10 +105,17 @@ export async function syncSupabaseBackup(env: Env, reportDate: string): Promise<
       dailySnapshot(env, reportDate), dailySnapshot(env, previousDate), monitoringSnapshot(env, reportDate)
     ]);
     const files = [`daily/${reportDate}.json`, `daily/${previousDate}.json`, 'monitoring/latest.json'];
+    const adsFiles = [
+      [`ads/tiktok/daily/${reportDate}.json`, current.tiktokAdsDaily],
+      [`ads/tiktok/campaigns/${reportDate}.json`, current.tiktokAdsCampaigns],
+      [`ads/facebook/daily/${reportDate}.json`, current.facebookAdsDaily],
+      [`ads/facebook/campaigns/${reportDate}.json`, current.facebookAdsCampaigns]
+    ] as Array<[string, unknown]>;
     await Promise.all([
-      uploadJson(config, files[0], current), uploadJson(config, files[1], previous), uploadJson(config, files[2], monitoring)
+      uploadJson(config, files[0], current), uploadJson(config, files[1], previous), uploadJson(config, files[2], monitoring),
+      ...adsFiles.map(([path,value])=>uploadJson(config,path,{schemaVersion:1,reportDate,generatedAt:new Date().toISOString(),rows:value||[]}))
     ]);
-    await saveStatus(env, { status: 'SUCCESS', startedAt, completedAt: new Date().toISOString(), bucket: config.bucket, files });
+    await saveStatus(env, { status: 'SUCCESS', startedAt, completedAt: new Date().toISOString(), bucket: config.bucket, files: [...files,...adsFiles.map(([path])=>path)] });
   } catch (error) {
     await saveStatus(env, { status: 'FAILED', startedAt, completedAt: new Date().toISOString(),
       error: error instanceof Error ? error.message : String(error) });
