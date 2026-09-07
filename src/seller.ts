@@ -373,7 +373,13 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
       for (const product of Array.isArray(data.products) ? data.products : []) {
         const id = String(product.id || product.product_id || ''); if (!id) continue;
         const groups: Array<[string, any]> = [['affiliate', product.affiliate_video_performance], ['seller', product.seller_video_performance], ['productCard', product.seller_product_card_performance]];
-        for (const [source, raw] of groups) { const value = raw || {}; rows.push({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: canonicalStoreId, reportDate: date, source, productId: id, title: String(product.product_name || product.name || product.title || id), cost: gmvAmount(value.cost), grossRevenue: gmvAmount(value.attributed_gmv || value.gmv), skuOrders: gmvAmount(value.attributed_sku_orders || value.orders), impressions: gmvAmount(value.product_impressions), clicks: gmvAmount(value.product_clicks), payload: value }); }
+        for (const [source, raw] of groups) { const value = raw || {};
+          // Affiliate video uses attributed_video_gmv/orders, while seller and
+          // product-card channels use attributed_gmv/attributed_sku_orders.
+          const grossRevenue = gmvAmount(value.attributed_video_gmv || value.attributed_gmv || value.gmv);
+          const skuOrders = numberValue(value.attributed_video_sku_orders ?? value.attributed_video_orders ??
+            value.attributed_sku_orders ?? value.attributed_orders ?? value.orders);
+          rows.push({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: canonicalStoreId, reportDate: date, source, productId: id, title: String(product.product_name || product.name || product.title || id), cost: gmvAmount(value.cost), grossRevenue, skuOrders, impressions: gmvAmount(value.product_impressions), clicks: gmvAmount(value.product_clicks), payload: value }); }
       }
       token = String(data.next_page_token || ''); pages += 1;
     } while (token && pages < 50);
