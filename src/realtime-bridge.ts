@@ -128,6 +128,18 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
   const adminBridgePath = url.pathname === '/api/admin/verify' || url.pathname === '/api/admin/supabase-sync' || url.pathname === '/api/oauth/connect';
   if (!url.pathname.startsWith('/api/') || (request.method !== 'POST' && !(adminBridgePath && request.method === 'GET'))) return new Response('');
   if (!env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Realtime gateway is not configured.' }, 503);
-  const input = request.method === 'GET' ? { method: 'GET', origin: url.origin } : await request.json<any>(); const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET }, body: JSON.stringify({ path: url.pathname, input }) });
+  const input = request.method === 'GET' ? { method: 'GET', origin: request.headers.get('X-Realtime-Gateway-Origin') || url.origin } : await request.json<any>(); const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET }, body: JSON.stringify({ path: url.pathname, input }) });
   return new Response(await upstream.text(), { status: upstream.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+}
+
+/** Proxy browser API calls from the legacy custom domain to the realtime
+ * account while preserving the legacy origin for OAuth redirect URIs. */
+export async function realtimeProxyRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (!env.REALTIME_GATEWAY_URL) return json({ ok: false, error: 'Realtime gateway is not configured.' }, 503);
+  const headers = new Headers(request.headers);
+  for (const name of ['host', 'content-length', 'content-encoding', 'connection', 'accept-encoding']) headers.delete(name);
+  headers.set('X-Realtime-Gateway-Origin', url.origin);
+  const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.text();
+  const target = `${env.REALTIME_GATEWAY_URL.replace(/\/$/, '')}${url.pathname}${url.search}`;
+  return fetch(target, { method: request.method, headers, body });
 }

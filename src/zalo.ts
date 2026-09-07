@@ -1,6 +1,7 @@
 import type { Env } from './types';
-import { discoverVideoContexts, loadCreativeSummaries, loadMainReport, loadVideoDayStats } from './reports';
-import { cachePut, dateInTimezone, shiftDate } from './utils';
+import { discoverVideoContexts, loadVideoDayStats } from './reports';
+import { createSession, pagedReport } from './mcp';
+import { cachePut, dateInTimezone, numberValue, shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 
@@ -28,6 +29,24 @@ export async function sendMessage(env: Env, text: string, chatId?: string, textS
 }
 
 function integer(value: unknown): string { return Math.round(Number(value) || 0).toLocaleString('vi-VN'); }
+async function scheduledHourlyMetrics(env: Env, reportDate: string, reportHour: number): Promise<{ metrics: any; observed: boolean; mode: string }> {
+  try {
+    const session = await createSession(env);
+    const rows = await pagedReport(env, session, { advertiser_id: env.DEFAULT_ADVERTISER_ID, store_ids: [env.DEFAULT_STORE_CODE], dimensions: ['stat_time_hour'], metrics: ['cost', 'orders', 'gross_revenue'], start_date: reportDate, end_date: reportDate });
+    const found = (rows || []).filter((row: any) => { const value = String(row.dimensions?.stat_time_hour || row.metrics?.stat_time_hour || ''); const match = value.match(/(?:T|\s)(\d{1,2})(?::|$)/) || value.match(/^(\d{1,2})(?::|$)/); return match && Number(match[1]) === reportHour; });
+    if (found.length) {
+      const metrics: any = found.reduce((out: any, row: any) => { out.cost += numberValue(row.metrics?.cost); out.orders += numberValue(row.metrics?.orders); out.grossRevenue += numberValue(row.metrics?.gross_revenue); return out; }, { cost: 0, orders: 0, grossRevenue: 0 });
+      metrics.costPerOrder = metrics.orders ? metrics.cost / metrics.orders : null; metrics.roi = metrics.cost ? metrics.grossRevenue / metrics.cost : null;
+      return { metrics, observed: true, mode: 'hourly' };
+    }
+  } catch (error) { console.warn('Scheduled Ads hourly query skipped', String(error)); }
+  const stored = await env.DB.prepare('SELECT metrics_json FROM hourly_metrics WHERE advertiser_id=? AND store_id=? AND report_date=? AND report_hour=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate, reportHour).first<{ metrics_json: string }>();
+  if (stored?.metrics_json) { try { return { metrics: JSON.parse(stored.metrics_json), observed: true, mode: 'snapshots' }; } catch { /* fallback below */ } }
+  const daily = await env.DB.prepare('SELECT cost,sku_orders,gross_revenue FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate).first<any>();
+  const metrics: any = { cost: numberValue(daily?.cost), orders: numberValue(daily?.sku_orders), grossRevenue: numberValue(daily?.gross_revenue) };
+  metrics.costPerOrder = metrics.orders ? metrics.cost / metrics.orders : null; metrics.roi = metrics.cost ? metrics.grossRevenue / metrics.cost : null;
+  return { metrics, observed: Boolean(metrics.cost || metrics.orders || metrics.grossRevenue), mode: 'daily-fallback' };
+}
 function recommendation(items: any[]): string[] {
   return items?.length ? items.map((item) => `${item.itemId} | ${String(item.reason || '')}`) : ['Không có'];
 }
@@ -86,8 +105,8 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
   if (!claimed.meta.changes) return;
   const base = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE, startDate: reportDate, endDate: reportDate };
   try {
-    const report = await loadMainReport(env, base, true);
-    const hourlyRow = report.hourly?.[reportHour - 1];
+    const hourly = await scheduledHourlyMetrics(env, reportDate, reportHour);
+    const hourlyRow = { metrics: hourly.metrics, observed: hourly.observed };
     if (!hourlyRow?.metrics) throw new Error(`Không tìm thấy dữ liệu khung giờ ${reportHour}:00.`);
     const now = new Date();
     const localDate = dateInTimezone(now, env.TIMEZONE || 'Asia/Bangkok');
@@ -99,18 +118,16 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
       (reportHour===24&&localHour===0&&reportDate===shiftDate(localDate,-1));
     if(hourlyRow.observed===false&&!isCurrentSlot)
       throw new Error(`TikTok Ads không còn dữ liệu tách riêng khung giờ ${reportHour}:00; không gửi số 0 thay thế.`);
-    if(report.hourlyMode==='hourly'&&hourlyRow.observed===false&&isCurrentSlot&&localMinute<20)
+    if(hourly.mode==='hourly'&&hourlyRow.observed===false&&isCurrentSlot&&localMinute<20)
       throw new Error(`TikTok Ads chưa chốt dữ liệu khung giờ ${reportHour}:00; sẽ tự động thử lại.`);
-    const summary = await loadCreativeSummaries(env, { ...base, products: report.products,
-      allContexts: report.creativeContexts, availableProducts: report.availableProductCount,
-      forceRefresh: true });
+    const summary = { videoEvaluation: { boost: [], stop: [] } };
     const display = reportDate.split('-').reverse().join('/');
-    const cumulative = report.hourlyMode === 'cumulative';
-    const t = cumulative ? report.totals : hourlyRow.metrics;
+    const cumulative = hourly.mode === 'cumulative';
+    const t = hourlyRow.metrics;
     const previousSent=await env.DB.prepare(`SELECT MAX(report_hour) AS report_hour FROM scheduled_reports
       WHERE report_date=? AND report_hour<? AND status='SENT'`).bind(reportDate,reportHour).first<{report_hour:number|null}>();
     const intervalStart=Math.max(1,Number(previousSent?.report_hour||0)+1);
-    const intervalLabel=report.hourlyMode==='snapshots'&&intervalStart<reportHour
+    const intervalLabel=hourly.mode==='snapshots'&&intervalStart<reportHour
       ? `${String(intervalStart).padStart(2,'0')}:00–${String(reportHour).padStart(2,'0')}:00 (lũy kế)`
       : `${String(reportHour).padStart(2,'0')}:00`;
     let text = [
@@ -129,7 +146,7 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     if (cumulative) text = text.replace(':00\n', ':00 (lũy kế)\n');
     const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text));
     await env.DB.prepare(`UPDATE scheduled_reports SET status='SENT',message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP
-      WHERE report_date=? AND report_hour=?`).bind(messageId,JSON.stringify({totals:t,source:report.hourlyMode,
+      WHERE report_date=? AND report_hour=?`).bind(messageId,JSON.stringify({totals:t,source:hourly.mode,
         observed:hourlyRow.observed!==false}),reportDate,reportHour).run();
     await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
       ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)

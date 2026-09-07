@@ -22,7 +22,7 @@ import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, sh
 import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
   createDashboardSession, dashboardRoleForPassword, dashboardSessionCookie, dashboardSessionFromRequest,
   recordDashboardLoginFailure, type DashboardRole, type DashboardSession } from './dashboard-auth';
-import { bridgeRequest, gatewayRequest } from './realtime-bridge';
+import { bridgeRequest, gatewayRequest, realtimeProxyRequest } from './realtime-bridge';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
 function validateScope(input: any): any {
@@ -436,13 +436,10 @@ export default {
         return assetResponse(request,env);
       }
       if(url.pathname==='/internal/realtime'&&request.method==='POST')return await bridgeRequest(request,env);
-      // Keep the legacy worker as the writer, but move browser reads to the
-      // separate account. Webhooks and scheduled/queue handlers never match
-      // this block, so they continue running on the legacy account.
-      if(env.REALTIME_GATEWAY_URL && (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/api/'))){
-        const target = new URL(url.pathname + url.search, env.REALTIME_GATEWAY_URL);
-        return Response.redirect(target.toString(), 307);
-      }
+      // Keep the legacy custom domain as the browser URL. API reads are
+      // proxied to the realtime account (one bounded subrequest), while
+      // cron, queues, webhooks and all data writes stay on this Worker.
+      if(env.REALTIME_GATEWAY_URL && url.pathname.startsWith('/api/')) return await realtimeProxyRequest(request,env,url);
       if(url.pathname==='/tiktok/webhook')return await tiktokShopWebhook(request,env);
       if(url.pathname==='/webhooks/zalo-operations'&&request.method==='POST')return operationsBotWebhook(request,env,ctx);
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
