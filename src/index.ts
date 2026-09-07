@@ -213,9 +213,9 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
     try{
       const storeId=await resolveDefaultStore(runtime); let date=next;
-      // Three sequential days per queue message keeps subrequests bounded,
-      // while reducing the Jan-to-now backfill from ~40 hours to ~14 hours.
-      for(let count=0;count<3&&date<=yesterday;count+=1,date=shiftDate(date,1)){
+      // Process a larger bounded chunk per queue message. Calls remain
+      // sequential to avoid provider rate limits and protect Zalo workers.
+      for(let count=0;count<15&&date<=yesterday;count+=1,date=shiftDate(date,1)){
         const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:date,endDate:date};
         // A revoked provider token must not block the whole historical cursor.
         // Persist whichever provider succeeds, then advance this date so the
@@ -402,7 +402,8 @@ export default {
       ctx.waitUntil(env.TASK_QUEUE.send({type:'supabase-backup',reportDate:localDate}));
     if([3,9,12].includes(localHour)&&localMinute===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:shiftDate(localDate, -1)}));
-    if(localMinute%5===0){
+    // Queue the next bounded backfill chunk every minute until history is complete.
+    {
       ctx.waitUntil((async()=>{const row=await env.DB.prepare("SELECT value,updated_at FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").first<{value:string;updated_at:string}>();const stale=!row||Date.now()-Date.parse(String(row.updated_at||''))>15*60*1000;if(stale)await env.TASK_QUEUE.send({type:'ads-backfill'});})());
     }
     // Start at 08:00 and keep retrying until TikTok Shop data passes the
