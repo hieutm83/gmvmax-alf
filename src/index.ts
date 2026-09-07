@@ -152,7 +152,7 @@ async function processManualSupabaseSync(env:Env,message:Extract<TaskMessage,{ty
  try{
   // Keep each queue invocation comfortably below the free-plan subrequest
   // ceiling; Shop Analytics may return multiple pages for a busy day.
-  let chunkEnd=message.startDate;for(let i=1;i<14&&chunkEnd<message.endDate;i+=1)chunkEnd=shiftDate(chunkEnd,1);
+  let chunkEnd=message.startDate;for(let i=1;i<7&&chunkEnd<message.endDate;i+=1)chunkEnd=shiftDate(chunkEnd,1);
   const total=Math.max(1,Math.round((Date.parse(message.endDate)-Date.parse(message.startDate))/86400000)+1),done=Math.max(0,Math.round((Date.parse(chunkEnd)-Date.parse(message.startDate)+86400000)/86400000));
   await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'RUNNING',startDate:message.startDate,endDate:message.endDate,progress:Math.min(95,Math.round(done/total*95)),tables:message.tables})).run();
   // Keep a complete calendar in the daily replicas. Provider reports omit
@@ -280,7 +280,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
       // Refresh a bounded range with the same BASIC + GMV MAX layers used by
       // the Google Sheet, then hydrate Shop Analytics source traffic. This
       // repairs dates that were previously advanced after a provider error.
-      const chunkEnd=(()=>{let value=date;for(let count=1;count<15&&value<yesterday;count+=1)value=shiftDate(value,1);return value;})();
+      const chunkEnd=(()=>{let value=date;for(let count=1;count<8&&value<yesterday;count+=1)value=shiftDate(value,1);return value;})();
       const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:date,endDate:chunkEnd};
       const results=await Promise.allSettled([
         refreshTikTokDailySnapshot(runtime,input),
