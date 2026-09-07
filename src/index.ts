@@ -448,6 +448,16 @@ export default {
       if(url.pathname==='/auth/login')return await dashboardLogin(request,env);
       if(url.pathname==='/login'&&request.method==='GET')return assetResponse(request,env);
       if(url.pathname==='/FAVICON.png'&&request.method==='GET')return assetResponse(request,env);
+      // The legacy custom domain is the public dashboard URL. It does not
+      // require a dashboard session for the read-only realtime shell; admin
+      // mutations still require the password bridge in the UI.
+      if((url.pathname==='/'||url.pathname==='/index.html')&&request.method==='GET')return assetResponse(request,env);
+      if(url.pathname==='/auth/logout'&&request.method==='POST')return dashboardLogout();
+      if(url.pathname==='/auth/connect'&&request.method==='GET')return Response.redirect(await createAuthorizationUrl(env,url.origin),302);
+      if(url.pathname==='/seller/auth/connect'&&request.method==='GET')return Response.redirect(await createSellerAuthorizationUrl(env),302);
+      if(url.pathname==='/auth/callback'&&request.method==='GET')return url.searchParams.has('app_key')?handleSellerOAuthCallback(env,url):handleOAuthCallback(env,url);
+      if(url.pathname==='/oauth/callback'&&request.method==='GET')return handleOAuthCallback(env,url);
+      if(url.pathname==='/seller/auth/callback'&&request.method==='GET')return handleSellerOAuthCallback(env,url);
 
       const session=await dashboardSessionFromRequest(request,env);
       if(!session){
