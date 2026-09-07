@@ -431,7 +431,15 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
   const grouped = new Map<string, any[]>();
   for (const row of rows) { const key = `${row.reportDate}:${row.productId}`; const list = grouped.get(key) || []; list.push(row); grouped.set(key, list); }
   const matchedDates = new Set<string>();
-  for (const key of adsByProductDay.keys()) if (!key.endsWith(':__date_total__')) matchedDates.add(key.slice(0, 10));
+  // Only suppress the daily fallback when a returned Ads row actually
+  // matches one of the Shop Product IDs and has a non-zero financial total.
+  // Empty/zero Ads rows are common for historical dates and must not block
+  // filling source metrics from the verified daily report.
+  for (const [key, total] of adsByProductDay) {
+    if (!key.endsWith(':__date_total__') && (total.cost || total.grossRevenue || total.orders)) {
+      const date = key.slice(0, 10); if (grouped.has(key)) matchedDates.add(date);
+    }
+  }
   for (const [key, list] of grouped) {
     const date = key.slice(0, 10);
     const total = adsByProductDay.get(key) || (!matchedDates.has(date) ? adsByProductDay.get(`${date}:__date_total__`) : undefined);
