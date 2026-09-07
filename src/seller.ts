@@ -440,9 +440,28 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
       const date = key.slice(0, 10); if (grouped.has(key)) matchedDates.add(date);
     }
   }
+  const fallbackDates = new Set<string>();
+  for (const key of grouped.keys()) {
+    const date = key.slice(0, 10);
+    if (!matchedDates.has(date) && adsByProductDay.has(`${date}:__date_total__`)) fallbackDates.add(date);
+  }
+  // For a date-level fallback, flatten every source row for that date first;
+  // otherwise the same daily total would be applied once per Product ID.
+  for (const date of fallbackDates) {
+    const list = [...grouped.entries()].filter(([key]) => key.startsWith(`${date}:`)).flatMap(([, rows]) => rows);
+    const total = adsByProductDay.get(`${date}:__date_total__`); if (!total || !list.length) continue;
+    const weights = list.map((row) => numberValue(row.skuOrders) || numberValue(row.clicks) || numberValue(row.impressions));
+    const positiveWeights = weights.some((value) => value > 0); const weightTotal = positiveWeights ? weights.reduce((sum, value) => sum + value, 0) : list.length;
+    list.forEach((row, index) => {
+      const share = positiveWeights ? weights[index] / weightTotal : 1 / list.length;
+      row.cost = total.cost * share; row.grossRevenue = total.grossRevenue * share; row.skuOrders = total.orders * share;
+      row.payload = { ...(row.payload || {}), product_id: row.productId, ads_join: { cost: total.cost, gross_revenue: total.grossRevenue, orders: total.orders, share, fallback: 'daily' } };
+    });
+  }
   for (const [key, list] of grouped) {
     const date = key.slice(0, 10);
-    const total = adsByProductDay.get(key) || (!matchedDates.has(date) ? adsByProductDay.get(`${date}:__date_total__`) : undefined);
+    if (fallbackDates.has(date)) continue;
+    const total = adsByProductDay.get(key);
     if (!total) continue;
     const weights = list.map((row) => numberValue(row.skuOrders) || numberValue(row.clicks) || numberValue(row.impressions));
     const positiveWeights = weights.some((value) => value > 0); const weightTotal = positiveWeights ? weights.reduce((sum, value) => sum + value, 0) : list.length;
