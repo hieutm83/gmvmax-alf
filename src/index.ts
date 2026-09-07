@@ -466,7 +466,14 @@ export default {
       if(url.pathname==='/seller/auth/callback'&&request.method==='GET'){requireAdminRole(session.role);return handleSellerOAuthCallback(env,url);}
       if(url.pathname.startsWith('/api/'))return await routeApi(request,env,url,session);
       return assetResponse(request,env);
-    }catch(error){const status=error instanceof HttpError?error.status:500;return json({ok:false,error:error instanceof Error?error.message:String(error)},status);}
+    }catch(error){
+      // Workers can deserialize thrown errors across module boundaries, so
+      // `instanceof HttpError` is not always reliable in the bundled script.
+      // Preserve the explicit HTTP status when present (notably 401 on login)
+      // instead of turning it into a misleading 500 response.
+      const status=error instanceof HttpError?error.status:Number((error as any)?.status)||500;
+      return json({ok:false,error:error instanceof Error?error.message:String(error)},status);
+    }
   },
   async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{
     const now=new Date();const localHour=hourInTimezone(now,env.TIMEZONE);const localDate=dateInTimezone(now,env.TIMEZONE);

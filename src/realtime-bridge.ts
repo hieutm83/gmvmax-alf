@@ -106,10 +106,17 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
   const proxiedAuth = new Set(['/auth/login','/auth/logout','/auth/connect','/auth/callback','/oauth/callback','/seller/auth/connect','/seller/auth/callback']);
   if (proxiedAuth.has(url.pathname)) {
     if (!env.REALTIME_SOURCE_URL) return json({ ok: false, error: 'Realtime source is not configured.' }, 503);
-    const headers = new Headers(request.headers); headers.delete('host'); headers.set('X-Realtime-Gateway-Origin', url.origin);
-    const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}${url.pathname}${url.search}`, { method: request.method, headers, body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body });
+    // Rebuild the request body and hop-by-hop headers. Passing the original
+    // stream together with its Content-Length/Content-Encoding can make the
+    // old Worker reject an otherwise valid login payload after proxying.
+    const headers = new Headers(request.headers);
+    for (const name of ['host', 'content-length', 'content-encoding', 'connection', 'accept-encoding']) headers.delete(name);
+    headers.set('X-Realtime-Gateway-Origin', url.origin);
+    const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.text();
+    const source = env.REALTIME_SOURCE_URL.replace(/\/$/, '');
+    const upstream = await fetch(`${source}${url.pathname}${url.search}`, { method: request.method, headers, body });
     const outHeaders = new Headers(upstream.headers); const location = outHeaders.get('Location');
-    if (location) { try { const target = new URL(location, env.REALTIME_SOURCE_URL); if (target.origin === env.REALTIME_SOURCE_URL.replace(/\/$/, '')) outHeaders.set('Location', `${url.origin}${target.pathname}${target.search}${target.hash}`); } catch { /* keep provider redirect */ } }
+    if (location) { try { const target = new URL(location, source); if (target.origin === new URL(source).origin) outHeaders.set('Location', `${url.origin}${target.pathname}${target.search}${target.hash}`); } catch { /* keep provider redirect */ } }
     return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: outHeaders });
   }
   const adminBridgePath = url.pathname === '/api/admin/verify' || url.pathname === '/api/admin/supabase-sync';
