@@ -471,6 +471,22 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
       row.payload = { ...(row.payload || {}), product_id: row.productId, ads_join: { cost: total.cost, gross_revenue: total.grossRevenue, orders: total.orders, share } };
     });
   }
+  // Normalize each source day to the verified Ads daily totals. This keeps
+  // Product ID proportions while preventing provider-specific attribution
+  // differences (or duplicate Product ID rows) from inflating source sums.
+  const rowsByDate = new Map<string, any[]>();
+  for (const row of rows) { const list = rowsByDate.get(String(row.reportDate).slice(0, 10)) || []; list.push(row); rowsByDate.set(String(row.reportDate).slice(0, 10), list); }
+  for (const [date, list] of rowsByDate) {
+    const target = adsByProductDay.get(`${date}:__date_total__`); if (!target || !list.length) continue;
+    const weights = list.map((row) => numberValue(row.skuOrders) || numberValue(row.clicks) || numberValue(row.impressions));
+    const positiveWeights = weights.some((value) => value > 0); const weightTotal = positiveWeights ? weights.reduce((sum, value) => sum + value, 0) : list.length;
+    const normalize = (field: 'cost' | 'grossRevenue' | 'skuOrders', targetValue: number) => {
+      const current = list.reduce((sum, row) => sum + numberValue(row[field]), 0);
+      if (current > 0) { const ratio = targetValue / current; list.forEach((row) => { row[field] = numberValue(row[field]) * ratio; }); }
+      else list.forEach((row, index) => { row[field] = targetValue * (positiveWeights ? weights[index] / weightTotal : 1 / list.length); });
+    };
+    normalize('cost', target.cost); normalize('grossRevenue', target.grossRevenue); normalize('skuOrders', target.orders);
+  }
   return rows;
 }
 
