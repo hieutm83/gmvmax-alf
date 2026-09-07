@@ -411,10 +411,31 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
     // unavailable; the next scheduled snapshot will retry the join.
     console.warn('Product ID Ads join skipped', String(error));
   }
+  // A few historical GMV MAX days do not expose the item_group_id dimension
+  // even though the daily report is available. Use that verified daily total
+  // only for dates with no Product ID matches, then allocate it across the
+  // returned Product IDs using the same source weights below.
+  try {
+    const daily = await env.DB.prepare(`SELECT report_date,cost,gross_revenue,sku_orders
+      FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ?`)
+      .bind(env.DEFAULT_ADVERTISER_ID, canonicalStoreId, startDate, endDate).all<any>();
+    for (const row of daily.results || []) {
+      const date = String(row.report_date).slice(0, 10);
+      if (!adsByProductDay.has(`${date}:__date_total__`)) {
+        adsByProductDay.set(`${date}:__date_total__`, { cost: numberValue(row.cost), grossRevenue: numberValue(row.gross_revenue), orders: numberValue(row.sku_orders) });
+      }
+    }
+  } catch (error) {
+    console.warn('Daily Ads fallback skipped', String(error));
+  }
   const grouped = new Map<string, any[]>();
   for (const row of rows) { const key = `${row.reportDate}:${row.productId}`; const list = grouped.get(key) || []; list.push(row); grouped.set(key, list); }
+  const matchedDates = new Set<string>();
+  for (const key of adsByProductDay.keys()) if (!key.endsWith(':__date_total__')) matchedDates.add(key.slice(0, 10));
   for (const [key, list] of grouped) {
-    const total = adsByProductDay.get(key); if (!total) continue;
+    const date = key.slice(0, 10);
+    const total = adsByProductDay.get(key) || (!matchedDates.has(date) ? adsByProductDay.get(`${date}:__date_total__`) : undefined);
+    if (!total) continue;
     const weights = list.map((row) => numberValue(row.skuOrders) || numberValue(row.clicks) || numberValue(row.impressions));
     const positiveWeights = weights.some((value) => value > 0); const weightTotal = positiveWeights ? weights.reduce((sum, value) => sum + value, 0) : list.length;
     list.forEach((row, index) => {
