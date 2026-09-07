@@ -2,7 +2,7 @@ import type { Env, TaskMessage } from './types';
 import { OAuthCoordinator, createAuthorizationUrl, disconnect, getAccessToken, handleOAuthCallback, keepAccessTokenFresh,
   oauthConnectionState, readTokens, refreshAccessToken } from './oauth';
 import { createSession, listAdvertisers, listStores, resolveDefaultStoreId } from './mcp';
-import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
+import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats, refreshTikTokDailySnapshot } from './reports';
 import { backupDate } from './sheets';
 import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis, loadShopSourceRows, sellerOAuthState } from './seller';
 import { loadOperationsAnalysis, syncTrackingOrder } from './operations';
@@ -163,11 +163,21 @@ async function processManualSupabaseSync(env:Env,message:Extract<TaskMessage,{ty
     INSERT OR IGNORE INTO facebook_ads_daily(ad_account_id,report_date,payload_json)
     SELECT ad_account_id,d,'{}' FROM (SELECT DISTINCT ad_account_id FROM facebook_ads_daily) accounts CROSS JOIN dates`).bind(message.startDate,chunkEnd).run()
   ]);
+  const tiktokDailyRows = await refreshTikTokDailySnapshot(zaloRuntime(env), {
+    advertiserId: env.DEFAULT_ADVERTISER_ID,
+    storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE,
+    startDate: message.startDate, endDate: chunkEnd
+  }).catch((error) => { console.warn('TikTok daily refresh skipped', String(error)); return 0; });
+  const facebookDailyRows = await loadFacebookAdsReport(env, {
+    startDate: message.startDate, endDate: chunkEnd, forceRefresh: true
+  }).then((report) => Array.isArray(report?.daily) ? report.daily.length : 0)
+    .catch((error) => { console.warn('Facebook daily refresh skipped', String(error)); return 0; });
   const sourceRows=await loadShopSourceRows(zaloRuntime(env),message.startDate,chunkEnd);
   for(const row of sourceRows)await env.DB.prepare(`INSERT INTO tiktok_ads_source_daily(advertiser_id,store_id,report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(advertiser_id,store_id,report_date,source,product_id) DO UPDATE SET title=excluded.title,cost=excluded.cost,gross_revenue=excluded.gross_revenue,sku_orders=excluded.sku_orders,impressions=excluded.impressions,clicks=excluded.clicks,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`).bind(row.advertiserId,row.storeId,row.reportDate,row.source,row.productId,row.title,row.cost,row.grossRevenue,row.skuOrders,row.impressions,row.clicks,JSON.stringify(row.payload||{})).run();
+  await env.DB.prepare(`UPDATE tiktok_ads_daily SET impressions=(SELECT COALESCE(SUM(impressions),0) FROM tiktok_ads_source_daily s WHERE s.advertiser_id=tiktok_ads_daily.advertiser_id AND s.store_id=tiktok_ads_daily.store_id AND s.report_date=tiktok_ads_daily.report_date), clicks=(SELECT COALESCE(SUM(clicks),0) FROM tiktok_ads_source_daily s WHERE s.advertiser_id=tiktok_ads_daily.advertiser_id AND s.store_id=tiktok_ads_daily.store_id AND s.report_date=tiktok_ads_daily.report_date), ctr=CASE WHEN impressions>0 THEN CAST(clicks AS REAL)/impressions ELSE 0 END, cr=CASE WHEN clicks>0 THEN CAST(sku_orders AS REAL)/clicks ELSE 0 END WHERE report_date BETWEEN ? AND ? AND EXISTS(SELECT 1 FROM tiktok_ads_source_daily s WHERE s.advertiser_id=tiktok_ads_daily.advertiser_id AND s.store_id=tiktok_ads_daily.store_id AND s.report_date=tiktok_ads_daily.report_date)`).bind(message.startDate,chunkEnd).run();
   const next=shiftDate(chunkEnd,1);if(next<=message.endDate){await env.TASK_QUEUE.send({type:'supabase-manual-sync',startDate:next,endDate:message.endDate,tables:message.tables});return;}
   await syncSupabaseBackup(env,message.endDate);const backup=await env.DB.prepare("SELECT value FROM app_settings WHERE key='SUPABASE_BACKUP_STATUS'").first<any>();const state=backup?.value?JSON.parse(backup.value):{};if(state.status!=='SUCCESS'||(state.tableErrors||[]).length)throw new Error('Supabase backup '+String(state.status||'FAILED')+': '+JSON.stringify(state.tableErrors||[]));
-  await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'SUCCESS',startDate:message.startDate,endDate:message.endDate,progress:100,tables:message.tables,sourceRows:sourceRows.length})).run();
+  await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'SUCCESS',startDate:message.startDate,endDate:message.endDate,progress:100,tables:message.tables,sourceRows:sourceRows.length,tiktokDailyRows,facebookDailyRows})).run();
  }catch(error){
   await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'FAILED',startDate:message.startDate,endDate:message.endDate,progress:100,tables:message.tables,error:String(error)})).run();
   throw error;

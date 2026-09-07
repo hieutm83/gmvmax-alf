@@ -211,6 +211,54 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
   return result;
 }
 
+/** Refresh the compact daily replica using the same two report layers as the
+ * Google Sheet middleware: BASIC plus GMV MAX advertiser/day. */
+export async function refreshTikTokDailySnapshot(env: Env, input: any): Promise<number> {
+  const session = await createSession(env);
+  const basic = await callTool(env, session, 'report_integrated_get', {
+    advertiser_id: input.advertiserId, report_type: 'BASIC', service_type: 'AUCTION',
+    data_level: 'AUCTION_ADVERTISER', dimensions: ['advertiser_id', 'stat_time_day'],
+    metrics: ['spend', 'impressions', 'clicks', 'total_onsite_shopping_value', 'onsite_shopping'],
+    start_date: input.startDate, end_date: input.endDate, page: 1, page_size: 1000
+  });
+  const gmv = await callTool(env, session, 'gmv_max_report_get', {
+    advertiser_id: input.advertiserId, store_ids: [input.storeId],
+    dimensions: ['advertiser_id', 'stat_time_day'],
+    metrics: ['gross_revenue', 'orders', 'cost'], start_date: input.startDate,
+    end_date: input.endDate, page: 1, page_size: 1000
+  });
+  const rowsOf = (value: any): any[] => Array.isArray(value?.list) ? value.list : Array.isArray(value?.data?.list) ? value.data.list : [];
+  const byDate = new Map<string, any>();
+  for (let date = input.startDate; date <= input.endDate; date = shiftDate(date, 1)) {
+    byDate.set(date, { date, metrics: { cost: 0, grossRevenue: 0, orders: 0, impressions: 0, traffic: 0 } });
+  }
+  for (const row of rowsOf(basic)) {
+    const date = String(row?.dimensions?.stat_time_day || row?.metrics?.stat_time_day || '').slice(0, 10);
+    const point = byDate.get(date); if (!point) continue;
+    const metrics = row.metrics || {};
+    point.metrics.cost += numberValue(metrics.spend);
+    point.metrics.grossRevenue += numberValue(metrics.total_onsite_shopping_value);
+    point.metrics.orders += numberValue(metrics.onsite_shopping);
+    point.metrics.impressions += numberValue(metrics.impressions);
+    point.metrics.traffic += numberValue(metrics.clicks);
+  }
+  for (const row of rowsOf(gmv)) {
+    const date = String(row?.dimensions?.stat_time_day || row?.metrics?.stat_time_day || '').slice(0, 10);
+    const point = byDate.get(date); if (!point) continue;
+    const metrics = row.metrics || {};
+    point.metrics.cost += numberValue(metrics.cost);
+    point.metrics.grossRevenue += numberValue(metrics.gross_revenue);
+    point.metrics.orders += numberValue(metrics.orders);
+  }
+  const daily = [...byDate.values()];
+  daily.forEach((point) => {
+    const metrics = point.metrics;
+    metrics.costPerOrder = metrics.orders ? metrics.cost / metrics.orders : null;
+  });
+  await saveTikTokAdsSnapshot(env, input, { daily });
+  return daily.length;
+}
+
 function normalizeVideo(row: McpRow): any {
   const d = row.dimensions || {}, m = row.metrics || {}, itemId = rowId(row, 'item_id'), values = metric(m);
   const user = String(m.tt_account_name || d.tt_account_name || '').replace(/^@/, '');
