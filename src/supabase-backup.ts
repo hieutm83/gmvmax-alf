@@ -82,10 +82,21 @@ async function removeLegacyCipherRows(config: { url: string; key: string }, tabl
   // Older syncs accidentally persisted the Shop API cipher (ROW_...) in the
   // store_id column. Remove only those known-invalid keys before inserting the
   // canonical numeric rows so Supabase does not retain duplicate histories.
-  const response = await fetch(`${config.url}/rest/v1/${table}?store_id=like.ROW_*`, {
-    method: 'DELETE', headers: headers(config.key, { Prefer: 'return=minimal' })
-  });
-  if (!response.ok) throw new Error(`Supabase cleanup ${table} HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  let lastError = '';
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(`${config.url}/rest/v1/${table}?store_id=like.ROW_*`, {
+      method: 'DELETE', headers: headers(config.key, { Prefer: 'return=minimal' })
+    });
+    if (response.ok) return;
+    const details = (await response.text()).slice(0, 500);
+    lastError = `Supabase cleanup ${table} HTTP ${response.status}: ${details}`;
+    // Supabase may briefly reject a freshly issued secret JWT when its clock
+    // is ahead. Treat this exactly like table upserts and retry with backoff.
+    const transient = response.status >= 500 || /PGRST303|JWT issued at future|temporar|rate.?limit/i.test(details);
+    if (!transient || attempt === 3) throw new Error(lastError);
+    await new Promise((resolve) => setTimeout(resolve, [1000, 2500, 5000][attempt]));
+  }
+  throw new Error(lastError || `Supabase cleanup ${table} failed.`);
 }
 function tableRow(table: string, row: any): any {
   const fields: Record<string, string[]> = {
