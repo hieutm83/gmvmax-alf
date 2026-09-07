@@ -250,6 +250,29 @@ export async function refreshTikTokDailySnapshot(env: Env, input: any): Promise<
     point.metrics.grossRevenue += numberValue(metrics.gross_revenue);
     point.metrics.orders += numberValue(metrics.orders);
   }
+  // Some MCP versions omit advertiser-level rows for dates that still have
+  // campaign-level delivery (the Google Sheet uses this fallback). Re-query
+  // only the missing dates at campaign/day granularity to avoid double-counting
+  // dates already returned by the compact report.
+  const missingDates = [...byDate.values()].filter((point) =>
+    !point.metrics.cost && !point.metrics.grossRevenue && !point.metrics.orders);
+  if (missingDates.length) {
+    const fallback = await callTool(env, session, 'gmv_max_report_get', {
+      advertiser_id: input.advertiserId, store_ids: [input.storeId],
+      dimensions: ['campaign_id', 'stat_time_day'],
+      metrics: ['cost', 'orders', 'gross_revenue'], start_date: input.startDate,
+      end_date: input.endDate, page: 1, page_size: 1000
+    }).catch(() => null);
+    for (const row of rowsOf(fallback)) {
+      const date = String(row?.dimensions?.stat_time_day || row?.metrics?.stat_time_day || '').slice(0, 10);
+      const point = byDate.get(date);
+      if (!point || !missingDates.includes(point)) continue;
+      const metrics = row.metrics || {};
+      point.metrics.cost += numberValue(metrics.cost);
+      point.metrics.grossRevenue += numberValue(metrics.gross_revenue);
+      point.metrics.orders += numberValue(metrics.orders);
+    }
+  }
   const daily = [...byDate.values()];
   daily.forEach((point) => {
     const metrics = point.metrics;
