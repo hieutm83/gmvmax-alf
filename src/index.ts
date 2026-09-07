@@ -371,6 +371,9 @@ async function dashboardLogin(request:Request,env:Env):Promise<Response>{
   const fingerprint=await assertDashboardLoginAllowed(request,env);
   const input=await readJson<{password?:string}>(request);
   const role=await dashboardRoleForPassword(env,String(input?.password||''));
+  // Handle invalid credentials with an explicit response. This avoids an
+  // opaque edge 500 when a bundled Worker loses the custom Error prototype.
+  if(!role){await recordDashboardLoginFailure(env,fingerprint);return json({ok:false,error:'Mật khẩu không đúng.'},401);}
   if(!role){await recordDashboardLoginFailure(env,fingerprint);throw new HttpError(401,'Mã khóa không đúng.');}
   await clearDashboardLoginFailures(env,fingerprint);
   const token=await createDashboardSession(env,role);
