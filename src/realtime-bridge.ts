@@ -1,7 +1,10 @@
 import type { Env } from './types';
 import { json, numberValue, shiftDate, validateDate } from './utils';
-import { createAuthorizationUrl, disconnect, refreshAccessToken } from './oauth';
+import { createAuthorizationUrl, disconnect, oauthConnectionState, readTokens, refreshAccessToken } from './oauth';
 import { disconnectSeller } from './seller';
+import { sellerOAuthState } from './seller';
+import { createSession, listAdvertisers, listStores } from './mcp';
+import { dateInTimezone } from './utils';
 
 function emptyTikTok() { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: true, costPerOrder: null, roi: null }; }
 function addTikTok(target: any, row: any): void {
@@ -76,6 +79,13 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
   const body = await request.json<any>();
   try {
     const path = String(body?.path || ''), input = body?.input || {};
+    if (path === '/api/state') {
+      const tokens = await readTokens(env); let advertisers: any[] = []; let connectionError: string | undefined;
+      if (tokens) { try { advertisers = await listAdvertisers(env, await createSession(env)); } catch (error) { connectionError = error instanceof Error ? error.message : String(error); } }
+      const today = dateInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
+      return json({ ok: true, data: { connected: Boolean(tokens), startDate: today, endDate: today, adsOAuth: oauthConnectionState(tokens, env.MCP_SCOPE), sellerOAuth: await sellerOAuthState(env), dashboardRole: 'admin', defaultAdvertiserId: env.DEFAULT_ADVERTISER_ID, defaultStoreCode: env.DEFAULT_STORE_CODE, advertisers, connectionError } });
+    }
+    if (path === '/api/stores') return json({ ok: true, data: await listStores(env, await createSession(env), String(input?.advertiserId || input || env.DEFAULT_ADVERTISER_ID)) });
     if (path === '/api/oauth/connect') return json({ ok: true, data: await createAuthorizationUrl(env, String(input?.origin || env.PUBLIC_BASE_URL)) });
     if (path === '/api/oauth/refresh') return json({ ok: true, data: await refreshAccessToken(env) });
     if (path === '/api/oauth/disconnect') { await disconnect(env); return json({ ok: true, data: true }); }
@@ -108,7 +118,8 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
     const response = await fetch(`https://bot-api.zaloplatforms.com/bot${encodeURIComponent(token)}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(body?.payload || {}) });
     const text = await response.text(); return new Response(text, { status: response.status, headers: { 'Content-Type': 'application/json' } });
   }
-  if (url.pathname === '/api/state' && request.method === 'GET') return json({ ok: true, data: { connected: true, startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), adsOAuth: { connected: true }, sellerOAuth: { connected: true }, dashboardRole: 'admin', defaultAdvertiserId: env.DEFAULT_ADVERTISER_ID, defaultStoreCode: env.DEFAULT_STORE_CODE, advertisers: [] } });
+  // State and stores are read from the legacy D1/MCP account through the
+  // authenticated bridge, not fabricated in the realtime gateway.
   const proxiedAuth = new Set(['/auth/login','/auth/logout','/auth/connect','/auth/callback','/oauth/callback','/seller/auth/connect','/seller/auth/callback']);
   if (proxiedAuth.has(url.pathname)) {
     if (!env.REALTIME_SOURCE_URL) return json({ ok: false, error: 'Realtime source is not configured.' }, 503);
@@ -125,7 +136,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
     if (location) { try { const target = new URL(location, source); if (target.origin === new URL(source).origin) outHeaders.set('Location', `${url.origin}${target.pathname}${target.search}${target.hash}`); } catch { /* keep provider redirect */ } }
     return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: outHeaders });
   }
-  const adminBridgePath = url.pathname === '/api/admin/verify' || url.pathname === '/api/admin/supabase-sync' || url.pathname === '/api/oauth/connect';
+  const adminBridgePath = url.pathname === '/api/state' || url.pathname === '/api/stores' || url.pathname === '/api/admin/verify' || url.pathname === '/api/admin/supabase-sync' || url.pathname === '/api/oauth/connect';
   if (!url.pathname.startsWith('/api/') || (request.method !== 'POST' && !(adminBridgePath && request.method === 'GET'))) return new Response('');
   if (!env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Realtime gateway is not configured.' }, 503);
   const input = request.method === 'GET' ? { method: 'GET', origin: request.headers.get('X-Realtime-Gateway-Origin') || url.origin } : await request.json<any>(); const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET }, body: JSON.stringify({ path: url.pathname, input }) });
