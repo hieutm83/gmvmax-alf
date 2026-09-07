@@ -57,6 +57,24 @@ async function uploadJson(config: { url: string; key: string; bucket: string }, 
   if (!response.ok) throw new Error(`Supabase upload ${path} HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
 }
 
+async function upsertTable(config: { url: string; key: string }, table: string, rows: any[]): Promise<void> {
+  if (!rows.length) return;
+  const response = await fetch(`${config.url}/rest/v1/${table}`, {
+    method: 'POST', headers: headers(config.key, { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify(rows)
+  });
+  if (!response.ok) throw new Error(`Supabase table ${table} HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+}
+function tableRow(table: string, row: any): any {
+  const fields: Record<string, string[]> = {
+    tiktok_ads_daily: ['advertiser_id','store_id','report_date','cost','gross_revenue','cost_per_order','sku_orders','aov','impressions','clicks','ctr','cr','source','payload_json'],
+    tiktok_ads_campaigns: ['advertiser_id','store_id','report_date','campaign_id','campaign_name','result','spend','gross_revenue','roas','payload_json'],
+    facebook_ads_daily: ['ad_account_id','report_date','spend','gross_revenue','orders','impressions','clicks','ctr','cpm','cpc','messages','landing_page_views','roas','payload_json'],
+    facebook_ads_campaigns: ['ad_account_id','report_date','campaign_id','campaign_name','result','result_type','cost_per_result','spend','reach','impressions','cpm','clicks','messages','purchases','gross_revenue','roas','payload_json']
+  };
+  return Object.fromEntries((fields[table] || []).filter((key) => row[key] !== undefined).map((key) => [key, row[key]]));
+}
+
 async function dailySnapshot(env: Env, reportDate: string): Promise<any> {
   const [adsReports, operationsReports, orderReports, cancellations, hourlyMetrics, dailyMetrics,
     tiktokAdsDaily, tiktokAdsCampaigns, facebookAdsDaily, facebookAdsCampaigns, monitorState] = await Promise.all([
@@ -115,7 +133,15 @@ export async function syncSupabaseBackup(env: Env, reportDate: string): Promise<
       uploadJson(config, files[0], current), uploadJson(config, files[1], previous), uploadJson(config, files[2], monitoring),
       ...adsFiles.map(([path,value])=>uploadJson(config,path,{schemaVersion:1,reportDate,generatedAt:new Date().toISOString(),rows:value||[]}))
     ]);
-    await saveStatus(env, { status: 'SUCCESS', startedAt, completedAt: new Date().toISOString(), bucket: config.bucket, files: [...files,...adsFiles.map(([path])=>path)] });
+    const tableWrites = [
+      upsertTable(config, 'tiktok_ads_daily', current.tiktokAdsDaily.map((row:any)=>tableRow('tiktok_ads_daily',row))),
+      upsertTable(config, 'tiktok_ads_campaigns', current.tiktokAdsCampaigns.map((row:any)=>tableRow('tiktok_ads_campaigns',row))),
+      upsertTable(config, 'facebook_ads_daily', current.facebookAdsDaily.map((row:any)=>tableRow('facebook_ads_daily',row))),
+      upsertTable(config, 'facebook_ads_campaigns', current.facebookAdsCampaigns.map((row:any)=>tableRow('facebook_ads_campaigns',row)))
+    ];
+    const tableResults = await Promise.allSettled(tableWrites);
+    const tableErrors = tableResults.filter((item): item is PromiseRejectedResult => item.status === 'rejected').map((item) => String(item.reason));
+    await saveStatus(env, { status: tableErrors.length ? 'PARTIAL' : 'SUCCESS', startedAt, completedAt: new Date().toISOString(), bucket: config.bucket, files: [...files,...adsFiles.map(([path])=>path)], tableErrors });
   } catch (error) {
     await saveStatus(env, { status: 'FAILED', startedAt, completedAt: new Date().toISOString(),
       error: error instanceof Error ? error.message : String(error) });
