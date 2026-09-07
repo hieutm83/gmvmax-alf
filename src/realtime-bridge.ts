@@ -1,5 +1,5 @@
 import type { Env } from './types';
-import { json, numberValue, shiftDate } from './utils';
+import { json, numberValue, shiftDate, validateDate } from './utils';
 
 function emptyTikTok() { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: true, costPerOrder: null, roi: null }; }
 function addTikTok(target: any, row: any): void {
@@ -72,7 +72,24 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
   const supplied = request.headers.get('X-Realtime-Bridge-Secret') || '';
   if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized realtime bridge.' }, 401);
   const body = await request.json<any>();
-  try { return json({ ok: true, data: await readReplica(env, String(body?.path || ''), body?.input || {}) }); }
+  try {
+    const path = String(body?.path || ''), input = body?.input || {};
+    if (path === '/api/admin/verify') return json({ ok: true, data: String(input?.password || input || '') === String(env.ADMIN_PASSWORD || '') });
+    if (path === '/api/admin/supabase-sync') {
+      if (String(input?.method || 'GET') === 'GET') {
+        const row = await env.DB.prepare("SELECT value,updated_at FROM app_settings WHERE key='SUPABASE_MANUAL_SYNC_STATUS'").first<any>();
+        return json({ ok: true, data: { ...(row?.value ? JSON.parse(row.value) : { status: 'IDLE', progress: 0 }), updatedAt: row?.updated_at || null } });
+      }
+      const startDate = validateDate(input?.startDate, 'startDate'), endDate = validateDate(input?.endDate, 'endDate');
+      if (startDate > endDate) return json({ ok: false, error: 'Khoảng ngày không hợp lệ.' }, 400);
+      const tables = Array.isArray(input?.tables) ? input.tables.map(String) : ['all'];
+      await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
+        .bind(JSON.stringify({ status: 'QUEUED', startDate, endDate, progress: 0, tables })).run();
+      await env.TASK_QUEUE.send({ type: 'supabase-manual-sync', startDate, endDate, tables });
+      return json({ ok: true, data: { queued: true } });
+    }
+    return json({ ok: true, data: await readReplica(env, path, input) });
+  }
   catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
 }
 
@@ -86,8 +103,18 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
     const text = await response.text(); return new Response(text, { status: response.status, headers: { 'Content-Type': 'application/json' } });
   }
   if (url.pathname === '/api/state' && request.method === 'GET') return json({ ok: true, data: { connected: true, startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), adsOAuth: { connected: true }, sellerOAuth: { connected: true }, dashboardRole: 'admin', defaultAdvertiserId: env.DEFAULT_ADVERTISER_ID, defaultStoreCode: env.DEFAULT_STORE_CODE, advertisers: [] } });
-  if (!url.pathname.startsWith('/api/') || request.method !== 'POST') return new Response('');
+  const proxiedAuth = new Set(['/auth/login','/auth/logout','/auth/connect','/auth/callback','/oauth/callback','/seller/auth/connect','/seller/auth/callback']);
+  if (proxiedAuth.has(url.pathname)) {
+    if (!env.REALTIME_SOURCE_URL) return json({ ok: false, error: 'Realtime source is not configured.' }, 503);
+    const headers = new Headers(request.headers); headers.delete('host'); headers.set('X-Realtime-Gateway-Origin', url.origin);
+    const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}${url.pathname}${url.search}`, { method: request.method, headers, body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body });
+    const outHeaders = new Headers(upstream.headers); const location = outHeaders.get('Location');
+    if (location) { try { const target = new URL(location, env.REALTIME_SOURCE_URL); if (target.origin === env.REALTIME_SOURCE_URL.replace(/\/$/, '')) outHeaders.set('Location', `${url.origin}${target.pathname}${target.search}${target.hash}`); } catch { /* keep provider redirect */ } }
+    return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: outHeaders });
+  }
+  const adminBridgePath = url.pathname === '/api/admin/verify' || url.pathname === '/api/admin/supabase-sync';
+  if (!url.pathname.startsWith('/api/') || (request.method !== 'POST' && !(adminBridgePath && request.method === 'GET'))) return new Response('');
   if (!env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Realtime gateway is not configured.' }, 503);
-  const input = await request.json<any>(); const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET }, body: JSON.stringify({ path: url.pathname, input }) });
+  const input = request.method === 'GET' ? { method: 'GET' } : await request.json<any>(); const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET }, body: JSON.stringify({ path: url.pathname, input }) });
   return new Response(await upstream.text(), { status: upstream.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 }

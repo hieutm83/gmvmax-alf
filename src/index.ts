@@ -429,7 +429,7 @@ export default {
     const url=new URL(request.url);
     try{
       if(env.REALTIME_GATEWAY === '1') {
-        if(url.pathname.startsWith('/api/') || url.pathname === '/internal/zalo-send') return await gatewayRequest(request,env,url);
+        if(url.pathname.startsWith('/api/') || url.pathname === '/internal/zalo-send' || url.pathname.startsWith('/auth/') || url.pathname === '/oauth/callback' || url.pathname.startsWith('/seller/')) return await gatewayRequest(request,env,url);
         return assetResponse(request,env);
       }
       if(url.pathname==='/internal/realtime'&&request.method==='POST')return await bridgeRequest(request,env);
@@ -455,7 +455,7 @@ export default {
         return dashboardLoginRedirect(url);
       }
       if(url.pathname==='/auth/logout')return dashboardLogout();
-      if(url.pathname==='/auth/connect'&&request.method==='GET'){requireAdminRole(session.role);return Response.redirect(await createAuthorizationUrl(env,url.origin),302);}
+      if(url.pathname==='/auth/connect'&&request.method==='GET'){requireAdminRole(session.role);const gatewayOrigin=request.headers.get('X-Realtime-Gateway-Origin')||url.origin;return Response.redirect(await createAuthorizationUrl(env,gatewayOrigin),302);}
       if(url.pathname==='/auth/callback'){
         requireAdminRole(session.role);
         if(url.searchParams.has('app_key'))return handleSellerOAuthCallback(env,url);
