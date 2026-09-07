@@ -45,6 +45,16 @@ export interface Env {
   FB_ACT_ID?: string;
   FB_API_VERSION?: string;
   FB_TIMEZONE?: string;
+  /** Shared secret for the read-only realtime bridge between accounts. */
+  REALTIME_BRIDGE_SECRET?: string;
+  /** URL of the legacy writer worker used by the realtime gateway. */
+  REALTIME_SOURCE_URL?: string;
+  /** Public URL of the new-account read-only gateway. */
+  REALTIME_GATEWAY_URL?: string;
+  /** Optional endpoint that performs the outbound Zalo Bot API call. */
+  ZALO_SEND_BRIDGE_URL?: string;
+  /** Enables the stateless read-only gateway deployment. */
+  REALTIME_GATEWAY?: string;
 }
 
 export type TaskMessage =

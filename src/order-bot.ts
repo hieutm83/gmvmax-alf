@@ -243,7 +243,9 @@ async function currentOrders(env: Env, shopCipher: string, status: string): Prom
 async function sendOrderBotMessage(env: Env, text: string, styles = buildOrderBotStyles(text)): Promise<string> {
   if (!env.ZALO_ORDER_BOT_TOKEN) throw new Error('Missing ZALO_ORDER_BOT_TOKEN.');
   if (!env.ZALO_ORDER_GROUP_CHAT_ID) throw new Error('Missing ZALO_ORDER_GROUP_CHAT_ID.');
-  const response = await fetch(`${API}${encodeURIComponent(env.ZALO_ORDER_BOT_TOKEN)}/sendMessage`, {
+  const response = env.ZALO_SEND_BRIDGE_URL
+    ? await fetch(env.ZALO_SEND_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET || '' }, body: JSON.stringify({ token: env.ZALO_ORDER_BOT_TOKEN, method: 'sendMessage', payload: { chat_id: env.ZALO_ORDER_GROUP_CHAT_ID, text, text_styles: styles } }) })
+    : await fetch(`${API}${encodeURIComponent(env.ZALO_ORDER_BOT_TOKEN)}/sendMessage`, {
     method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({ chat_id: env.ZALO_ORDER_GROUP_CHAT_ID, text, text_styles: styles })
   });

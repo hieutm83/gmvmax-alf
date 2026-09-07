@@ -23,7 +23,9 @@ async function botApi(env: Env, method: string, payload: unknown): Promise<any> 
   if (!env.ZALO_OPERATIONS_BOT_TOKEN) throw new Error('Missing ZALO_OPERATIONS_BOT_TOKEN.');
   let lastError = '';
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch(`${API}${encodeURIComponent(env.ZALO_OPERATIONS_BOT_TOKEN)}/${method}`, {
+    const response = env.ZALO_SEND_BRIDGE_URL
+      ? await fetch(env.ZALO_SEND_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET || '' }, body: JSON.stringify({ token: env.ZALO_OPERATIONS_BOT_TOKEN, method, payload }) })
+      : await fetch(`${API}${encodeURIComponent(env.ZALO_OPERATIONS_BOT_TOKEN)}/${method}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(payload)
     });
     const data = await response.json<any>().catch(() => ({}));

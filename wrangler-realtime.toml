@@ -1,0 +1,19 @@
+name = "tiktok-gmv-max-realtime"
+account_id = "d4e2d1ad2c863c7992b948fd0b45479b"
+main = "src/index.ts"
+compatibility_date = "2026-07-29"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+[vars]
+REALTIME_GATEWAY = "1"
+REALTIME_SOURCE_URL = "https://anlanhfarm.indevs.in"
+DEFAULT_ADVERTISER_ID = "7535665207776231441"
+DEFAULT_STORE_CODE = "VNLC33LWAS"
+ZALO_STORE_ID = "7496309672412416866"
+TIMEZONE = "Asia/Bangkok"
+PUBLIC_BASE_URL = "https://tiktok-gmv-max-realtime.workers.dev"

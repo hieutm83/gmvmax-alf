@@ -6,7 +6,9 @@ const API = 'https://bot-api.zaloplatforms.com/bot';
 
 async function zaloApi(env: Env, method: string, payload: unknown): Promise<any> {
   if (!env.ZALO_BOT_TOKEN) throw new Error('Missing ZALO_BOT_TOKEN.');
-  const response = await fetch(`${API}${encodeURIComponent(env.ZALO_BOT_TOKEN)}/${method}`, {
+  const response = env.ZALO_SEND_BRIDGE_URL
+    ? await fetch(env.ZALO_SEND_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET || '' }, body: JSON.stringify({ token: env.ZALO_BOT_TOKEN, method, payload }) })
+    : await fetch(`${API}${encodeURIComponent(env.ZALO_BOT_TOKEN)}/${method}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(payload)
   });
   const data = await response.json<any>().catch(() => ({}));
