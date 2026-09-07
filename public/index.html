@@ -756,6 +756,10 @@
             <div class="hourly-chart-canvas"><canvas id="adsEngagementChart"></canvas></div>
           </section>
         </div>
+        <section class="analytics-panel" id="tiktokSourceProductsPanel">
+          <div class="section-title-row"><h2 class="section-title">Phân tích theo nguồn</h2><div class="source-tabs" role="tablist"><button type="button" class="report-tab source-tab active" data-source="affiliate">Video</button><button type="button" class="report-tab source-tab" data-source="productCard">Product card</button><button type="button" class="report-tab source-tab" data-source="seller">TikTok Shop official account</button></div></div>
+          <div class="table-wrap"><table class="facebook-campaign-table"><thead><tr><th>Ngày</th><th>ID sản phẩm</th><th>Tên</th><th>Cost</th><th>Gross revenue</th><th>SKU orders</th><th>Impressions</th><th>Click</th></tr></thead><tbody id="tiktokSourceRows"></tbody></table><div id="tiktokSourceEmpty" class="empty hidden">Chưa có dữ liệu nguồn.</div></div>
+        </section>
         <section class="gmv-analysis-panel cost-analysis-panel">
           <header class="gmv-analysis-head"><h2>Phân tích COST</h2></header>
           <div id="costAttributionEmpty" class="analytics-unavailable"><div><strong>Đang tải dữ liệu nguồn COST</strong><span>Dữ liệu được tổng hợp từ các creative trong khoảng ngày đã chọn.</span></div></div>
@@ -1302,6 +1306,12 @@
 
       document.querySelectorAll('[data-report-view]').forEach(function (tab) {
         tab.addEventListener('click', function () { setReportView(tab.dataset.reportView, true); });
+      });
+      document.querySelectorAll('.source-tab').forEach(function(tab){
+        tab.addEventListener('click',function(){
+          document.querySelectorAll('.source-tab').forEach(function(item){item.classList.toggle('active',item===tab);});
+          renderTikTokSourceRows(currentCreativeSummary && currentCreativeSummary.sourceRows || [],tab.dataset.source);
+        });
       });
       document.getElementById('disconnectButton').addEventListener('click', function () {
         google.script.run.withSuccessHandler(function () { window.top.location.reload(); }).disconnectTikTok();
@@ -3126,6 +3136,7 @@
         if (!creativeElement) return;
         creativeElement.textContent = integer(data.totalCreatives);
         currentCreativeSummary = data;
+        renderTikTokSourceRows(data.sourceRows || [], 'affiliate');
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
         videoContextByItemId = {};
@@ -3243,6 +3254,14 @@
         });
         document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ' + (granularity === 'day' ? 'ngày' : 'giờ');
         renderAdsPerformanceCharts(currentReportHourly);
+      }
+
+      function renderTikTokSourceRows(sourceRows, source) {
+        var rows=document.getElementById('tiktokSourceRows'),empty=document.getElementById('tiktokSourceEmpty'); if(!rows)return;
+        rows.replaceChildren(); var list=(sourceRows||[]).filter(function(item){return item.source===source;});
+        empty.classList.toggle('hidden',list.length>0);
+        list.sort(function(a,b){return String(b.date).localeCompare(String(a.date));}).forEach(function(item){var m=item.metrics||{},tr=document.createElement('tr');
+          [item.date,item.productId||'Product card',item.title||'—',moneyWhole(m.cost||0),moneyWhole(m.gross_revenue||0),integer(m.orders||0),integer(m.product_impressions||0),integer(m.product_clicks||0)].forEach(function(value){var td=document.createElement('td');td.textContent=value;tr.appendChild(td);}); rows.appendChild(tr);});
       }
 
       function creativeSummaryMemoryKey(products) {

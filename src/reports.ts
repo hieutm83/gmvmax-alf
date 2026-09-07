@@ -251,7 +251,7 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     const chunk=exactContexts.slice(offset,offset+4);
     const chunkRows=await Promise.all(chunk.map(async context=>{
       const values=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
-        dimensions:['item_id'],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
+        dimensions:['item_id','stat_time_day'],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
         filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId],creative_types:['ADS_AND_ORGANIC']}});
       values.forEach(row=>{row.dimensions={...(row.dimensions||{}),campaign_id:context.campaignId,item_group_id:context.itemGroupId};});
       return values;
@@ -260,7 +260,7 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
   }
   const sellerVideoIds = await sellerOwnedVideoIds(env, shiftDate(input.startDate, -29), input.endDate, SELLER_TIKTOK_USERNAMES)
     .catch(() => new Set<string>());
-  const ids=new Set<string>();let traffic=0,impressions=0;const map=new Map<string,any>();
+  const ids=new Set<string>();let traffic=0,impressions=0;const map=new Map<string,any>(); const sourceRows:any[]=[];
   const costAttribution:any={total:0,productCard:0,seller:0,affiliate:0,metrics:{
     productCard:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0},seller:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0},affiliate:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0}
   }};
@@ -270,6 +270,7 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     const isProductCard=id==='-1'||title.includes('product card')||title.includes('thẻ sản phẩm');
     costAttribution.total+=cost;
     const source=isProductCard?'productCard':sellerVideoIds.has(id)?'seller':'affiliate';
+    sourceRows.push({source,productId:id||'',date:String(row.dimensions?.stat_time_day||row.dimensions?.date||input.startDate),metrics:m,title:String(m.title||row.dimensions?.title||'')});
     costAttribution[source]+=cost;
     costAttribution.metrics[source].cost+=cost;
     costAttribution.metrics[source].grossRevenue+=numberValue(m.gross_revenue);
@@ -280,7 +281,7 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     if(numberValue(m.cost)||numberValue(m.orders)||numberValue(m.product_impressions)){if(id){ids.add(id);if(!entry.itemIds.includes(id))entry.itemIds.push(id);}entry.creativeCount++;entry.traffic+=numberValue(m.product_clicks);}map.set(k,entry);}
   for(const source of Object.values<any>(costAttribution.metrics))source.roi=source.cost?source.grossRevenue/source.cost:0;
   const result={generatedAt:new Date().toISOString(),summaries:(input.products||[]).map((p:any)=>({campaignId:p.campaignId,itemGroupId:p.itemGroupId,...(map.get(`${p.campaignId}:${p.itemGroupId}`)||{creativeCount:0,traffic:0,itemIds:[]})})),
-    totalCreatives:ids.size,impressions,traffic,costAttribution,videoEvaluation:evaluateVideos(rows),hourlyTraffic:[],cacheStatus:'REFRESHED'};
+    totalCreatives:ids.size,impressions,traffic,costAttribution,sourceRows,videoEvaluation:evaluateVideos(rows),hourlyTraffic:[],cacheStatus:'REFRESHED'};
   await cachePut(env,key,result,300);return result;
 }
 
