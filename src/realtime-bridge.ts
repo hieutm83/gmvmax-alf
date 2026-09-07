@@ -1,7 +1,7 @@
 import type { Env } from './types';
 import { json, numberValue, shiftDate, validateDate } from './utils';
 import { createAuthorizationUrl, disconnect, oauthConnectionState, readTokens, refreshAccessToken } from './oauth';
-import { disconnectSeller } from './seller';
+import { disconnectSeller, loadSellerRevenueAnalysis } from './seller';
 import { sellerOAuthState } from './seller';
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { dateInTimezone } from './utils';
@@ -95,6 +95,20 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
       try { stores = await listStores(env, await createSession(env), advertiserId); } catch { /* use configured Shop ID below */ }
       if (!stores.length && env.ZALO_STORE_ID) stores = [{ storeId: env.ZALO_STORE_ID, storeName: 'TikTok Shop', storeCode: env.DEFAULT_STORE_CODE }];
       return json({ ok: true, data: stores });
+    }
+    if (path === '/api/revenue-analysis') {
+      const startDate = validateDate(input?.startDate, 'startDate');
+      const endDate = validateDate(input?.endDate, 'endDate');
+      if (startDate > endDate) return json({ ok: false, error: 'Khoảng ngày không hợp lệ.' }, 400);
+      // Seller revenue is not part of the replica tables. Execute the same
+      // legacy Seller API flow on the old Worker, where the encrypted Seller
+      // grant and app credentials are available.
+      const data = await loadSellerRevenueAnalysis(env, {
+        startDate,
+        endDate,
+        forceRefresh: input?.forceRefresh === true,
+      });
+      return json({ ok: true, data });
     }
     if (path === '/api/oauth/connect') return json({ ok: true, data: await createAuthorizationUrl(env, String(input?.origin || env.PUBLIC_BASE_URL)) });
     if (path === '/api/oauth/refresh') return json({ ok: true, data: await refreshAccessToken(env) });
