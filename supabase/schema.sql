@@ -20,6 +20,32 @@ create table if not exists public.tiktok_ads_campaigns (
 );
 create index if not exists tiktok_ads_campaigns_date_idx on public.tiktok_ads_campaigns(report_date);
 
+-- Creative source breakdown: one product/video item per day.
+create table if not exists public.tiktok_ads_affiliate_mass_authorization (
+  advertiser_id text not null, store_id text not null, report_date date not null,
+  product_id text not null, title text, cost numeric not null default 0,
+  gross_revenue numeric not null default 0, sku_orders numeric not null default 0,
+  impressions numeric not null default 0, clicks numeric not null default 0,
+  payload_json jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now(),
+  primary key (advertiser_id, store_id, report_date, product_id)
+);
+create table if not exists public.tiktok_ads_official_account (
+  advertiser_id text not null, store_id text not null, report_date date not null,
+  product_id text not null, title text, cost numeric not null default 0,
+  gross_revenue numeric not null default 0, sku_orders numeric not null default 0,
+  impressions numeric not null default 0, clicks numeric not null default 0,
+  payload_json jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now(),
+  primary key (advertiser_id, store_id, report_date, product_id)
+);
+create table if not exists public.tiktok_ads_product_card (
+  advertiser_id text not null, store_id text not null, report_date date not null,
+  product_id text not null, title text, cost numeric not null default 0,
+  gross_revenue numeric not null default 0, sku_orders numeric not null default 0,
+  impressions numeric not null default 0, clicks numeric not null default 0,
+  payload_json jsonb not null default '{}'::jsonb, updated_at timestamptz not null default now(),
+  primary key (advertiser_id, store_id, report_date, product_id)
+);
+
 create table if not exists public.facebook_ads_daily (
   ad_account_id text not null, report_date date not null, spend numeric not null default 0,
   gross_revenue numeric not null default 0, orders numeric not null default 0,
