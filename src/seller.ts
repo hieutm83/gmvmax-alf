@@ -333,6 +333,28 @@ async function productGmvAttribution(env: Env, startDate: string, endDate: strin
   }
 }
 
+/** GAS-compatible daily source breakdown from TikTok Shop Analytics. */
+export async function loadShopSourceRows(env: Env, startDate: string, endDate: string): Promise<any[]> {
+  const shop = await authorizedShop(env); const cipher = String(shop?.cipher || shop?.shop_cipher || ''); if (!cipher) return [];
+  const rows: any[] = [];
+  for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
+    let token = ''; let pages = 0;
+    do {
+      const data = await shopRequest(env, '/analytics/202605/shop_products/performance', 'GET', {
+        shop_cipher: cipher, start_date_ge: date, end_date_lt: shiftDate(date, 1), page_size: 100,
+        page_token: token || undefined, sort_field: 'gmv', sort_order: 'DESC', currency: 'LOCAL', product_status_filter: 'ALL'
+      });
+      for (const product of Array.isArray(data.products) ? data.products : []) {
+        const id = String(product.id || product.product_id || ''); if (!id) continue;
+        const groups: Array<[string, any]> = [['affiliate', product.affiliate_video_performance], ['seller', product.seller_video_performance], ['productCard', product.seller_product_card_performance]];
+        for (const [source, raw] of groups) { const value = raw || {}; rows.push({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: cipher, reportDate: date, source, productId: id, title: String(product.product_name || product.name || product.title || id), cost: gmvAmount(value.cost), grossRevenue: gmvAmount(value.attributed_gmv || value.gmv), skuOrders: gmvAmount(value.attributed_sku_orders || value.orders), impressions: gmvAmount(value.product_impressions), clicks: gmvAmount(value.product_clicks), payload: value }); }
+      }
+      token = String(data.next_page_token || ''); pages += 1;
+    } while (token && pages < 50);
+  }
+  return rows;
+}
+
 function province(order: any): string {
   const address = order.recipient_address || {};
   const list = address.district_info || address.district_info_list || address.district_infos || [];
