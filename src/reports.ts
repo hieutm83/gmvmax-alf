@@ -21,6 +21,15 @@ function add(target: any, source: any): void {
   target.roi = target.cost ? target.grossRevenue / target.cost : null;
 }
 function empty(): any { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: false, costPerOrder: null, roi: null }; }
+async function storedDailyReport(env: Env, input: any): Promise<any|null> {
+  const rows=await env.DB.prepare(`SELECT report_date,cost,gross_revenue,cost_per_order,sku_orders,impressions,clicks
+    FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ? ORDER BY report_date`)
+    .bind(input.advertiserId,input.storeId,input.startDate,input.endDate).all<any>();
+  const values=rows.results||[]; if(!values.length)return null;
+  const byDate=new Map(values.map((row:any)=>[String(row.report_date),row])); const daily:any[]=[]; const totals=empty();
+  for(let date=input.startDate;date<=input.endDate;date=shiftDate(date,1)){const row=byDate.get(date);const m={...empty(),cost:numberValue(row?.cost),orders:numberValue(row?.sku_orders),grossRevenue:numberValue(row?.gross_revenue),traffic:numberValue(row?.clicks),trafficAvailable:true};m.costPerOrder=m.orders?m.cost/m.orders:null;m.roi=m.cost?m.grossRevenue/m.cost:null;daily.push({date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,metrics:m});add(totals,m);}
+  return {advertiserId:input.advertiserId,store:{storeId:input.storeId},startDate:input.startDate,endDate:input.endDate,generatedAt:new Date().toISOString(),totals,products:[],availableProductCount:0,creativeContexts:[],hourly:[],hourlyMode:'snapshots',daily,source:'d1_ads_snapshot'};
+}
 function rowId(row: McpRow, key: string): string { return String(row.dimensions?.[key] || row.metrics?.[key] || ''); }
 function campaignActive(info: any): boolean {
   const enabled = info.is_enabled ?? info.is_active;
@@ -52,9 +61,12 @@ export async function loadMainReport(env: Env, input: any, force = false): Promi
   const { advertiserId, storeId, startDate, endDate } = input;
   const multiDay = startDate !== endDate;
   const session = await createSession(env);
-  const campaignRows = (await pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId],
+  let campaignRows: McpRow[];
+  try { campaignRows = (await pagedReport(env, session, { advertiser_id: advertiserId, store_ids: [storeId],
     dimensions: ['campaign_id'], metrics: ['cost','orders','cost_per_order','gross_revenue','roi'], start_date: startDate, end_date: endDate }))
-    .filter((row) => numberValue(row.metrics?.cost) > 0);
+    .filter((row) => numberValue(row.metrics?.cost) > 0); } catch(error) {
+    const stored=await storedDailyReport(env,input); if(stored)return stored; throw error;
+  }
   const totals = empty(); campaignRows.forEach((row) => add(totals, metric(row.metrics || {})));
   const products: any[] = [];
   let hourlyRows: McpRow[] = multiDay ? [] : await pagedReport(env, session, {

@@ -64,7 +64,9 @@ export type TaskMessage =
   | { type: 'zalo-video-recover' }
   | { type: 'tracking-sync'; orderId: string; shopCipher: string }
   | { type: 'supabase-backup'; reportDate: string }
-  | { type: 'sheet-backup'; reportDate: string };
+  | { type: 'sheet-backup'; reportDate: string }
+  | { type: 'ads-snapshot'; reportDate: string }
+  | { type: 'ads-backfill' };
 
 export interface OAuthTokenSet {
   accessToken: string;

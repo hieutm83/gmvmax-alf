@@ -201,6 +201,23 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   const runtime=zaloRuntime(env);
   if(message.type==='tracking-sync')return syncTrackingOrder(env,message.orderId,message.shopCipher);
   if(message.type==='supabase-backup')return syncSupabaseBackup(env,message.reportDate);
+  if(message.type==='ads-snapshot'){
+    const storeId=await resolveDefaultStore(runtime);
+    const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate};
+    await Promise.all([loadMainReport(runtime,input,true),loadFacebookAdsReport(runtime,input)]); return;
+  }
+  if(message.type==='ads-backfill'){
+    const row=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ADS_BACKFILL_NEXT_DATE'").first<{value:string}>();
+    const next=String(row?.value||'2026-01-01'); const today=dateInTimezone(new Date(),env.TIMEZONE); const yesterday=shiftDate(today,-1);
+    if(next>yesterday)return;
+    await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
+    try{
+      const storeId=await resolveDefaultStore(runtime); const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:next,endDate:next};
+      await Promise.all([loadMainReport(runtime,input,true),loadFacebookAdsReport(runtime,input)]);
+      await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_NEXT_DATE',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(shiftDate(next,1)).run();
+    } finally { await env.DB.prepare("DELETE FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").run(); }
+    return;
+  }
   if(message.type==='zalo-poll'||message.type==='zalo-webhook-ensure')return;
   if(message.type==='zalo-video'||message.type==='zalo-video-day'||message.type==='zalo-video-finalize'||message.type==='zalo-video-recover')return;
   if(message.type==='hourly-dispatch'){
@@ -372,6 +389,11 @@ export default {
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
     if(env.SUPABASE_URL&&env.SUPABASE_SECRET_KEY&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'supabase-backup',reportDate:localDate}));
+    if([3,9,12].includes(localHour)&&localMinute===0)
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:shiftDate(localDate, -1)}));
+    if(localMinute%5===0){
+      ctx.waitUntil((async()=>{const row=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").first<{value:string}>();if(!row)await env.TASK_QUEUE.send({type:'ads-backfill'});})());
+    }
     // Start at 08:00 and keep retrying until TikTok Shop data passes the
     // consistency check. The report table is the idempotency key.
     if(localHour>=8&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
