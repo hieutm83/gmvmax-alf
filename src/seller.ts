@@ -1,6 +1,7 @@
 import type { Env, SellerTokenSet } from './types';
 import { decryptJson, encryptJson } from './crypto';
 import { cacheGet, cachePut, dateInTimezone, HttpError, numberValue, randomBase64Url, shiftDate, stableKey } from './utils';
+import { createSession, pagedReport } from './mcp';
 
 const SELLER_TOKEN_KEY = 'seller_oauth_tokens';
 const SHOP_API = 'https://open-api.tiktokglobalshop.com';
@@ -383,6 +384,44 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
       }
       token = String(data.next_page_token || ''); pages += 1;
     } while (token && pages < 50);
+  }
+  // Shop Analytics identifies the three traffic sources, but does not expose
+  // advertising cost.  Join each Shop product row to the Ads report at the
+  // same Product ID (item_group_id) and day, then apportion the product total
+  // across its source rows by source orders/clicks/impressions.  This mirrors
+  // the Google Sheet's Product ID grain while preserving the source split.
+  let adsByProductDay = new Map<string, { cost: number; grossRevenue: number; orders: number }>();
+  try {
+    const session = await createSession(env);
+    const reportRows = await pagedReport(env, session, {
+      advertiser_id: env.DEFAULT_ADVERTISER_ID, store_ids: [canonicalStoreId],
+      dimensions: ['item_group_id', 'stat_time_day'], metrics: ['cost', 'orders', 'gross_revenue'],
+      start_date: startDate, end_date: endDate
+    });
+    for (const reportRow of reportRows) {
+      const dimensions = reportRow.dimensions || {}; const metrics = reportRow.metrics || {};
+      const productId = String(dimensions.item_group_id || dimensions.product_id || metrics.item_group_id || metrics.product_id || '').trim();
+      const date = String(dimensions.stat_time_day || metrics.stat_time_day || '').slice(0, 10);
+      if (!productId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const key = `${date}:${productId}`; const current = adsByProductDay.get(key) || { cost: 0, grossRevenue: 0, orders: 0 };
+      current.cost += numberValue(metrics.cost); current.grossRevenue += numberValue(metrics.gross_revenue); current.orders += numberValue(metrics.orders); adsByProductDay.set(key, current);
+    }
+  } catch (error) {
+    // Shop traffic should still be retained when the Ads report is temporarily
+    // unavailable; the next scheduled snapshot will retry the join.
+    console.warn('Product ID Ads join skipped', String(error));
+  }
+  const grouped = new Map<string, any[]>();
+  for (const row of rows) { const key = `${row.reportDate}:${row.productId}`; const list = grouped.get(key) || []; list.push(row); grouped.set(key, list); }
+  for (const [key, list] of grouped) {
+    const total = adsByProductDay.get(key); if (!total) continue;
+    const weights = list.map((row) => numberValue(row.skuOrders) || numberValue(row.clicks) || numberValue(row.impressions));
+    const positiveWeights = weights.some((value) => value > 0); const weightTotal = positiveWeights ? weights.reduce((sum, value) => sum + value, 0) : list.length;
+    list.forEach((row, index) => {
+      const share = positiveWeights ? weights[index] / weightTotal : 1 / list.length;
+      row.cost = total.cost * share; row.grossRevenue = total.grossRevenue * share; row.skuOrders = total.orders * share;
+      row.payload = { ...(row.payload || {}), product_id: row.productId, ads_join: { cost: total.cost, gross_revenue: total.grossRevenue, orders: total.orders, share } };
+    });
   }
   return rows;
 }

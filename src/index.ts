@@ -150,6 +150,8 @@ function zaloRuntime(env:Env):Env{return {...env,
 
 async function processManualSupabaseSync(env:Env,message:Extract<TaskMessage,{type:'supabase-manual-sync'}>):Promise<void>{
  try{
+  // Keep each queue invocation comfortably below the free-plan subrequest
+  // ceiling; Shop Analytics may return multiple pages for a busy day.
   let chunkEnd=message.startDate;for(let i=1;i<14&&chunkEnd<message.endDate;i+=1)chunkEnd=shiftDate(chunkEnd,1);
   const total=Math.max(1,Math.round((Date.parse(message.endDate)-Date.parse(message.startDate))/86400000)+1),done=Math.max(0,Math.round((Date.parse(chunkEnd)-Date.parse(message.startDate)+86400000)/86400000));
   await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'RUNNING',startDate:message.startDate,endDate:message.endDate,progress:Math.min(95,Math.round(done/total*95)),tables:message.tables})).run();
@@ -264,6 +266,10 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
       await env.DB.prepare(`WITH RECURSIVE dates(d) AS (SELECT '2026-01-01' UNION ALL SELECT date(d,'+1 day') FROM dates WHERE d<'${yesterday}')
         INSERT OR IGNORE INTO facebook_ads_daily(ad_account_id,report_date,payload_json)
         SELECT ad_account_id,d,'{}' FROM (SELECT DISTINCT ad_account_id FROM facebook_ads_daily) accounts CROSS JOIN dates`).run().catch(()=>undefined);
+      // The backfill updates D1 in bounded queue jobs. Publish the complete
+      // accumulated history to Supabase once the cursor reaches yesterday;
+      // otherwise Supabase would remain stale even though D1 is repaired.
+      await syncSupabaseBackup(env, yesterday).catch((error) => console.warn('Historical Supabase publish skipped', String(error)));
       return;
     }
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
