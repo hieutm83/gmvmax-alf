@@ -338,16 +338,33 @@ export async function loadShopSourceRows(env: Env, startDate: string, endDate: s
   const shop = await authorizedShop(env); const cipher = String(shop?.cipher || shop?.shop_cipher || ''); if (!cipher) return [];
   const rows: any[] = [];
   const today = new Date().toISOString().slice(0, 10); const earliest = shiftDate(today, -180);
+  const requestForDate = async (date: string): Promise<any> => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await shopRequest(env, '/analytics/202605/shop_products/performance', 'GET', {
+          shop_cipher: cipher, start_date_ge: date, end_date_lt: shiftDate(date, 1), page_size: 100,
+          page_token: undefined, sort_field: 'gmv', sort_order: 'DESC', currency: 'LOCAL', product_status_filter: 'ALL'
+        });
+      } catch (error) {
+        lastError = error;
+        const transient = /internal error|retry later|rate.?limit|HTTP 5\d\d/i.test(String(error));
+        if (!transient || attempt === 2) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  };
   for (let date = startDate; date <= endDate; date = shiftDate(date, 1)) {
     // TikTok Shop Analytics only supports its documented lookback window.
     // Keep the requested range intact while leaving older source rows empty.
     if (date < earliest || date >= today) continue;
     let token = ''; let pages = 0;
     do {
-      const data = await shopRequest(env, '/analytics/202605/shop_products/performance', 'GET', {
+      const data = token ? await shopRequest(env, '/analytics/202605/shop_products/performance', 'GET', {
         shop_cipher: cipher, start_date_ge: date, end_date_lt: shiftDate(date, 1), page_size: 100,
-        page_token: token || undefined, sort_field: 'gmv', sort_order: 'DESC', currency: 'LOCAL', product_status_filter: 'ALL'
-      });
+        page_token: token, sort_field: 'gmv', sort_order: 'DESC', currency: 'LOCAL', product_status_filter: 'ALL'
+      }) : await requestForDate(date);
       for (const product of Array.isArray(data.products) ? data.products : []) {
         const id = String(product.id || product.product_id || ''); if (!id) continue;
         const groups: Array<[string, any]> = [['affiliate', product.affiliate_video_performance], ['seller', product.seller_video_performance], ['productCard', product.seller_product_card_performance]];

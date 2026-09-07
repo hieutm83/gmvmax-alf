@@ -152,6 +152,17 @@ async function processManualSupabaseSync(env:Env,message:Extract<TaskMessage,{ty
   let chunkEnd=message.startDate;for(let i=1;i<14&&chunkEnd<message.endDate;i+=1)chunkEnd=shiftDate(chunkEnd,1);
   const total=Math.max(1,Math.round((Date.parse(message.endDate)-Date.parse(message.startDate))/86400000)+1),done=Math.max(0,Math.round((Date.parse(chunkEnd)-Date.parse(message.startDate)+86400000)/86400000));
   await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('SUPABASE_MANUAL_SYNC_STATUS',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify({status:'RUNNING',startDate:message.startDate,endDate:message.endDate,progress:Math.min(95,Math.round(done/total*95)),tables:message.tables})).run();
+  // Keep a complete calendar in the daily replicas. Provider reports omit
+  // zero-activity days, but the dashboard and Supabase history must retain
+  // those dates so charts do not have gaps.
+  await Promise.all([
+   env.DB.prepare(`WITH RECURSIVE dates(d) AS (SELECT ? UNION ALL SELECT date(d,'+1 day') FROM dates WHERE d<?)
+    INSERT OR IGNORE INTO tiktok_ads_daily(advertiser_id,store_id,report_date,payload_json,source)
+    SELECT advertiser_id,store_id,d,'{}','backfill-missing' FROM (SELECT DISTINCT advertiser_id,store_id FROM tiktok_ads_daily) accounts CROSS JOIN dates`).bind(message.startDate,chunkEnd).run(),
+   env.DB.prepare(`WITH RECURSIVE dates(d) AS (SELECT ? UNION ALL SELECT date(d,'+1 day') FROM dates WHERE d<?)
+    INSERT OR IGNORE INTO facebook_ads_daily(ad_account_id,report_date,payload_json)
+    SELECT ad_account_id,d,'{}' FROM (SELECT DISTINCT ad_account_id FROM facebook_ads_daily) accounts CROSS JOIN dates`).bind(message.startDate,chunkEnd).run()
+  ]);
   const sourceRows=await loadShopSourceRows(zaloRuntime(env),message.startDate,chunkEnd);
   for(const row of sourceRows)await env.DB.prepare(`INSERT INTO tiktok_ads_source_daily(advertiser_id,store_id,report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(advertiser_id,store_id,report_date,source,product_id) DO UPDATE SET title=excluded.title,cost=excluded.cost,gross_revenue=excluded.gross_revenue,sku_orders=excluded.sku_orders,impressions=excluded.impressions,clicks=excluded.clicks,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`).bind(row.advertiserId,row.storeId,row.reportDate,row.source,row.productId,row.title,row.cost,row.grossRevenue,row.skuOrders,row.impressions,row.clicks,JSON.stringify(row.payload||{})).run();
   const next=shiftDate(chunkEnd,1);if(next<=message.endDate){await env.TASK_QUEUE.send({type:'supabase-manual-sync',startDate:next,endDate:message.endDate,tables:message.tables});return;}
