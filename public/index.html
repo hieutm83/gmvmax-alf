@@ -1621,8 +1621,8 @@
         var results=data.facebookResultCosts||[];
         platformDonut('adsOverviewFacebookResultChart','facebook',results.map(function(item){return item.label;}),results.map(function(item){return item.cost;}),['#2563eb','#f59e0b','#10b981','#8b5cf6','#ec4899'],'Facebook Cost');
         renderPlatformComparison(data.platforms||{},totals);
-        requestOverviewTikTokSources(forceSourceRefresh===true);
-        requestOverviewTikTokTraffic(forceSourceRefresh===true);
+        // The overview response already contains Supabase history plus today's
+        // realtime values. Avoid two follow-up API calls on initial render.
       }
 
       function renderAdsOverviewCharts(daily) {
@@ -2912,12 +2912,16 @@
         document.getElementById('adsSalesTimeSeriesTitle').textContent = 'Chi phí, doanh số & đơn hàng theo ngày';
         document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ngày';
         currentReportHourly = data.chartDaily || data.daily || [];
-        // The direct Ads API is the sole source for these traffic metrics.
-        // Never show a temporary MCP/report series while that request is pending.
-        currentAdsEngagementPoints = currentReportHourly.map(function(point){return {date:point.date||'',label:point.label,metrics:{impressions:0,traffic:0}};});
-        adsTrafficTimelineAvailable = false;
+        currentAdsEngagementPoints = currentReportHourly.map(function(point){return {date:point.date||'',label:point.label,metrics:{impressions:Number(point.metrics&&point.metrics.impressions)||0,traffic:Number(point.metrics&&point.metrics.traffic)||0}};});
+        adsTrafficTimelineAvailable = data.trafficEmbedded === true;
         renderAdsPerformanceCharts(currentReportHourly);
-        requestAdsTrafficTimeline(forceCreativeRefresh === true);
+        if (data.trafficEmbedded === true) {
+          var trafficScope=reportScope(),impressions=0,clicks=0;
+          currentAdsEngagementPoints.forEach(function(point){if(point.date>=trafficScope.startDate&&point.date<=trafficScope.endDate){impressions+=point.metrics.impressions;clicks+=point.metrics.traffic;}});
+          document.getElementById('metric-impressions').textContent=integer(impressions);
+          document.getElementById('metric-traffic').textContent=integer(clicks);
+          ['impressions','traffic'].forEach(function(key){var change=document.getElementById('metric-change-'+key);if(change){change.className='metric-change neutral';change.textContent='Supabase + realtime hôm nay';}});
+        } else requestAdsTrafficTimeline(forceCreativeRefresh === true);
 
         var rows = document.getElementById('productRows');
         rows.replaceChildren();
