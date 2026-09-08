@@ -497,7 +497,11 @@ export default {
       ctx.waitUntil(enqueueMissingOrderReports(env,localDate,localHour,localMinute));
     if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
-    if(env.SUPABASE_URL&&env.SUPABASE_SECRET_KEY&&localMinute%5===0)
+    // The backup snapshot reads the complete accumulated history from D1.
+    // Running it every five minutes exhausts the D1 free-tier row-read quota
+    // and can make the dashboard state endpoint unavailable. Hourly is still
+    // frequent enough for the Supabase replica while keeping reads bounded.
+    if(env.SUPABASE_URL&&env.SUPABASE_SECRET_KEY&&localMinute===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'supabase-backup',reportDate:localDate}));
     if([3,9,12].includes(localHour)&&localMinute===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:shiftDate(localDate, -1)}));
