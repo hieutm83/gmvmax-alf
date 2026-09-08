@@ -80,14 +80,12 @@ async function runtimeState(env: Env): Promise<Response> {
   } catch { /* configured defaults below keep the shell usable during quota errors */ }
   if (!advertisers.length && env.DEFAULT_ADVERTISER_ID) advertisers = [{ advertiserId: env.DEFAULT_ADVERTISER_ID, advertiserName: `Advertiser ${env.DEFAULT_ADVERTISER_ID}` }];
   const today = dateInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
-  let latestDate = today;
-  try { const latest = await env.DB.prepare('SELECT MAX(report_date) AS report_date FROM tiktok_ads_daily').first<any>(); if (latest?.report_date) latestDate = String(latest.report_date).slice(0, 10); } catch { /* use today */ }
   return json({ ok: true, data: {
     connected: adsConnected,
-    // Default the dashboard to the latest completed snapshot. A new day is
-    // intentionally not shown as zero before the scheduled snapshot lands.
-    startDate: latestDate,
-    endDate: latestDate,
+    // Realtime mode always opens on today. If today's snapshot has not landed
+    // yet, zero is intentional and the next scheduled refresh fills it.
+    startDate: today,
+    endDate: today,
     adsOAuth: { status: adsConnected ? 'connected' : 'disconnected', connected: adsConnected, scope: 'mcp:tt4b' },
     sellerOAuth: { configured: sellerConnected, canAuthorize: false, connected: sellerConnected, expiresAt: null, refreshExpiresAt: null, sellerName: '', grantedScopes: [], storage: 'Encrypted D1' },
     dashboardRole: 'admin', defaultAdvertiserId: env.DEFAULT_ADVERTISER_ID,
