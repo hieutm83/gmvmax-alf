@@ -29,6 +29,29 @@ function headers(key: string, extra: Record<string, string> = {}): Record<string
   return { apikey: key, Authorization: `Bearer ${key}`, ...extra };
 }
 
+/** Read immutable, completed-day chart rows directly from Supabase. This is
+ * deliberately kept on the legacy account: that account owns the Supabase
+ * credentials, while the realtime account only requests one bounded result. */
+export async function readSupabaseChartHistory(env: Env, input: {
+  advertiserId: string; storeId: string; startDate: string; endDate: string;
+}): Promise<{ tiktok: any[]; facebook: any[] }> {
+  const config = supabaseConfig(env);
+  const aliases = new Set([String(input.storeId)]);
+  if (input.storeId === '749630967241416866') aliases.add('7496309672412416866');
+  if (input.storeId === '7496309672412416866') aliases.add('749630967241416866');
+  const range = `report_date=gte.${encodeURIComponent(input.startDate)}&report_date=lte.${encodeURIComponent(input.endDate)}`;
+  const stores = [...aliases].map((value) => `store_id.eq.${value}`).join(',');
+  const tiktokUrl = `${config.url}/rest/v1/tiktok_ads_daily?select=report_date,cost,gross_revenue,cost_per_order,sku_orders,aov,impressions,clicks,ctr,cr&advertiser_id=eq.${encodeURIComponent(input.advertiserId)}&or=(${stores})&${range}&order=report_date.asc`;
+  const facebookUrl = `${config.url}/rest/v1/facebook_ads_daily?select=report_date,spend,gross_revenue,orders,impressions,clicks,ctr,cpm,cpc,messages,landing_page_views&${range}&order=report_date.asc`;
+  const [tiktokResponse, facebookResponse] = await Promise.all([
+    fetch(tiktokUrl, { headers: headers(config.key) }),
+    fetch(facebookUrl, { headers: headers(config.key) })
+  ]);
+  if (!tiktokResponse.ok) throw new Error(`Supabase TikTok history HTTP ${tiktokResponse.status}: ${(await tiktokResponse.text()).slice(0, 300)}`);
+  if (!facebookResponse.ok) throw new Error(`Supabase Facebook history HTTP ${facebookResponse.status}: ${(await facebookResponse.text()).slice(0, 300)}`);
+  return { tiktok: await tiktokResponse.json<any[]>(), facebook: await facebookResponse.json<any[]>() };
+}
+
 async function ensureBucket(env: Env): Promise<{ url: string; key: string; bucket: string }> {
   const config = supabaseConfig(env);
   const response = await fetch(`${config.url}/storage/v1/bucket`, {

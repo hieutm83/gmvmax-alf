@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <link rel="icon" type="image/png" href="/FAVICON.png">
     <base target="_top">
-    <title>Dashboard TikTok Report by MH</title>
+    <title>Doashboard Ads Report - MH</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -697,7 +697,7 @@
     </style>
   </head>
   <body>
-    <header><h1>TikTok Report</h1><div class="session-actions"><span id="sessionRole" class="session-role"></span><button id="logoutButton" class="session-logout" type="button">Đăng xuất</button></div></header>
+    <header><h1>AnlanhFarm Report</h1><div class="session-actions"><span id="sessionRole" class="session-role"></span><button id="logoutButton" class="session-logout" type="button">Đăng xuất</button></div></header>
     <main>
       <div id="connectPanel" class="notice hidden">
         <span id="connectMessage">Kết nối tài khoản TikTok for Business để đọc báo cáo.</span>
@@ -1101,7 +1101,7 @@
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
-        (['overview', 'facebook', 'ads', 'cads', 'revenue', 'operations', 'finance', 'content-koc', 'koc-analysis', 'product-analysis'].indexOf(requestedView) !== -1 ? requestedView : 'revenue');
+        (['overview', 'facebook', 'ads', 'cads', 'revenue', 'operations', 'finance', 'content-koc', 'koc-analysis', 'product-analysis'].indexOf(requestedView) !== -1 ? requestedView : 'overview');
       var loadedReportScope = '';
       var loadedAdsOverviewScope = '';
       var loadedFacebookScope = '';
