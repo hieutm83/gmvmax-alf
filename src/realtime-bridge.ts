@@ -32,7 +32,7 @@ async function sourceRows(env: Env, input: any): Promise<any[]> {
   const stores = storeIdAliases(input.storeId);
   const placeholders = stores.map(() => '?').join(',');
   const result = await env.DB.prepare(`SELECT report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json
-    FROM tiktok_ads_source_daily WHERE advertiser_id=? AND store_id IN (${placeholders}) AND report_date BETWEEN ? AND ? ORDER BY report_date,source,product_id`)
+    FROM tiktok_ads_source_daily WHERE advertiser_id=? AND (store_id IN (${placeholders}) OR store_id LIKE 'ROW_%') AND report_date BETWEEN ? AND ? ORDER BY report_date,source,product_id`)
     .bind(String(input.advertiserId), ...stores, input.startDate, input.endDate).all<any>();
   return result.results || [];
 }
