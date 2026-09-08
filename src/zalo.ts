@@ -5,10 +5,12 @@ import { cachePut, dateInTimezone, numberValue, shiftDate } from './utils';
 
 const API = 'https://bot-api.zaloplatforms.com/bot';
 
-async function zaloApi(env: Env, method: string, payload: unknown): Promise<any> {
+interface ZaloSendMeta { dedupeKey?: string; reportDate?: string; reportHour?: number; }
+
+async function zaloApi(env: Env, method: string, payload: unknown, meta?: ZaloSendMeta): Promise<any> {
   if (!env.ZALO_BOT_TOKEN) throw new Error('Missing ZALO_BOT_TOKEN.');
   const response = env.ZALO_SEND_BRIDGE_URL
-    ? await fetch(env.ZALO_SEND_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET || '' }, body: JSON.stringify({ token: env.ZALO_BOT_TOKEN, method, payload }) })
+    ? await fetch(env.ZALO_SEND_BRIDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET || '' }, body: JSON.stringify({ token: env.ZALO_BOT_TOKEN, method, payload, ...meta }) })
     : await fetch(`${API}${encodeURIComponent(env.ZALO_BOT_TOKEN)}/${method}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(payload)
   });
@@ -19,12 +21,12 @@ async function zaloApi(env: Env, method: string, payload: unknown): Promise<any>
 
 export interface ZaloTextStyle { start: number; len: number; st: string[]; }
 
-export async function sendMessage(env: Env, text: string, chatId?: string, textStyles?: ZaloTextStyle[]): Promise<string> {
+export async function sendMessage(env: Env, text: string, chatId?: string, textStyles?: ZaloTextStyle[], meta?: ZaloSendMeta): Promise<string> {
   const destination = chatId || env.ZALO_GROUP_CHAT_ID;
   if (!destination) throw new Error('Missing ZALO_GROUP_CHAT_ID.');
   const payload:any={chat_id:destination,text};
   if(textStyles?.length)payload.text_styles=textStyles;
-  const result = await zaloApi(env, 'sendMessage', payload);
+  const result = await zaloApi(env, 'sendMessage', payload, meta);
   return String(result.message_id || '');
 }
 
@@ -40,9 +42,21 @@ async function scheduledHourlyMetrics(env: Env, reportDate: string, reportHour: 
       return { metrics, observed: true, mode: 'hourly' };
     }
   } catch (error) { console.warn('Scheduled Ads hourly query skipped', String(error)); }
-  const stored = await env.DB.prepare('SELECT metrics_json FROM hourly_metrics WHERE advertiser_id=? AND store_id=? AND report_date=? AND report_hour=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate, reportHour).first<{ metrics_json: string }>();
+  let stored: { metrics_json: string } | null = null;
+  try { stored = await env.DB.prepare('SELECT metrics_json FROM hourly_metrics WHERE advertiser_id=? AND store_id=? AND report_date=? AND report_hour=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate, reportHour).first<{ metrics_json: string }>(); } catch { /* old D1 quota; use replica below */ }
   if (stored?.metrics_json) { try { return { metrics: JSON.parse(stored.metrics_json), observed: true, mode: 'snapshots' }; } catch { /* fallback below */ } }
-  const daily = await env.DB.prepare('SELECT cost,sku_orders,gross_revenue FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate).first<any>();
+  let daily: any = null;
+  try { daily = await env.DB.prepare('SELECT cost,sku_orders,gross_revenue FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate).first<any>(); } catch { /* old D1 quota; use replica below */ }
+  if (!daily && env.REALTIME_GATEWAY_URL) {
+    try {
+      const response = await fetch(`${env.REALTIME_GATEWAY_URL.replace(/\/$/, '')}/api/report`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE, startDate: reportDate, endDate: reportDate }) });
+      const result = await response.json<any>();
+      if (response.ok && result?.ok && result.data?.totals) {
+        const totals = result.data.totals;
+        return { metrics: { cost: numberValue(totals.cost), orders: numberValue(totals.orders), grossRevenue: numberValue(totals.grossRevenue), costPerOrder: numberValue(totals.orders) ? numberValue(totals.cost) / numberValue(totals.orders) : null, roi: numberValue(totals.cost) ? numberValue(totals.grossRevenue) / numberValue(totals.cost) : null }, observed: Boolean(totals.cost || totals.orders || totals.grossRevenue), mode: 'realtime-replica' };
+      }
+    } catch (error) { console.warn('Realtime replica report skipped', String(error)); }
+  }
   const metrics: any = { cost: numberValue(daily?.cost), orders: numberValue(daily?.sku_orders), grossRevenue: numberValue(daily?.gross_revenue) };
   metrics.costPerOrder = metrics.orders ? metrics.cost / metrics.orders : null; metrics.roi = metrics.cost ? metrics.grossRevenue / metrics.cost : null;
   return { metrics, observed: Boolean(metrics.cost || metrics.orders || metrics.grossRevenue), mode: 'daily-fallback' };
@@ -98,10 +112,12 @@ export function buildAdsStyles(text:string):ZaloTextStyle[]{
 }
 
 export async function sendScheduledReport(env: Env, reportDate: string, reportHour: number): Promise<void> {
-  const claimed = await env.DB.prepare(`INSERT INTO scheduled_reports(report_date,report_hour,status) VALUES(?,?,'SENDING')
+  let localPersistence = true;
+  let claimed: any;
+  try { claimed = await env.DB.prepare(`INSERT INTO scheduled_reports(report_date,report_hour,status) VALUES(?,?,'SENDING')
     ON CONFLICT(report_date,report_hour) DO UPDATE SET status='SENDING',message_id=NULL,payload=NULL,updated_at=CURRENT_TIMESTAMP
     WHERE scheduled_reports.status<>'SENT' AND (scheduled_reports.status<>'SENDING' OR scheduled_reports.updated_at<datetime('now','-10 minutes'))`)
-    .bind(reportDate, reportHour).run();
+    .bind(reportDate, reportHour).run(); } catch { localPersistence = false; claimed = { meta: { changes: 1 } }; }
   if (!claimed.meta.changes) return;
   const base = { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE, startDate: reportDate, endDate: reportDate };
   try {
@@ -124,8 +140,9 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     const display = reportDate.split('-').reverse().join('/');
     const cumulative = hourly.mode === 'cumulative';
     const t = hourlyRow.metrics;
-    const previousSent=await env.DB.prepare(`SELECT MAX(report_hour) AS report_hour FROM scheduled_reports
-      WHERE report_date=? AND report_hour<? AND status='SENT'`).bind(reportDate,reportHour).first<{report_hour:number|null}>();
+    let previousSent: { report_hour: number | null } | null = null;
+    if (localPersistence) { try { previousSent = await env.DB.prepare(`SELECT MAX(report_hour) AS report_hour FROM scheduled_reports
+      WHERE report_date=? AND report_hour<? AND status='SENT'`).bind(reportDate,reportHour).first<{report_hour:number|null}>(); } catch { localPersistence = false; } }
     const intervalStart=Math.max(1,Number(previousSent?.report_hour||0)+1);
     const intervalLabel=hourly.mode==='snapshots'&&intervalStart<reportHour
       ? `${String(intervalStart).padStart(2,'0')}:00–${String(reportHour).padStart(2,'0')}:00 (lũy kế)`
@@ -144,16 +161,20 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
       ...recommendation(summary.videoEvaluation?.stop)
     ].join('\n');
     if (cumulative) text = text.replace(':00\n', ':00 (lũy kế)\n');
-    const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text));
-    await env.DB.prepare(`UPDATE scheduled_reports SET status='SENT',message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP
-      WHERE report_date=? AND report_hour=?`).bind(messageId,JSON.stringify({totals:t,source:hourly.mode,
-        observed:hourlyRow.observed!==false}),reportDate,reportHour).run();
-    await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
-      ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)
-      .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : t)).run();
+    const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text), { dedupeKey: `ads:${reportDate}:${reportHour}`, reportDate, reportHour });
+    if (localPersistence) {
+      try {
+        await env.DB.prepare(`UPDATE scheduled_reports SET status='SENT',message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP
+          WHERE report_date=? AND report_hour=?`).bind(messageId,JSON.stringify({totals:t,source:hourly.mode,
+            observed:hourlyRow.observed!==false}),reportDate,reportHour).run();
+        await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
+          ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)
+          .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : t)).run();
+      } catch { /* old D1 quota; remote gateway owns delivery idempotency */ }
+    }
   } catch (error) {
-    await env.DB.prepare(`UPDATE scheduled_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
-      WHERE report_date=? AND report_hour=?`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate,reportHour).run();
+    if (localPersistence) { try { await env.DB.prepare(`UPDATE scheduled_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_hour=?`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate,reportHour).run(); } catch { /* quota */ } }
     throw error;
   }
 }

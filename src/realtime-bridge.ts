@@ -209,8 +209,21 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
     if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized realtime bridge.' }, 401);
     const body = await request.json<any>(); const token = String(body?.token || ''), method = String(body?.method || '');
     if (!token || !/^[a-zA-Z][a-zA-Z0-9_]{1,40}$/.test(method)) return json({ ok: false, error: 'Invalid Zalo bridge request.' }, 400);
+    let claimed = false;
+    if (body?.dedupeKey && body?.reportDate && Number.isFinite(Number(body?.reportHour)) && env.DB) {
+      try {
+        const claim = await env.DB.prepare(`INSERT INTO scheduled_reports(report_date,report_hour,status,payload)
+          VALUES(?,?,'SENDING',?) ON CONFLICT(report_date,report_hour) DO UPDATE SET status='SENDING',payload=excluded.payload,updated_at=CURRENT_TIMESTAMP
+          WHERE scheduled_reports.status<>'SENT' AND (scheduled_reports.status<>'SENDING' OR scheduled_reports.updated_at<datetime('now','-10 minutes'))`)
+          .bind(String(body.reportDate), Number(body.reportHour), JSON.stringify({ dedupeKey: String(body.dedupeKey) })).run();
+        if (!claim.meta.changes) return json({ ok: true, result: { message_id: '', deduped: true } });
+        claimed = true;
+      } catch { /* old caller may be running while the replica is unavailable */ }
+    }
     const response = await fetch(`https://bot-api.zaloplatforms.com/bot${encodeURIComponent(token)}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(body?.payload || {}) });
-    const text = await response.text(); return new Response(text, { status: response.status, headers: { 'Content-Type': 'application/json' } });
+    const text = await response.text();
+    if (claimed && env.DB) { try { const result = JSON.parse(text); await env.DB.prepare(`UPDATE scheduled_reports SET status=?,message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP WHERE report_date=? AND report_hour=?`).bind(response.ok && result?.ok === true ? 'SENT' : 'FAILED', String(result?.result?.message_id || ''), text.slice(0, 4000), String(body.reportDate), Number(body.reportHour)).run(); } catch { /* delivery response remains authoritative */ } }
+    return new Response(text, { status: response.status, headers: { 'Content-Type': 'application/json' } });
   }
   if (url.pathname === '/api/state' && request.method === 'GET' && env.DB) return runtimeState(env);
   if (url.pathname === '/api/stores' && request.method === 'POST' && env.DB)
