@@ -33,6 +33,34 @@ async function facebookRows(env: Env, input: any): Promise<any[]> {
   return result.results || [];
 }
 
+/** Read-only state served from the new account's D1. OAuth mutations and
+ * Supabase backup remain on the legacy Worker. */
+async function runtimeState(env: Env): Promise<Response> {
+  let adsConnected = false;
+  let sellerConnected = false;
+  let advertisers: any[] = [];
+  try {
+    const settings = await env.DB.prepare("SELECT key,value FROM app_settings WHERE key IN ('oauth_tokens','seller_oauth_tokens')").all<any>();
+    for (const row of settings.results || []) {
+      if (row.key === 'oauth_tokens') adsConnected = Boolean(row.value);
+      if (row.key === 'seller_oauth_tokens') sellerConnected = Boolean(row.value);
+    }
+    const rows = await env.DB.prepare('SELECT DISTINCT advertiser_id FROM tiktok_ads_daily ORDER BY advertiser_id').all<any>();
+    advertisers = (rows.results || []).filter((row: any) => row.advertiser_id).map((row: any) => ({ advertiserId: String(row.advertiser_id), advertiserName: `Advertiser ${row.advertiser_id}` }));
+  } catch { /* configured defaults below keep the shell usable during quota errors */ }
+  if (!advertisers.length && env.DEFAULT_ADVERTISER_ID) advertisers = [{ advertiserId: env.DEFAULT_ADVERTISER_ID, advertiserName: `Advertiser ${env.DEFAULT_ADVERTISER_ID}` }];
+  const today = dateInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
+  return json({ ok: true, data: {
+    connected: adsConnected,
+    startDate: today,
+    endDate: today,
+    adsOAuth: { status: adsConnected ? 'connected' : 'disconnected', connected: adsConnected, scope: 'mcp:tt4b' },
+    sellerOAuth: { configured: sellerConnected, canAuthorize: false, connected: sellerConnected, expiresAt: null, refreshExpiresAt: null, sellerName: '', grantedScopes: [], storage: 'Encrypted D1' },
+    dashboardRole: 'admin', defaultAdvertiserId: env.DEFAULT_ADVERTISER_ID,
+    defaultStoreCode: env.DEFAULT_STORE_CODE, advertisers
+  } });
+}
+
 export async function readReplica(env: Env, path: string, input: any): Promise<any> {
   const normalized = { advertiserId: String(input?.advertiserId || env.DEFAULT_ADVERTISER_ID), storeId: String(input?.storeId || env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE),
     startDate: String(input?.startDate || input?.endDate), endDate: String(input?.endDate || input?.startDate) };
@@ -153,8 +181,16 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
     const response = await fetch(`https://bot-api.zaloplatforms.com/bot${encodeURIComponent(token)}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(body?.payload || {}) });
     const text = await response.text(); return new Response(text, { status: response.status, headers: { 'Content-Type': 'application/json' } });
   }
-  // State and stores are read from the legacy D1/MCP account through the
-  // authenticated bridge, not fabricated in the realtime gateway.
+  if (url.pathname === '/api/state' && request.method === 'GET' && env.DB) return runtimeState(env);
+  if (url.pathname === '/api/stores' && request.method === 'POST' && env.DB)
+    return json({ ok: true, data: [{ storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE, storeName: 'TikTok Shop', storeCode: env.DEFAULT_STORE_CODE }] });
+  const localReadPaths = new Set(['/api/report','/api/ads-traffic-timeline','/api/creative-summaries','/api/facebook-ads','/api/ads-overview']);
+  if (request.method === 'POST' && localReadPaths.has(url.pathname) && env.DB) {
+    try { return json({ ok: true, data: await readReplica(env, url.pathname, await request.json<any>()) }); }
+    catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
+  }
+  // OAuth, Seller analysis and Supabase administration stay on the legacy
+  // bridge because that Worker owns the provider secrets and backup flow.
   const proxiedAuth = new Set(['/auth/login','/auth/logout','/auth/connect','/auth/callback','/oauth/callback','/seller/auth/connect','/seller/auth/callback']);
   if (proxiedAuth.has(url.pathname)) {
     if (!env.REALTIME_SOURCE_URL) return json({ ok: false, error: 'Realtime source is not configured.' }, 503);
@@ -171,7 +207,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
     if (location) { try { const target = new URL(location, source); if (target.origin === new URL(source).origin) outHeaders.set('Location', `${url.origin}${target.pathname}${target.search}${target.hash}`); } catch { /* keep provider redirect */ } }
     return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: outHeaders });
   }
-  const adminBridgePath = url.pathname === '/api/state' || url.pathname === '/api/stores' || url.pathname === '/api/admin/verify' || url.pathname === '/api/admin/supabase-sync' || url.pathname === '/api/oauth/connect';
+  const adminBridgePath = url.pathname === '/api/admin/verify' || url.pathname === '/api/admin/supabase-sync' || url.pathname === '/api/oauth/connect';
   if (!url.pathname.startsWith('/api/') || (request.method !== 'POST' && !(adminBridgePath && request.method === 'GET'))) return new Response('');
   if (!env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Realtime gateway is not configured.' }, 503);
   const input = request.method === 'GET' ? { method: 'GET', origin: request.headers.get('X-Realtime-Gateway-Origin') || url.origin } : await request.json<any>(); const upstream = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET }, body: JSON.stringify({ path: url.pathname, input }) });

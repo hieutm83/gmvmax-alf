@@ -17,3 +17,9 @@ DEFAULT_STORE_CODE = "VNLC33LWAS"
 ZALO_STORE_ID = "7496309672412416866"
 TIMEZONE = "Asia/Bangkok"
 PUBLIC_BASE_URL = "https://tiktok-gmv-max-realtime.workers.dev"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gmv-max-runtime-db"
+database_id = "20c3df0a-39eb-40b3-9f1b-67407f76182c"
+migrations_dir = "migrations"
