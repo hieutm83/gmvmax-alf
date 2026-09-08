@@ -17,16 +17,32 @@ function addTikTok(target: any, row: any): void {
 function days(start: string, end: string): string[] { const out: string[] = []; for (let d = start; d <= end; d = shiftDate(d, 1)) out.push(d); return out; }
 
 async function tiktokRows(env: Env, input: any): Promise<any[]> {
+  // A previous migration stored the shop id with an extra "241" segment
+  // (7496309672412416866), while the live TikTok shop id is
+  // 749630967241416866. Read both forms so historical snapshots remain
+  // visible after the configuration correction.
+  const stores = storeIdAliases(input.storeId);
+  const placeholders = stores.map(() => '?').join(',');
   const result = await env.DB.prepare(`SELECT report_date,cost,gross_revenue,cost_per_order,sku_orders,aov,impressions,clicks,ctr,cr
-    FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ? ORDER BY report_date`)
-    .bind(String(input.advertiserId), String(input.storeId), input.startDate, input.endDate).all<any>();
+    FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id IN (${placeholders}) AND report_date BETWEEN ? AND ? ORDER BY report_date`)
+    .bind(String(input.advertiserId), ...stores, input.startDate, input.endDate).all<any>();
   return result.results || [];
 }
 async function sourceRows(env: Env, input: any): Promise<any[]> {
+  const stores = storeIdAliases(input.storeId);
+  const placeholders = stores.map(() => '?').join(',');
   const result = await env.DB.prepare(`SELECT report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json
-    FROM tiktok_ads_source_daily WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ? ORDER BY report_date,source,product_id`)
-    .bind(String(input.advertiserId), String(input.storeId), input.startDate, input.endDate).all<any>();
+    FROM tiktok_ads_source_daily WHERE advertiser_id=? AND store_id IN (${placeholders}) AND report_date BETWEEN ? AND ? ORDER BY report_date,source,product_id`)
+    .bind(String(input.advertiserId), ...stores, input.startDate, input.endDate).all<any>();
   return result.results || [];
+}
+
+function storeIdAliases(value: unknown): string[] {
+  const id = String(value || '').trim();
+  const aliases = new Set<string>(id ? [id] : []);
+  if (id === '749630967241416866') aliases.add('7496309672412416866');
+  if (id === '7496309672412416866') aliases.add('749630967241416866');
+  return [...aliases];
 }
 async function facebookRows(env: Env, input: any): Promise<any[]> {
   const result = await env.DB.prepare(`SELECT report_date,spend,gross_revenue,orders,impressions,clicks,ctr,cpm,cpc,messages,landing_page_views

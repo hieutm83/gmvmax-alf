@@ -506,10 +506,9 @@ export default {
     // only the Supabase backup below is restricted to three daily windows.
     if(localMinute%5===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:localDate}));
-    // Queue the next bounded backfill chunk every minute until history is complete.
-    {
-      ctx.waitUntil((async()=>{const row=await env.DB.prepare("SELECT value,updated_at FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").first<{value:string;updated_at:string}>();const stale=!row||Date.now()-Date.parse(String(row.updated_at||''))>15*60*1000;if(stale)await env.TASK_QUEUE.send({type:'ads-backfill'});})());
-    }
+    // Historical ads backfill is intentionally disabled here. The old account
+    // is reserved for the three Supabase backup windows; realtime snapshots
+    // and dashboard reads run on the new account/D1 replica.
     // Start at 08:00 and keep retrying until TikTok Shop data passes the
     // consistency check. The report table is the idempotency key.
     if(localHour>=8&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
