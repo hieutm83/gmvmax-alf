@@ -33,6 +33,36 @@ async function facebookRows(env: Env, input: any): Promise<any[]> {
   return result.results || [];
 }
 
+/** Seller tab fallback backed by the replica D1. The legacy Seller API is
+ * still used for OAuth mutations, but a dashboard read must not consume the
+ * old account's D1 quota when that API is unavailable. */
+async function sellerRevenueReplica(env: Env, input: any): Promise<any> {
+  const dailyRows = await tiktokRows(env, input);
+  const daily = days(input.startDate, input.endDate).map((date) => {
+    const row = dailyRows.find((item) => String(item.report_date) === date);
+    const orders = numberValue(row?.sku_orders), grossRevenue = numberValue(row?.gross_revenue), cost = numberValue(row?.cost);
+    return { date, label: `${date.slice(8, 10)}/${date.slice(5, 7)}`, metrics: { orders, grossRevenue, cost, aov: orders ? grossRevenue / orders : null } };
+  });
+  const totals = daily.reduce((out: any, point: any) => {
+    out.orders += point.metrics.orders; out.grossRevenue += point.metrics.grossRevenue; out.cost += point.metrics.cost; return out;
+  }, { orders: 0, grossRevenue: 0, cost: 0 });
+  totals.aov = totals.orders ? totals.grossRevenue / totals.orders : null;
+  const rows = await sourceRows(env, input);
+  const products = [...new Map(rows.map((row) => [String(row.product_id), row])).values()].map((row) => ({
+    id: String(row.product_id), name: String(row.title || row.product_id), gmv: numberValue(row.gross_revenue), orders: numberValue(row.sku_orders), cost: numberValue(row.cost)
+  }));
+  return {
+    startDate: input.startDate, endDate: input.endDate,
+    chartStartDate: input.startDate, previousStartDate: shiftDate(input.startDate, -1),
+    previousEndDate: shiftDate(input.startDate, -1), generatedAt: new Date().toISOString(),
+    source: 'D1_REPLICA', shop: { name: 'TikTok Shop', code: env.DEFAULT_STORE_CODE },
+    totals, previousTotals: { orders: 0, grossRevenue: 0, cost: 0, aov: null }, daily,
+    provinces: [], gmvAttribution: { products }, previousGmvAttribution: { products: [] },
+    analyticsAvailable: true, latestAvailableDate: input.endDate,
+    dataQuality: { ready: true, current: { ready: true }, previous: { ready: false } }
+  };
+}
+
 /** Read-only state served from the new account's D1. OAuth mutations and
  * Supabase backup remain on the legacy Worker. */
 async function runtimeState(env: Env): Promise<Response> {
@@ -93,6 +123,7 @@ export async function readReplica(env: Env, path: string, input: any): Promise<a
     const totals = daily.reduce((acc: any, day: any) => { Object.keys(acc).forEach((key) => { if (typeof acc[key] === 'number') acc[key] += numberValue(day.metrics[key]); }); return acc; }, { spend: 0, impressions: 0, reach: 0, clicks: 0, postEngagement: 0, messages: 0, orders: 0, revenue: 0, landingPageViews: 0, cpm: 0, cpc: 0, ctr: 0, cpo: null, roas: null } as any); totals.cpm = totals.impressions ? totals.spend * 1000 / totals.impressions : 0; totals.cpc = totals.clicks ? totals.spend / totals.clicks : 0; totals.ctr = totals.impressions ? totals.clicks / totals.impressions : 0; totals.cpo = totals.orders ? totals.spend / totals.orders : null; totals.roas = totals.spend ? totals.revenue / totals.spend : null;
     return { totals, daily, campaigns: [], resultCosts: [], previousTotals: totals, startDate: normalized.startDate, endDate: normalized.endDate, chartStartDate: normalized.startDate, generatedAt: new Date().toISOString() };
   }
+  if (path === '/api/revenue-analysis') return sellerRevenueReplica(env, normalized);
   if (path === '/api/ads-overview') {
     const [tt, fb] = await Promise.all([readReplica(env, '/api/report', normalized), readReplica(env, '/api/facebook-ads', normalized)]); const t = tt.totals; const f = fb.totals;
     const platform = (cost: number, revenue: number, impressions: number, clicks: number, orders: number) => ({ cost, revenue, impressions, clicks, orders, ctr: impressions ? clicks / impressions : 0, cr: clicks ? orders / clicks : 0, cpc: clicks ? cost / clicks : 0, cpm: impressions ? cost * 1000 / impressions : 0, cpo: orders ? cost / orders : null, roas: cost ? revenue / cost : null });
@@ -184,7 +215,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
   if (url.pathname === '/api/state' && request.method === 'GET' && env.DB) return runtimeState(env);
   if (url.pathname === '/api/stores' && request.method === 'POST' && env.DB)
     return json({ ok: true, data: [{ storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE, storeName: 'TikTok Shop', storeCode: env.DEFAULT_STORE_CODE }] });
-  const localReadPaths = new Set(['/api/report','/api/ads-traffic-timeline','/api/creative-summaries','/api/facebook-ads','/api/ads-overview']);
+  const localReadPaths = new Set(['/api/report','/api/ads-traffic-timeline','/api/creative-summaries','/api/facebook-ads','/api/ads-overview','/api/revenue-analysis']);
   if (request.method === 'POST' && localReadPaths.has(url.pathname) && env.DB) {
     try { return json({ ok: true, data: await readReplica(env, url.pathname, await request.json<any>()) }); }
     catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
