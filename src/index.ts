@@ -22,7 +22,7 @@ import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, sh
 import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
   createDashboardSession, dashboardRoleForPassword, dashboardSessionCookie, dashboardSessionFromRequest,
   recordDashboardLoginFailure, type DashboardRole, type DashboardSession } from './dashboard-auth';
-import { bridgeRequest, gatewayRequest, realtimeProxyRequest } from './realtime-bridge';
+import { bridgeRequest, ensureRuntimeCredentials, gatewayRequest, realtimeProxyRequest } from './realtime-bridge';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
 function validateScope(input: any): any {
@@ -438,7 +438,9 @@ export default {
       // Keep the legacy custom domain as the browser URL. API reads are
       // proxied to the realtime account (one bounded subrequest), while
       // cron, queues, webhooks and all data writes stay on this Worker.
-      if(env.REALTIME_GATEWAY_URL && url.pathname.startsWith('/api/')) return await realtimeProxyRequest(request,env,url);
+      const realtimeOwnedPath=url.pathname.startsWith('/api/')||url.pathname==='/auth/connect'||url.pathname==='/auth/callback'||
+        url.pathname==='/oauth/callback'||url.pathname==='/seller/auth/connect'||url.pathname==='/seller/auth/callback';
+      if(env.REALTIME_GATEWAY_URL&&realtimeOwnedPath)return await realtimeProxyRequest(request,env,url);
       if(url.pathname==='/tiktok/webhook')return await tiktokShopWebhook(request,env);
       if(url.pathname==='/webhooks/zalo-operations'&&request.method==='POST')return operationsBotWebhook(request,env,ctx);
       if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return json({ok:false,error:'Zalo interactive messages are disabled.'},410);
@@ -489,45 +491,24 @@ export default {
     const localParts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:env.TIMEZONE,hour:'2-digit',minute:'2-digit',hour12:false})
       .formatToParts(now).map((part)=>[part.type,part.value]));
     const localMinute=Number(localParts.minute);
-    if(localMinute%15===0)ctx.waitUntil(keepAccessTokenFresh(env).catch((error)=>
-      console.error('TikTok Ads MCP proactive token refresh failed',error instanceof Error?error.message:String(error))));
-    ctx.waitUntil(pollOperationsInbox(env).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error))));
-    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&(localMinute===56||localMinute%5===0))
-      ctx.waitUntil(enqueueMissingOrderReports(env,localDate,localHour,localMinute));
-    if(env.ZALO_ORDER_BOT_TOKEN&&env.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate}));
-    // The backup snapshot reads the complete accumulated history from D1.
-    // Run it only at the three agreed Bangkok-time windows so the old Worker
-    // remains the sole Supabase caller without exhausting D1 row-read quota.
+    if(env.REALTIME_GATEWAY==='1'){
+      // OAuth/MCP and realtime data belong to the new account and new D1.
+      ctx.waitUntil((async()=>{
+        await ensureRuntimeCredentials(env);
+        const storeId=await resolveDefaultStore(env);
+        const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:localDate,endDate:localDate};
+        const results=await Promise.allSettled([
+          loadMainReport(env,input,true),
+          loadFacebookAdsReport(env,{startDate:localDate,endDate:localDate,forceRefresh:true})
+        ]);
+        for(const result of results)if(result.status==='rejected')
+          console.error('Realtime provider refresh failed',result.reason instanceof Error?result.reason.message:String(result.reason));
+      })());
+      return;
+    }
+    // The old account only schedules the three agreed Supabase backups.
     if(env.SUPABASE_URL&&env.SUPABASE_SECRET_KEY&&[3,9,12].includes(localHour)&&localMinute===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'supabase-backup',reportDate:localDate}));
-    // Realtime dashboard data is refreshed independently of Supabase. Keep
-    // the current day's TikTok/Facebook snapshot warm every five minutes;
-    // only the Supabase backup below is restricted to three daily windows.
-    if(localMinute%5===0)
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:localDate}));
-    // Historical ads backfill is intentionally disabled here. The old account
-    // is reserved for the three Supabase backup windows; realtime snapshots
-    // and dashboard reads run on the new account/D1 replica.
-    // Start at 08:00 and keep retrying until TikTok Shop data passes the
-    // consistency check. The report table is the idempotency key.
-    if(localHour>=8&&localMinute%5===0&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID){
-      const yesterday=shiftDate(localDate,-1);
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'}));
-    }
-    const localWeekday=new Date(`${localDate}T00:00:00Z`).getUTCDay();
-    if(localWeekday===6&&localHour===10&&[30,35,40].includes(localMinute)&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-weekly-prepare',saturdayDate:localDate,stage:0}));
-    if(localDate.endsWith('-01')&&localHour===10&&[35,40,45].includes(localMinute)&&env.ZALO_OPERATIONS_BOT_TOKEN&&env.ZALO_OPERATIONS_GROUP_CHAT_ID)
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'operations-monthly-prepare',firstDayOfMonth:localDate,stage:0}));
-    // Retry every five minutes. scheduled_reports is the idempotency key, so a
-    // successful hourly slot is not sent twice while transient failures and
-    // deployments at the top of an hour recover automatically.
-    if(localMinute%5!==0)return;
-    const reportHour=localHour===0?24:localHour;
-    const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
-    ctx.waitUntil(env.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour,
-      backupDate:localHour===8&&localMinute===0?shiftDate(localDate,-1):undefined}));
   },
   async queue(batch:MessageBatch<TaskMessage>,env:Env):Promise<void>{
     for(const message of batch.messages){

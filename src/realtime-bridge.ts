@@ -1,11 +1,14 @@
 import type { Env } from './types';
 import { json, numberValue, shiftDate, validateDate } from './utils';
-import { createAuthorizationUrl, disconnect, oauthConnectionState, readTokens, refreshAccessToken } from './oauth';
-import { disconnectSeller, loadSellerRevenueAnalysis } from './seller';
+import { createAuthorizationUrl, disconnect, handleOAuthCallback, oauthConnectionState, readTokens, refreshAccessToken } from './oauth';
+import { createSellerAuthorizationUrl, disconnectSeller, handleSellerOAuthCallback, loadSellerRevenueAnalysis } from './seller';
 import { sellerOAuthState } from './seller';
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { dateInTimezone } from './utils';
 import { saveTikTokAdsSnapshot, saveFacebookAdsSnapshot } from './ads-snapshots';
+import { decryptJson, decryptTokens, encryptJson, encryptTokens } from './crypto';
+import type { SellerTokenSet } from './types';
+import { loadMainReport } from './reports';
 
 function emptyTikTok() { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: true, costPerOrder: null, roi: null }; }
 function addTikTok(target: any, row: any): void {
@@ -16,6 +19,35 @@ function addTikTok(target: any, row: any): void {
 }
 function days(start: string, end: string): string[] { const out: string[] = []; for (let d = start; d <= end; d = shiftDate(d, 1)) out.push(d); return out; }
 
+async function putSetting(env: Env, key: string, value: string): Promise<void> {
+  await env.DB.prepare(`INSERT INTO app_settings(key,value) VALUES(?,?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP`).bind(key, value).run();
+}
+
+/** Re-encrypt the already-replicated OAuth grants with the new account's
+ * encryption key. The legacy Worker only decrypts ciphertext supplied by the
+ * new D1; it does not read the legacy D1, so this also works while the old D1
+ * row-read quota is exhausted. */
+export async function ensureRuntimeCredentials(env: Env): Promise<void> {
+  if (!env.TOKEN_ENCRYPTION_KEY || !env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return;
+  const rows = await env.DB.prepare("SELECT key,value FROM app_settings WHERE key IN ('oauth_tokens','seller_oauth_tokens')").all<any>();
+  const values = new Map((rows.results || []).map((row: any) => [String(row.key), String(row.value || '')]));
+  const oauthCipher = values.get('oauth_tokens') || '';
+  const sellerCipher = values.get('seller_oauth_tokens') || '';
+  let oauthValid = !oauthCipher; let sellerValid = !sellerCipher;
+  if (oauthCipher) { try { await decryptTokens(env, oauthCipher); oauthValid = true; } catch { /* legacy key */ } }
+  if (sellerCipher) { try { await decryptJson<SellerTokenSet>(env, sellerCipher); sellerValid = true; } catch { /* legacy key */ } }
+  if (oauthValid && sellerValid) return;
+  const response = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET },
+    body: JSON.stringify({ path: '/internal/oauth-decrypt', input: { oauthCipher: oauthValid ? '' : oauthCipher, sellerCipher: sellerValid ? '' : sellerCipher } })
+  });
+  const payload = await response.json<any>().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `OAuth migration HTTP ${response.status}`);
+  if (payload?.data?.oauthTokens) await putSetting(env, 'oauth_tokens', await encryptTokens(env, payload.data.oauthTokens));
+  if (payload?.data?.sellerTokens) await putSetting(env, 'seller_oauth_tokens', await encryptJson(env, payload.data.sellerTokens));
+}
+
 async function tiktokRows(env: Env, input: any): Promise<any[]> {
   // A previous migration stored the shop id with an extra "241" segment
   // (7496309672412416866), while the live TikTok shop id is
@@ -23,8 +55,11 @@ async function tiktokRows(env: Env, input: any): Promise<any[]> {
   // visible after the configuration correction.
   const stores = storeIdAliases(input.storeId);
   const placeholders = stores.map(() => '?').join(',');
-  const result = await env.DB.prepare(`SELECT report_date,cost,gross_revenue,cost_per_order,sku_orders,aov,impressions,clicks,ctr,cr
-    FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id IN (${placeholders}) AND report_date BETWEEN ? AND ? ORDER BY report_date`)
+  const result = await env.DB.prepare(`SELECT report_date,MAX(cost) AS cost,MAX(gross_revenue) AS gross_revenue,
+      MAX(cost_per_order) AS cost_per_order,MAX(sku_orders) AS sku_orders,MAX(aov) AS aov,
+      MAX(impressions) AS impressions,MAX(clicks) AS clicks,MAX(ctr) AS ctr,MAX(cr) AS cr
+    FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id IN (${placeholders}) AND report_date BETWEEN ? AND ?
+    GROUP BY report_date ORDER BY report_date`)
     .bind(String(input.advertiserId), ...stores, input.startDate, input.endDate).all<any>();
   return result.results || [];
 }
@@ -87,11 +122,9 @@ async function runtimeState(env: Env): Promise<Response> {
   let sellerConnected = false;
   let advertisers: any[] = [];
   try {
-    const settings = await env.DB.prepare("SELECT key,value FROM app_settings WHERE key IN ('oauth_tokens','seller_oauth_tokens')").all<any>();
-    for (const row of settings.results || []) {
-      if (row.key === 'oauth_tokens') adsConnected = Boolean(row.value);
-      if (row.key === 'seller_oauth_tokens') sellerConnected = Boolean(row.value);
-    }
+    await ensureRuntimeCredentials(env);
+    adsConnected = Boolean(await readTokens(env));
+    sellerConnected = Boolean((await sellerOAuthState(env)).connected);
     const rows = await env.DB.prepare('SELECT DISTINCT advertiser_id FROM tiktok_ads_daily ORDER BY advertiser_id').all<any>();
     advertisers = (rows.results || []).filter((row: any) => row.advertiser_id).map((row: any) => ({ advertiserId: String(row.advertiser_id), advertiserName: `Advertiser ${row.advertiser_id}` }));
   } catch { /* configured defaults below keep the shell usable during quota errors */ }
@@ -178,6 +211,12 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
   const body = await request.json<any>();
   try {
     const path = String(body?.path || ''), input = body?.input || {};
+    if (path === '/internal/oauth-decrypt') {
+      const data: any = {};
+      if (input?.oauthCipher) data.oauthTokens = await decryptTokens(env, String(input.oauthCipher));
+      if (input?.sellerCipher) data.sellerTokens = await decryptJson<SellerTokenSet>(env, String(input.sellerCipher));
+      return json({ ok: true, data });
+    }
     if (path === '/api/state') {
       let tokens: any = null; let advertisers: any[] = []; let connectionError: string | undefined;
       // D1 free-tier exhaustion must not blank the dashboard. Keep the
@@ -244,6 +283,11 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
 }
 
 export async function gatewayRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  const gatewayOrigin = request.headers.get('X-Realtime-Gateway-Origin') || url.origin;
+  if (url.pathname === '/auth/connect' && request.method === 'GET') return Response.redirect(await createAuthorizationUrl(env, gatewayOrigin), 302);
+  if ((url.pathname === '/auth/callback' || url.pathname === '/oauth/callback') && request.method === 'GET') return handleOAuthCallback(env, url);
+  if (url.pathname === '/seller/auth/connect' && request.method === 'GET') return Response.redirect(await createSellerAuthorizationUrl(env), 302);
+  if (url.pathname === '/seller/auth/callback' && request.method === 'GET') return handleSellerOAuthCallback(env, url);
   if (url.pathname === '/internal/runtime-sync' && request.method === 'POST') {
     const supplied = request.headers.get('X-Realtime-Bridge-Secret') || '';
     if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized realtime sync.' }, 401);
@@ -281,12 +325,24 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
     return json({ ok: true, data: [{ storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE, storeName: 'TikTok Shop', storeCode: env.DEFAULT_STORE_CODE }] });
   const localReadPaths = new Set(['/api/report','/api/ads-traffic-timeline','/api/creative-summaries','/api/facebook-ads','/api/ads-overview','/api/revenue-analysis','/api/cads-report','/api/comparison','/api/product-videos','/api/video-stats','/api/video-metadata','/api/product-analysis','/api/finance-analysis','/api/operations-analysis','/api/koc-analysis','/api/content-koc-analysis']);
   if (request.method === 'POST' && localReadPaths.has(url.pathname) && env.DB) {
-    try { return json({ ok: true, data: await readReplica(env, url.pathname, await request.json<any>()) }); }
+    try {
+      const input = await request.json<any>();
+      if (url.pathname === '/api/report' && input?.forceRefresh === true) {
+        await ensureRuntimeCredentials(env);
+        const liveInput = { ...input, advertiserId: String(input.advertiserId || env.DEFAULT_ADVERTISER_ID), storeId: String(input.storeId || env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE) };
+        return json({ ok: true, data: await loadMainReport(env, liveInput, true) });
+      }
+      return json({ ok: true, data: await readReplica(env, url.pathname, input) });
+    }
     catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
   }
+  if (url.pathname === '/api/oauth/connect' && request.method === 'GET') return json({ ok: true, data: await createAuthorizationUrl(env, gatewayOrigin) });
+  if (url.pathname === '/api/oauth/refresh' && request.method === 'POST') return json({ ok: true, data: await refreshAccessToken(env) });
+  if (url.pathname === '/api/oauth/disconnect' && request.method === 'POST') { await disconnect(env); return json({ ok: true, data: true }); }
+  if (url.pathname === '/api/seller/disconnect' && request.method === 'POST') { await disconnectSeller(env); return json({ ok: true, data: true }); }
   // OAuth, Seller analysis and Supabase administration stay on the legacy
   // bridge because that Worker owns the provider secrets and backup flow.
-  const proxiedAuth = new Set(['/auth/login','/auth/logout','/auth/connect','/auth/callback','/oauth/callback','/seller/auth/connect','/seller/auth/callback']);
+  const proxiedAuth = new Set(['/auth/login','/auth/logout']);
   if (proxiedAuth.has(url.pathname)) {
     if (!env.REALTIME_SOURCE_URL) return json({ ok: false, error: 'Realtime source is not configured.' }, 503);
     // Rebuild the request body and hop-by-hop headers. Passing the original
