@@ -337,9 +337,12 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
 export async function gatewayRequest(request: Request, env: Env, url: URL): Promise<Response> {
   const gatewayOrigin = request.headers.get('X-Realtime-Gateway-Origin') || url.origin;
   if (url.pathname === '/auth/connect' && request.method === 'GET') return Response.redirect(await createAuthorizationUrl(env, gatewayOrigin), 302);
-  if ((url.pathname === '/auth/callback' || url.pathname === '/oauth/callback') && request.method === 'GET') return handleOAuthCallback(env, url);
-  if (url.pathname === '/seller/auth/connect' && request.method === 'GET') return Response.redirect(await createSellerAuthorizationUrl(env), 302);
-  if (url.pathname === '/seller/auth/callback' && request.method === 'GET') return handleSellerOAuthCallback(env, url);
+  if (url.pathname === '/auth/callback' && request.method === 'GET')
+    return url.searchParams.has('app_key') ? handleSellerOAuthCallback(await runtimeProviderEnv(env), url) : handleOAuthCallback(env, url);
+  if (url.pathname === '/oauth/callback' && request.method === 'GET') return handleOAuthCallback(env, url);
+  if (url.pathname === '/seller/auth/connect' && request.method === 'GET')
+    return Response.redirect(await createSellerAuthorizationUrl(await runtimeProviderEnv(env)), 302);
+  if (url.pathname === '/seller/auth/callback' && request.method === 'GET') return handleSellerOAuthCallback(await runtimeProviderEnv(env), url);
   if (url.pathname === '/internal/runtime-sync' && request.method === 'POST') {
     const supplied = request.headers.get('X-Realtime-Bridge-Secret') || '';
     if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized realtime sync.' }, 401);
@@ -429,7 +432,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
   if (url.pathname === '/api/oauth/connect' && request.method === 'GET') return json({ ok: true, data: await createAuthorizationUrl(env, gatewayOrigin) });
   if (url.pathname === '/api/oauth/refresh' && request.method === 'POST') return json({ ok: true, data: await refreshAccessToken(env) });
   if (url.pathname === '/api/oauth/disconnect' && request.method === 'POST') { await disconnect(env); return json({ ok: true, data: true }); }
-  if (url.pathname === '/api/seller/disconnect' && request.method === 'POST') { await disconnectSeller(env); return json({ ok: true, data: true }); }
+  if (url.pathname === '/api/seller/disconnect' && request.method === 'POST') { await disconnectSeller(await runtimeProviderEnv(env)); return json({ ok: true, data: true }); }
   // OAuth, Seller analysis and Supabase administration stay on the legacy
   // bridge because that Worker owns the provider secrets and backup flow.
   const proxiedAuth = new Set(['/auth/login','/auth/logout']);
