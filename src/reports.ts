@@ -318,16 +318,16 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
   const session=await createSession(env); const contexts=input.allContexts||input.products||[];
   const rows:McpRow[]=[];
   const exactContexts=Array.from(new Map<string,ProductContext>(contexts.map((context:ProductContext)=>[`${context.campaignId}:${context.itemGroupId}`,context])).values());
-  for(let offset=0;offset<exactContexts.length;offset+=4){
-    const chunk=exactContexts.slice(offset,offset+4);
-    const chunkRows=await Promise.all(chunk.map(async context=>{
-      const values=await pagedReport(env,session,{advertiser_id:input.advertiserId,store_ids:[input.storeId],
-        dimensions:['item_id','stat_time_day'],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
-        filtering:{campaign_ids:[context.campaignId],item_group_ids:[context.itemGroupId],creative_types:['ADS_AND_ORGANIC']}});
-      values.forEach(row=>{row.dimensions={...(row.dimensions||{}),campaign_id:context.campaignId,item_group_id:context.itemGroupId};});
-      return values;
-    }));
-    chunkRows.forEach(values=>rows.push(...values));
+  const campaignIds=unique(exactContexts.map((context)=>context.campaignId));
+  for(const campaignId of campaignIds){
+    const campaignContexts=exactContexts.filter((context)=>context.campaignId===campaignId);
+    const base={advertiser_id:input.advertiserId,store_ids:[input.storeId],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
+      filtering:{campaign_ids:[campaignId],item_group_ids:campaignContexts.map((context)=>context.itemGroupId),creative_types:['ADS_AND_ORGANIC']}};
+    let values=await pagedReport(env,session,{...base,dimensions:['item_group_id','item_id','stat_time_day']}).catch(()=>[]);
+    if(!values.length)values=await pagedReport(env,session,{...base,dimensions:['item_id','stat_time_day']});
+    values.forEach(row=>{row.dimensions={...(row.dimensions||{}),campaign_id:campaignId,
+      item_group_id:rowId(row,'item_group_id')||campaignContexts[0]?.itemGroupId||''};});
+    rows.push(...values);
   }
   const sellerVideoIds = await sellerOwnedVideoIds(env, shiftDate(input.startDate, -29), input.endDate, SELLER_TIKTOK_USERNAMES)
     .catch(() => new Set<string>());
@@ -337,6 +337,7 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
   }};
   for(const row of rows){const m=row.metrics||{},id=rowId(row,'item_id'),k=`${rowId(row,'campaign_id')}:${rowId(row,'item_group_id')}`;
     const cost=numberValue(m.cost);
+    if(!cost&&!numberValue(m.orders)&&!numberValue(m.gross_revenue)&&!numberValue(m.product_impressions)&&!numberValue(m.product_clicks))continue;
     const title=String(m.title||row.dimensions?.title||'').trim().toLowerCase();
     const isProductCard=id==='-1'||title.includes('product card')||title.includes('thẻ sản phẩm');
     costAttribution.total+=cost;
@@ -351,11 +352,18 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
     const entry=map.get(k)||{creativeCount:0,traffic:0,itemIds:[]}; impressions+=numberValue(m.product_impressions);traffic+=numberValue(m.product_clicks);
     if(numberValue(m.cost)||numberValue(m.orders)||numberValue(m.product_impressions)){if(id){ids.add(id);if(!entry.itemIds.includes(id))entry.itemIds.push(id);}entry.creativeCount++;entry.traffic+=numberValue(m.product_clicks);}map.set(k,entry);}
   for(const source of Object.values<any>(costAttribution.metrics))source.roi=source.cost?source.grossRevenue/source.cost:0;
-  await Promise.all(sourceRows.map((item)=>env.DB.prepare(`INSERT INTO tiktok_ads_source_daily
+  const sourceSql=`INSERT INTO tiktok_ads_source_daily
     (advertiser_id,store_id,report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json,updated_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-    ON CONFLICT(advertiser_id,store_id,report_date,source,product_id) DO UPDATE SET title=excluded.title,cost=excluded.cost,gross_revenue=excluded.gross_revenue,sku_orders=excluded.sku_orders,impressions=excluded.impressions,clicks=excluded.clicks,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`)
-    .bind(input.advertiserId,input.storeId,item.date,item.source,item.productId||'unknown',item.title||'',numberValue(item.metrics?.cost),numberValue(item.metrics?.gross_revenue),numberValue(item.metrics?.orders),numberValue(item.metrics?.product_impressions),numberValue(item.metrics?.product_clicks),JSON.stringify(item)).run().catch(()=>undefined)));
+    ON CONFLICT(advertiser_id,store_id,report_date,source,product_id) DO UPDATE SET title=excluded.title,cost=excluded.cost,gross_revenue=excluded.gross_revenue,sku_orders=excluded.sku_orders,impressions=excluded.impressions,clicks=excluded.clicks,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`;
+  // D1 batch is one Worker subrequest regardless of statement count. Chunking
+  // also avoids the previous 100+ individual writes being rejected after the
+  // provider calls had already consumed most of the invocation allowance.
+  for(let offset=0;offset<sourceRows.length;offset+=50){
+    const statements=sourceRows.slice(offset,offset+50).map((item)=>env.DB.prepare(sourceSql)
+      .bind(input.advertiserId,input.storeId,String(item.date||input.startDate).slice(0,10),item.source,item.productId||'unknown',item.title||'',numberValue(item.metrics?.cost),numberValue(item.metrics?.gross_revenue),numberValue(item.metrics?.orders),numberValue(item.metrics?.product_impressions),numberValue(item.metrics?.product_clicks),JSON.stringify(item)));
+    await env.DB.batch(statements).catch((error)=>console.warn('Creative source D1 batch skipped',String(error)));
+  }
   const result={generatedAt:new Date().toISOString(),summaries:(input.products||[]).map((p:any)=>({campaignId:p.campaignId,itemGroupId:p.itemGroupId,...(map.get(`${p.campaignId}:${p.itemGroupId}`)||{creativeCount:0,traffic:0,itemIds:[]})})),
     totalCreatives:ids.size,impressions,traffic,costAttribution,sourceRows,videoEvaluation:evaluateVideos(rows),hourlyTraffic:[],cacheStatus:'REFRESHED'};
   await cachePut(env,key,result,300);return result;
@@ -398,15 +406,18 @@ export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,end
   const products=new Map<string,any>((main.products||[]).map((product:any)=>[String(product.itemGroupId),product]));
   const byId=new Map<string,any>();
   const timeDimension=startDate===endDate?'stat_time_hour':'stat_time_day';
-  for(let offset=0;offset<contexts.length;offset+=4){
-    const chunk=contexts.slice(offset,offset+4);
-    const values=await Promise.all(chunk.map(async context=>{
-      const [rows,timeRows]=await Promise.all([
-        contextsRows(env,session,input.advertiserId,input.storeId,[context],startDate,endDate,['item_id'],creativeMetrics),
-        contextsRows(env,session,input.advertiserId,input.storeId,[context],startDate,endDate,['item_id',timeDimension],['cost','orders','gross_revenue','product_impressions','product_clicks'])
-      ]);
-      return{rows:rows.map(row=>({row,context})),timeRows:timeRows.map(row=>({row,context}))};
-    }));
+  // TikTok returns no data when campaign_id/item_group_id are combined with
+  // item_id as dimensions for this account. Query once per campaign with all
+  // its Product IDs in the filter; this retains real video rows while staying
+  // well below the Worker limit (instead of two calls per Product ID).
+  const campaignIds=unique(contexts.map((context)=>context.campaignId));
+  const values=await Promise.all(campaignIds.map(async(campaignId)=>{
+    const campaignContexts=contexts.filter((context)=>context.campaignId===campaignId);
+    const rows=await contextsRows(env,session,input.advertiserId,input.storeId,campaignContexts,startDate,endDate,
+      ['item_id'],creativeMetrics);
+    return{rows:rows.map(row=>({row,context:{campaignId,itemGroupId:rowId(row,'item_group_id')||campaignContexts[0]?.itemGroupId||''}})),
+      timeRows:[] as Array<{row:McpRow;context:ProductContext}>};
+  }));
     for(const {row,context} of values.flatMap(value=>value.rows)){
       const itemId=rowId(row,'item_id');if(!itemId||itemId==='-1')continue;
       const video=normalizeVideo(row);const product=products.get(String(context.itemGroupId));
@@ -428,7 +439,6 @@ export async function loadAdsVideoMetrics(env:Env,input:any,startDate:string,end
       point.cost+=numberValue(metrics.cost);point.orders+=numberValue(metrics.orders);point.grossRevenue+=numberValue(metrics.gross_revenue);
       point.productClicks+=numberValue(metrics.product_clicks);point.productImpressions+=numberValue(metrics.product_impressions);current.timeline[timeKey]=point;
     }
-  }
   const result=Array.from(byId.values());
   (result as any).overallTimeline=(startDate===endDate?main.hourly:main.daily).map((point:any)=>({key:startDate===endDate?String(Math.max(0,Number(point.hour||1)-1)).padStart(2,'0'):point.date,
     grossRevenue:numberValue(point.metrics?.grossRevenue),productClicks:numberValue(point.metrics?.traffic)}));

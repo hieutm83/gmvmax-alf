@@ -1,6 +1,5 @@
 import type { Env } from './types';
 import { resolveDefaultStoreId } from './mcp';
-import { loadMainReport } from './reports';
 import { authorizedShop, epoch, shopRequest } from './seller';
 import { cacheGet, cachePut, dateInTimezone, numberValue, shiftDate, stableKey } from './utils';
 
@@ -463,7 +462,7 @@ function combineFinanceDetails(settled: any, unsettled: any): any {
 }
 
 async function period(env: Env, cipher: string, input: Scope, includeSku: boolean, warnings: string[]): Promise<any> {
-  const storeIdPromise = resolveDefaultStoreId(env);
+  const storeIdPromise = env.ZALO_STORE_ID ? Promise.resolve(env.ZALO_STORE_ID) : resolveDefaultStoreId(env);
   const settledPromise = settledBlock(env, cipher, input.startDate, input.endDate)
     .catch((error) => { warnings.push(`Đã quyết toán: ${message(error)}`); return emptySettled(); });
   const unsettledPromise = unsettledBlock(env, cipher, input.startDate, input.endDate)
@@ -471,11 +470,17 @@ async function period(env: Env, cipher: string, input: Scope, includeSku: boolea
   const skuPromise = includeSku ? skuBlock(env, cipher, input.startDate, input.endDate)
     .catch((error) => { warnings.push(`Sản lượng SKU: ${message(error)}`); return { products: [], totalUnitsSold: 0, totalSkuOrders: 0, totalGmv: 0 }; }) : Promise.resolve(null);
   const storeId = await storeIdPromise;
-  const adsPromise = loadMainReport(env, { advertiserId: env.DEFAULT_ADVERTISER_ID, storeId,
-    startDate: input.startDate, endDate: input.endDate }, input.forceRefresh === true)
+  // The realtime Worker already refreshes Ads into D1 every five minutes.
+  // Finance only needs aggregate cost/order/GMV, so do not run the complete
+  // MCP report beside the paginated Shop finance calls in this invocation.
+  const adsPromise = env.DB.prepare(`SELECT COALESCE(SUM(cost),0) AS cost,COALESCE(SUM(sku_orders),0) AS orders,
+      COALESCE(SUM(gross_revenue),0) AS gross_revenue
+    FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ?`)
+    .bind(env.DEFAULT_ADVERTISER_ID,storeId,input.startDate,input.endDate).first<any>()
+    .then((row)=>({totals:{cost:numberValue(row?.cost),orders:numberValue(row?.orders),grossRevenue:numberValue(row?.gross_revenue)}}))
     .catch((error) => { warnings.push(`Chi phí Ads: ${message(error)}`); return { totals: {} }; });
   const [settled, unsettled, sku, adsReport] = await Promise.all([settledPromise, unsettledPromise, skuPromise, adsPromise]);
-  const adsTotals = adsReport.totals || {};
+  const adsTotals: any = adsReport.totals || {};
   const ads = { cost: numberValue(adsTotals.cost), orders: numberValue(adsTotals.orders),
     grossRevenue: numberValue(adsTotals.grossRevenue), roi: numberValue(adsTotals.roi),
     costPerOrder: numberValue(adsTotals.costPerOrder), cAds: 0, gmvMax: numberValue(adsTotals.cost) };

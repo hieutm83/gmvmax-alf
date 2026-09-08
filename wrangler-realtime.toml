@@ -18,8 +18,13 @@ DEFAULT_ADVERTISER_ID = "7535665207776231441"
 DEFAULT_STORE_CODE = "VNLC33LWAS"
 ZALO_STORE_ID = "7496309672412416866"
 TIMEZONE = "Asia/Bangkok"
-PUBLIC_BASE_URL = "https://tiktok-gmv-max-realtime.workers.dev"
+PUBLIC_BASE_URL = "https://anlanhfarm.indevs.in"
 TIKTOK_SHOP_APP_KEY = "6kqcmsfamo07g"
+ZALO_ADVERTISER_ID = "7535665207776231441"
+ZALO_STORE_CODE = "VNLC33LWAS"
+ZALO_OPERATIONS_GROUP_NAME = "[AnlanhFarm]-TMDT"
+ZALO_ORDER_GROUP_CHAT_ID = "zgr-a6ec2c8ddce035be6cf1"
+ZALO_ORDER_GROUP_CHAT_NAME = "[AnlanhFarm]-Van Don"
 FB_ACT_ID = "act_702331935270958"
 FB_API_VERSION = "v19.0"
 FB_TIMEZONE = "Asia/Ho_Chi_Minh"
@@ -30,6 +35,39 @@ database_name = "gmv-max-runtime-db"
 database_id = "20c3df0a-39eb-40b3-9f1b-67407f76182c"
 migrations_dir = "migrations"
 
+[[queues.producers]]
+binding = "TASK_QUEUE"
+queue = "gmv-max-runtime-tasks"
+
+[[queues.producers]]
+binding = "ZALO_INBOX_QUEUE"
+queue = "gmv-max-runtime-zalo-inbox"
+
+[[queues.producers]]
+binding = "TRACKING_QUEUE"
+queue = "gmv-max-runtime-tracking"
+
+[[queues.consumers]]
+queue = "gmv-max-runtime-tasks"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 5
+dead_letter_queue = "gmv-max-runtime-dead-letter"
+
+[[queues.consumers]]
+queue = "gmv-max-runtime-zalo-inbox"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 5
+dead_letter_queue = "gmv-max-runtime-dead-letter"
+
+[[queues.consumers]]
+queue = "gmv-max-runtime-tracking"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 5
+dead_letter_queue = "gmv-max-runtime-dead-letter"
+
 [[durable_objects.bindings]]
 name = "OAUTH_COORDINATOR"
 class_name = "OAuthCoordinator"
@@ -39,4 +77,4 @@ tag = "v1"
 new_sqlite_classes = ["OAuthCoordinator"]
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["* * * * *"]

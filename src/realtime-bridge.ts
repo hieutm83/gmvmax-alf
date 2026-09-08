@@ -9,6 +9,15 @@ import { saveTikTokAdsSnapshot, saveFacebookAdsSnapshot } from './ads-snapshots'
 import { decryptJson, decryptTokens, encryptJson, encryptTokens } from './crypto';
 import type { SellerTokenSet } from './types';
 import { loadMainReport } from './reports';
+import { loadComparison, loadCreativeSummaries, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
+import { loadFacebookAdsReport, loadAdsOverview } from './facebook';
+import { loadCAdsReport } from './cads';
+import { loadTikTokAdsTraffic } from './tiktok-ads-api';
+import { loadOperationsAnalysis } from './operations';
+import { loadFinanceAnalysis } from './finance';
+import { loadContentKocAnalysis } from './content-koc';
+import { loadKocAnalysis } from './koc-analysis';
+import { loadProductAnalysis } from './product-analysis';
 
 function emptyTikTok() { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: true, costPerOrder: null, roi: null }; }
 function addTikTok(target: any, row: any): void {
@@ -46,6 +55,42 @@ export async function ensureRuntimeCredentials(env: Env): Promise<void> {
   if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `OAuth migration HTTP ${response.status}`);
   if (payload?.data?.oauthTokens) await putSetting(env, 'oauth_tokens', await encryptTokens(env, payload.data.oauthTokens));
   if (payload?.data?.sellerTokens) await putSetting(env, 'seller_oauth_tokens', await encryptJson(env, payload.data.sellerTokens));
+}
+
+type RuntimeSecrets = Partial<Pick<Env,
+  'TIKTOK_SHOP_APP_SECRET'|'TIKTOK_SHOP_SERVICE_ID'|'FB_ACCESS_TOKEN'|'TIKTOK_ADS_ACCESS_TOKEN'|
+  'ZALO_BOT_TOKEN'|'ZALO_GROUP_CHAT_ID'|'ZALO_WEBHOOK_SECRET'|'ZALO_OPERATIONS_BOT_TOKEN'|
+  'ZALO_OPERATIONS_GROUP_CHAT_ID'|'ZALO_OPERATIONS_WEBHOOK_SECRET'|'ZALO_ORDER_BOT_TOKEN'|'ZALO_ORDER_GROUP_CHAT_ID'>>;
+
+async function runtimeSecrets(env: Env): Promise<RuntimeSecrets> {
+  const key = 'runtime_provider_secrets';
+  const row = await env.DB.prepare('SELECT value FROM app_settings WHERE key=?').bind(key).first<{ value: string }>();
+  if (row?.value) {
+    try { return await decryptJson<RuntimeSecrets>(env, row.value); } catch { /* migrate again below */ }
+  }
+  if (!env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return {};
+  const response = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET },
+    body: JSON.stringify({ path: '/internal/provider-secrets', input: {} })
+  });
+  const payload = await response.json<any>().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Provider secret migration HTTP ${response.status}`);
+  const secrets = (payload?.data || {}) as RuntimeSecrets;
+  await putSetting(env, key, await encryptJson(env, secrets));
+  return secrets;
+}
+
+/** Build an execution environment backed by the new D1, with provider
+ * credentials migrated once and encrypted in that D1. */
+export async function runtimeProviderEnv(env: Env): Promise<Env> {
+  await ensureRuntimeCredentials(env);
+  const secrets = await runtimeSecrets(env);
+  let sellerTokens: SellerTokenSet | undefined;
+  try {
+    const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key='seller_oauth_tokens'").first<{ value: string }>();
+    if (row?.value) sellerTokens = await decryptJson<SellerTokenSet>(env, row.value);
+  } catch { /* Seller routes report the missing grant clearly */ }
+  return Object.assign({}, env, secrets, sellerTokens ? { __SELLER_TOKENS: sellerTokens } : {}) as Env;
 }
 
 async function tiktokRows(env: Env, input: any): Promise<any[]> {
@@ -122,9 +167,9 @@ async function runtimeState(env: Env): Promise<Response> {
   let sellerConnected = false;
   let advertisers: any[] = [];
   try {
-    await ensureRuntimeCredentials(env);
-    adsConnected = Boolean(await readTokens(env));
-    sellerConnected = Boolean((await sellerOAuthState(env)).connected);
+    const runtime = await runtimeProviderEnv(env);
+    adsConnected = Boolean(await readTokens(runtime));
+    sellerConnected = Boolean((await sellerOAuthState(runtime)).connected);
     const rows = await env.DB.prepare('SELECT DISTINCT advertiser_id FROM tiktok_ads_daily ORDER BY advertiser_id').all<any>();
     advertisers = (rows.results || []).filter((row: any) => row.advertiser_id).map((row: any) => ({ advertiserId: String(row.advertiser_id), advertiserName: `Advertiser ${row.advertiser_id}` }));
   } catch { /* configured defaults below keep the shell usable during quota errors */ }
@@ -215,6 +260,14 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
       const data: any = {};
       if (input?.oauthCipher) data.oauthTokens = await decryptTokens(env, String(input.oauthCipher));
       if (input?.sellerCipher) data.sellerTokens = await decryptJson<SellerTokenSet>(env, String(input.sellerCipher));
+      return json({ ok: true, data });
+    }
+    if (path === '/internal/provider-secrets') {
+      const names: (keyof RuntimeSecrets)[] = ['TIKTOK_SHOP_APP_SECRET','TIKTOK_SHOP_SERVICE_ID','FB_ACCESS_TOKEN','TIKTOK_ADS_ACCESS_TOKEN',
+        'ZALO_BOT_TOKEN','ZALO_GROUP_CHAT_ID','ZALO_WEBHOOK_SECRET','ZALO_OPERATIONS_BOT_TOKEN','ZALO_OPERATIONS_GROUP_CHAT_ID',
+        'ZALO_OPERATIONS_WEBHOOK_SECRET','ZALO_ORDER_BOT_TOKEN','ZALO_ORDER_GROUP_CHAT_ID'];
+      const data: RuntimeSecrets = {};
+      for (const name of names) if (env[name]) (data as any)[name] = env[name];
       return json({ ok: true, data });
     }
     if (path === '/api/state') {
@@ -327,12 +380,41 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
   if (request.method === 'POST' && localReadPaths.has(url.pathname) && env.DB) {
     try {
       const input = await request.json<any>();
-      if (url.pathname === '/api/report' && input?.forceRefresh === true) {
-        await ensureRuntimeCredentials(env);
-        const liveInput = { ...input, advertiserId: String(input.advertiserId || env.DEFAULT_ADVERTISER_ID), storeId: String(input.storeId || env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE) };
-        return json({ ok: true, data: await loadMainReport(env, liveInput, true) });
+      const runtime = await runtimeProviderEnv(env);
+      const liveInput = {
+        ...input,
+        advertiserId: String(input?.advertiserId || env.DEFAULT_ADVERTISER_ID),
+        storeId: String(input?.storeId || env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE),
+        forceRefresh: input?.forceRefresh === true,
+      };
+      let data: any;
+      switch (url.pathname) {
+        case '/api/report': data = await loadMainReport(runtime, liveInput, liveInput.forceRefresh); break;
+        case '/api/ads-traffic-timeline': data = await loadTikTokAdsTraffic(runtime, liveInput); break;
+        case '/api/creative-summaries': {
+          let creativeInput=liveInput;
+          if(!Array.isArray(liveInput.allContexts)||liveInput.allContexts.length===0){
+            const report=await loadMainReport(runtime,liveInput,false);
+            creativeInput={...liveInput,products:report.products||[],allContexts:report.creativeContexts||[],availableProducts:report.availableProductCount||0};
+          }
+          data=await loadCreativeSummaries(runtime,creativeInput);break;
+        }
+        case '/api/facebook-ads': data = await loadFacebookAdsReport(runtime, liveInput); break;
+        case '/api/ads-overview': data = await loadAdsOverview(runtime, liveInput); break;
+        case '/api/revenue-analysis': data = await loadSellerRevenueAnalysis(runtime, liveInput); break;
+        case '/api/cads-report': data = await loadCAdsReport(runtime, liveInput); break;
+        case '/api/comparison': data = await loadComparison(runtime, liveInput); break;
+        case '/api/product-videos': data = await loadProductVideos(runtime, liveInput); break;
+        case '/api/video-stats': data = await loadVideoStats(runtime, liveInput); break;
+        case '/api/video-metadata': data = await loadVideoMetadata(runtime, liveInput); break;
+        case '/api/product-analysis': data = await loadProductAnalysis(runtime, liveInput); break;
+        case '/api/finance-analysis': data = await loadFinanceAnalysis(runtime, liveInput); break;
+        case '/api/operations-analysis': data = await loadOperationsAnalysis(runtime, liveInput); break;
+        case '/api/koc-analysis': data = await loadKocAnalysis(runtime, liveInput); break;
+        case '/api/content-koc-analysis': data = await loadContentKocAnalysis(runtime, liveInput); break;
+        default: data = await readReplica(runtime, url.pathname, liveInput);
       }
-      return json({ ok: true, data: await readReplica(env, url.pathname, input) });
+      return json({ ok: true, data });
     }
     catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
   }

@@ -50,6 +50,8 @@ async function saveSellerTokens(env: Env, tokens: SellerTokenSet): Promise<void>
 }
 
 export async function readSellerTokens(env: Env): Promise<SellerTokenSet | null> {
+  const injected = (env as Env & { __SELLER_TOKENS?: SellerTokenSet }).__SELLER_TOKENS;
+  if (injected) return injected;
   const raw = await setting(env, SELLER_TOKEN_KEY);
   return raw ? decryptJson<SellerTokenSet>(env, raw) : null;
 }

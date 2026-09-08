@@ -22,7 +22,7 @@ import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, sh
 import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
   createDashboardSession, dashboardRoleForPassword, dashboardSessionCookie, dashboardSessionFromRequest,
   recordDashboardLoginFailure, type DashboardRole, type DashboardSession } from './dashboard-auth';
-import { bridgeRequest, ensureRuntimeCredentials, gatewayRequest, realtimeProxyRequest } from './realtime-bridge';
+import { bridgeRequest, gatewayRequest, realtimeProxyRequest, runtimeProviderEnv } from './realtime-bridge';
 
 function ok(data: unknown): Response { return json({ ok: true, data }); }
 function validateScope(input: any): any {
@@ -431,6 +431,11 @@ export default {
     const url=new URL(request.url);
     try{
       if(env.REALTIME_GATEWAY === '1') {
+        if(url.pathname==='/tiktok/webhook')return await tiktokShopWebhook(request,await runtimeProviderEnv(env));
+        if(url.pathname==='/webhooks/zalo-operations'&&request.method==='POST')return operationsBotWebhook(request,await runtimeProviderEnv(env),ctx);
+        if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return webhook(request,await runtimeProviderEnv(env),url,ctx);
+        const runtimeChartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
+        if(runtimeChartMatch&&request.method==='GET')return chartImage(await runtimeProviderEnv(env),runtimeChartMatch[1]);
         if(url.pathname.startsWith('/api/') || url.pathname === '/internal/zalo-send' || url.pathname.startsWith('/auth/') || url.pathname === '/oauth/callback' || url.pathname.startsWith('/seller/')) return await gatewayRequest(request,env,url);
         return assetResponse(request,env);
       }
@@ -439,7 +444,9 @@ export default {
       // proxied to the realtime account (one bounded subrequest), while
       // cron, queues, webhooks and all data writes stay on this Worker.
       const realtimeOwnedPath=url.pathname.startsWith('/api/')||url.pathname==='/auth/connect'||url.pathname==='/auth/callback'||
-        url.pathname==='/oauth/callback'||url.pathname==='/seller/auth/connect'||url.pathname==='/seller/auth/callback';
+        url.pathname==='/oauth/callback'||url.pathname==='/seller/auth/connect'||url.pathname==='/seller/auth/callback'||
+        url.pathname==='/tiktok/webhook'||url.pathname==='/webhooks/zalo-operations'||url.pathname==='/webhooks/zalo'||
+        url.pathname.startsWith('/charts/');
       if(env.REALTIME_GATEWAY_URL&&realtimeOwnedPath)return await realtimeProxyRequest(request,env,url);
       if(url.pathname==='/tiktok/webhook')return await tiktokShopWebhook(request,env);
       if(url.pathname==='/webhooks/zalo-operations'&&request.method==='POST')return operationsBotWebhook(request,env,ctx);
@@ -494,15 +501,38 @@ export default {
     if(env.REALTIME_GATEWAY==='1'){
       // OAuth/MCP and realtime data belong to the new account and new D1.
       ctx.waitUntil((async()=>{
-        await ensureRuntimeCredentials(env);
-        const storeId=await resolveDefaultStore(env);
-        const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:localDate,endDate:localDate};
-        const results=await Promise.allSettled([
-          loadMainReport(env,input,true),
-          loadFacebookAdsReport(env,{startDate:localDate,endDate:localDate,forceRefresh:true})
-        ]);
-        for(const result of results)if(result.status==='rejected')
-          console.error('Realtime provider refresh failed',result.reason instanceof Error?result.reason.message:String(result.reason));
+        const runtime=await runtimeProviderEnv(env);
+        if(localMinute%5===0){
+          const storeId=await resolveDefaultStore(runtime);
+          const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:localDate,endDate:localDate};
+          const results=await Promise.allSettled([
+            loadMainReport(runtime,input,true),
+            loadFacebookAdsReport(runtime,{startDate:localDate,endDate:localDate,forceRefresh:true})
+          ]);
+          for(const result of results)if(result.status==='rejected')
+            console.error('Realtime provider refresh failed',result.reason instanceof Error?result.reason.message:String(result.reason));
+        }
+        if(localMinute%15===0)await keepAccessTokenFresh(runtime).catch((error)=>
+          console.error('TikTok Ads MCP proactive token refresh failed',error instanceof Error?error.message:String(error)));
+        await pollOperationsInbox(runtime).catch((error)=>console.error('Operations bot polling failed',error instanceof Error?error.message:String(error)));
+        if(runtime.ZALO_ORDER_BOT_TOKEN&&runtime.ZALO_ORDER_GROUP_CHAT_ID&&(localMinute===56||localMinute%5===0))
+          await enqueueMissingOrderReports(runtime,localDate,localHour,localMinute);
+        if(runtime.ZALO_ORDER_BOT_TOKEN&&runtime.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
+          await runtime.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate});
+        if(localHour>=8&&localMinute%5===0&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID){
+          const yesterday=shiftDate(localDate,-1);
+          await runtime.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'});
+        }
+        const localWeekday=new Date(`${localDate}T00:00:00Z`).getUTCDay();
+        if(localWeekday===6&&localHour===10&&[30,35,40].includes(localMinute)&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID)
+          await runtime.TASK_QUEUE.send({type:'operations-weekly-prepare',saturdayDate:localDate,stage:0});
+        if(localDate.endsWith('-01')&&localHour===10&&[35,40,45].includes(localMinute)&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID)
+          await runtime.TASK_QUEUE.send({type:'operations-monthly-prepare',firstDayOfMonth:localDate,stage:0});
+        if(localMinute%5===0){
+          const reportHour=localHour===0?24:localHour;
+          const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
+          await runtime.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour});
+        }
       })());
       return;
     }
@@ -511,17 +541,18 @@ export default {
       ctx.waitUntil(env.TASK_QUEUE.send({type:'supabase-backup',reportDate:localDate}));
   },
   async queue(batch:MessageBatch<TaskMessage>,env:Env):Promise<void>{
+    const executionEnv=env.REALTIME_GATEWAY==='1'?await runtimeProviderEnv(env):env;
     for(const message of batch.messages){
-      try{await consume(message.body,env);message.ack();}
+      try{await consume(message.body,executionEnv);message.ack();}
       catch(error){
         const details=error instanceof Error?error.message:String(error);
         console.error('Queue task failed',message.body,details);
         if(message.body.type==='zalo-video'){
-          await env.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
+          await executionEnv.DB.prepare("UPDATE webhook_events SET status='RETRYING',result_json=? WHERE id=?")
             .bind(JSON.stringify({error:details}),message.body.eventId).run();
         }
         if(message.body.type==='operations-daily-report'&&message.body.eventId){
-          await env.DB.prepare("UPDATE operations_bot_events SET status='RETRYING' WHERE external_id=?")
+          await executionEnv.DB.prepare("UPDATE operations_bot_events SET status='RETRYING' WHERE external_id=?")
             .bind(message.body.eventId).run();
         }
         message.retry({delaySeconds:message.body.type==='tracking-sync'?60:10});
