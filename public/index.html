@@ -2985,8 +2985,16 @@
         videoContextByItemId = {};
         var rememberedSummary = readCreativeSummaryMemory(currentSummaryContexts);
         if (rememberedSummary) renderCreativeSummaries(rememberedSummary);
-        requestCreativeSummaries(currentSummaryContexts.slice(), forceCreativeRefresh);
-        requestYesterdayComparison(data);
+        if (data.source === 'supabase-history+d1-realtime') {
+          var syncedImpressions=0,syncedTraffic=0;
+          currentAdsEngagementPoints.forEach(function(point){if(point.date>=data.startDate&&point.date<=data.endDate){syncedImpressions+=point.metrics.impressions;syncedTraffic+=point.metrics.traffic;}});
+          renderCreativeSummaries({summaries:[],totalCreatives:Number(data.availableProductCount)||0,impressions:syncedImpressions,traffic:syncedTraffic,
+            costAttribution:{total:Number(totals.cost)||0,productCard:0,seller:0,affiliate:0,unclassified:Number(totals.cost)||0},videoEvaluation:{boost:[],stop:[]}});
+          ['cost','orders','costPerOrder','grossRevenue','roi','totalCreatives'].forEach(function(key){var element=document.getElementById('metric-change-'+key);if(element){element.className='metric-change neutral';element.textContent='Dữ liệu đã đồng bộ';}});
+        } else {
+          requestCreativeSummaries(currentSummaryContexts.slice(), forceCreativeRefresh);
+          requestYesterdayComparison(data);
+        }
         if (activeReportView !== 'ads') setReportView(activeReportView);
       }
 

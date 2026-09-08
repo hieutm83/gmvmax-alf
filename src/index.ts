@@ -256,7 +256,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   if(message.type==='ads-snapshot'){
     const storeId=await resolveDefaultStore(runtime);
     const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate};
-    await Promise.all([loadMainReport(runtime,input,true),loadFacebookAdsReport(runtime,input)]); return;
+    await Promise.all([refreshTikTokDailySnapshot(runtime,input),loadFacebookAdsReport(runtime,{...input,forceRefresh:true})]); return;
   }
   if(message.type==='ads-backfill'){
     const row=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ADS_BACKFILL_NEXT_DATE'").first<{value:string}>();
@@ -503,14 +503,10 @@ export default {
       ctx.waitUntil((async()=>{
         const runtime=await runtimeProviderEnv(env);
         if(localMinute%5===0){
-          const storeId=await resolveDefaultStore(runtime);
-          const input={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId,startDate:localDate,endDate:localDate};
-          const results=await Promise.allSettled([
-            loadMainReport(runtime,input,true),
-            loadFacebookAdsReport(runtime,{startDate:localDate,endDate:localDate,forceRefresh:true})
-          ]);
-          for(const result of results)if(result.status==='rejected')
-            console.error('Realtime provider refresh failed',result.reason instanceof Error?result.reason.message:String(result.reason));
+          // Provider pagination runs in its own Queue invocation. Dashboard
+          // requests only read the resulting D1 snapshot and cannot inherit
+          // the provider subrequest count.
+          await runtime.TASK_QUEUE.send({type:'ads-snapshot',reportDate:localDate});
         }
         if(localMinute%15===0)await keepAccessTokenFresh(runtime).catch((error)=>
           console.error('TikTok Ads MCP proactive token refresh failed',error instanceof Error?error.message:String(error)));

@@ -11,7 +11,7 @@ import type { SellerTokenSet } from './types';
 import { loadMainReport } from './reports';
 import { loadComparison, loadCreativeSummaries, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { loadFacebookAdsReport } from './facebook';
-import { loadAdsTrafficTimeline, loadCAdsReport } from './cads';
+import { loadCAdsReport } from './cads';
 import { loadOperationsAnalysis } from './operations';
 import { loadFinanceAnalysis } from './finance';
 import { loadContentKocAnalysis } from './content-koc';
@@ -439,15 +439,11 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate;
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok'),historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
           const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
-          const [history,live,liveTraffic]=await Promise.all([
+          const [history,live]=await Promise.all([
             supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]})),
-            hasToday?loadMainReport(runtime,{...liveInput,startDate:today,endDate:today},liveInput.forceRefresh):Promise.resolve(null),
-            hasToday?loadAdsTrafficTimeline(runtime,{...liveInput,startDate:today,endDate:today} as any).catch(()=>null):Promise.resolve(null)
+            hasToday?readReplica(env,'/api/report',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
           ]);
-          const trafficByDate=new Map((liveTraffic?.points||[]).map((point:any)=>[String(point.key),point.metrics||{}]));
-          const liveDaily=(live?.daily||[]).map((point:any)=>{const traffic:any=trafficByDate.get(String(point.date))||{};return {...point,metrics:{...point.metrics,
-            impressions:numberValue(traffic.impressions),traffic:numberValue(traffic.clicks??traffic.traffic),trafficAvailable:true}};});
-          const chartDaily=mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,liveDaily);
+          const chartDaily=mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,live?.daily||[]);
           const selectedDaily=chartDaily.filter((point:any)=>point.date>=liveInput.startDate&&point.date<=liveInput.endDate);
           const totals=selectedDaily.reduce((out:any,point:any)=>{const m=point.metrics||{};out.cost+=numberValue(m.cost);out.orders+=numberValue(m.orders);
             out.grossRevenue+=numberValue(m.grossRevenue);out.traffic+=numberValue(m.traffic);out.trafficAvailable=true;return out;},emptyTikTok());
@@ -455,15 +451,15 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           data={advertiserId:liveInput.advertiserId,store:{storeId:liveInput.storeId},startDate:liveInput.startDate,endDate:liveInput.endDate,
             generatedAt:new Date().toISOString(),totals,products:live?.products||[],availableProductCount:live?.availableProductCount||0,
             creativeContexts:live?.creativeContexts||[],hourly:live?.hourly||[],hourlyMode:live?.hourlyMode||'snapshots',daily:selectedDaily,
-            source:'supabase-history+mcp-today',trafficEmbedded:true,chartStartDate,chartDaily};break;
+            source:'supabase-history+d1-realtime',trafficEmbedded:true,chartStartDate,chartDaily};break;
         }
         case '/api/ads-traffic-timeline': {
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok');
           const selectedDays=Math.max(1,Math.round((Date.parse(`${liveInput.endDate}T00:00:00Z`)-Date.parse(`${liveInput.startDate}T00:00:00Z`))/86400000)+1);
           const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate,historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
           const history=await supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]}));
-          let livePoints:any[]=[];if(liveInput.endDate>=today){const live=await loadAdsTrafficTimeline(runtime,{...liveInput,startDate:today});livePoints=live.points||[];}
-          data={generatedAt:new Date().toISOString(),source:'supabase-history+mcp-today',granularity:'day',chartStartDate,
+          let livePoints:any[]=[];if(liveInput.endDate>=today){const live=await readReplica(env,'/api/ads-traffic-timeline',{...liveInput,startDate:today,endDate:today});livePoints=live.points||[];}
+          data={generatedAt:new Date().toISOString(),source:'supabase-history+d1-realtime',granularity:'day',chartStartDate,
             points:mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,livePoints).map((point:any)=>({key:point.date,label:point.label,metrics:{impressions:numberValue(point.metrics?.impressions),clicks:numberValue(point.metrics?.traffic),traffic:numberValue(point.metrics?.traffic)}}))};break;
         }
         case '/api/creative-summaries': {
@@ -480,24 +476,23 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const selectedDays=Math.max(1,Math.round((Date.parse(`${liveInput.endDate}T00:00:00Z`)-Date.parse(`${liveInput.startDate}T00:00:00Z`))/86400000)+1);
           const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate,historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
           const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
-          const [history,liveTikTok,liveTraffic,liveFacebook]=await Promise.all([
+          const [history,liveTikTok,liveFacebook]=await Promise.all([
             supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]})),
-            hasToday?loadMainReport(runtime,{...liveInput,startDate:today,endDate:today},liveInput.forceRefresh):Promise.resolve(null),
-            hasToday?loadAdsTrafficTimeline(runtime,{...liveInput,startDate:today,endDate:today} as any).catch(()=>null):Promise.resolve(null),
-            hasToday?loadFacebookAdsReport(runtime,{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
+            hasToday?readReplica(env,'/api/report',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null),
+            hasToday?readReplica(env,'/api/facebook-ads',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
           ]);
           const tt=new Map(history.tiktok.map((row:any)=>[String(row.report_date),row])),fb=new Map(history.facebook.map((row:any)=>[String(row.report_date),row]));
-          const tm=liveTikTok?.totals||{},fm=liveFacebook?.totals||{},traffic=(liveTraffic?.points||[]).find((point:any)=>String(point.key)===today)?.metrics||{};
+          const tm=liveTikTok?.totals||{},fm=liveFacebook?.totals||{};
           const liveByDate=new Map(hasToday?[[today,{date:today,endDate:today,label:`${today.slice(8,10)}/${today.slice(5,7)}`,
             facebook:{cost:numberValue(fm.spend),clicks:numberValue(fm.clicks),orders:numberValue(fm.orders),revenue:numberValue(fm.revenue),impressions:numberValue(fm.impressions)},
-            tiktok:{cost:numberValue(tm.cost),clicks:numberValue(traffic.clicks??traffic.traffic),orders:numberValue(tm.orders),revenue:numberValue(tm.grossRevenue),impressions:numberValue(traffic.impressions)}}]]:[]);
+            tiktok:{cost:numberValue(tm.cost),clicks:numberValue(tm.traffic),orders:numberValue(tm.orders),revenue:numberValue(tm.grossRevenue),impressions:numberValue(tm.impressions)}}]]:[]);
           const daily=days(chartStartDate,liveInput.endDate).map((date)=>{const liveDay:any=liveByDate.get(date);if(liveDay)return liveDay;const tr:any=tt.get(date)||{},fr:any=fb.get(date)||{};
             return {date,endDate:date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,facebook:{cost:numberValue(fr.spend),clicks:numberValue(fr.clicks),orders:numberValue(fr.orders),revenue:numberValue(fr.gross_revenue),impressions:numberValue(fr.impressions)},tiktok:{cost:numberValue(tr.cost),clicks:numberValue(tr.clicks),orders:numberValue(tr.sku_orders),revenue:numberValue(tr.gross_revenue),impressions:numberValue(tr.impressions)}};});
           const selected=daily.filter((day:any)=>day.date>=liveInput.startDate);const sum=(key:'facebook'|'tiktok')=>selected.reduce((out:any,day:any)=>{for(const field of ['cost','revenue','impressions','clicks','orders'])out[field]+=numberValue(day[key]?.[field]);return out;},{cost:0,revenue:0,impressions:0,clicks:0,orders:0});
           const fs=sum('facebook'),ts=sum('tiktok'),facebook=overviewPlatform(fs.cost,fs.revenue,fs.impressions,fs.clicks,fs.orders),tiktok=overviewPlatform(ts.cost,ts.revenue,ts.impressions,ts.clicks,ts.orders);
           data={startDate:liveInput.startDate,endDate:liveInput.endDate,chartStartDate,generatedAt:new Date().toISOString(),daily,
             totals:overviewPlatform(fs.cost+ts.cost,fs.revenue+ts.revenue,fs.impressions+ts.impressions,fs.clicks+ts.clicks,fs.orders+ts.orders),previousTotals:overviewPlatform(0,0,0,0,0),platforms:{facebook,tiktok},
-            tiktokCostSources:{total:tiktok.cost,productCard:0,seller:0,affiliate:0,unclassified:tiktok.cost},tiktokDiagnostics:{source:'supabase-history+mcp-today'},facebookResultCosts:liveFacebook?.resultCosts||[],historySource:'supabase-history+mcp-today'};break;
+            tiktokCostSources:{total:tiktok.cost,productCard:0,seller:0,affiliate:0,unclassified:tiktok.cost},tiktokDiagnostics:{source:'supabase-history+d1-realtime'},facebookResultCosts:liveFacebook?.resultCosts||[],historySource:'supabase-history+d1-realtime'};break;
         }
         case '/api/revenue-analysis': data = await loadSellerRevenueAnalysis(runtime, liveInput); break;
         case '/api/cads-report': data = await loadCAdsReport(runtime, liveInput); break;
