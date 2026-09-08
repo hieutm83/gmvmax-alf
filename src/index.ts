@@ -268,10 +268,9 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
       await env.DB.prepare(`WITH RECURSIVE dates(d) AS (SELECT '2026-01-01' UNION ALL SELECT date(d,'+1 day') FROM dates WHERE d<'${yesterday}')
         INSERT OR IGNORE INTO facebook_ads_daily(ad_account_id,report_date,payload_json)
         SELECT ad_account_id,d,'{}' FROM (SELECT DISTINCT ad_account_id FROM facebook_ads_daily) accounts CROSS JOIN dates`).run().catch(()=>undefined);
-      // The backfill updates D1 in bounded queue jobs. Publish the complete
-      // accumulated history to Supabase once the cursor reaches yesterday;
-      // otherwise Supabase would remain stale even though D1 is repaired.
-      await syncSupabaseBackup(env, yesterday).catch((error) => console.warn('Historical Supabase publish skipped', String(error)));
+      // Backfill only repairs the legacy D1. Supabase is published by the
+      // three scheduled backup windows (or an explicit admin manual sync),
+      // never from this per-minute cursor check.
       return;
     }
     await env.DB.prepare("INSERT INTO app_settings(key,value) VALUES('ADS_BACKFILL_RUNNING',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(next).run();
