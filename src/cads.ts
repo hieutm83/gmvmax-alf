@@ -2,7 +2,7 @@ import type { Env, McpRow, McpSession } from './types';
 import { cacheGet, cachePut, numberValue, shiftDate, stableKey } from './utils';
 import { callTool, createSession, pagedReport } from './mcp';
 import { authorizedShop, shopRequest } from './seller';
-import { discoverVideoContexts, loadAdsVideoMetrics } from './reports';
+import { discoverVideoContexts } from './reports';
 
 type CAdsMetrics = {
   spend:number; impressions:number; clicks:number; orders:number; videoPlays:number;
@@ -153,32 +153,11 @@ export async function loadAdsTrafficTimeline(env:Env,input:any):Promise<any>{
 export async function loadCAdsReport(env:Env,input:any):Promise<any>{
   const cacheKey=stableKey('cads-v8',{advertiserId:input.advertiserId,storeId:input.storeId,startDate:input.startDate,endDate:input.endDate});
   if(!input.forceRefresh){const hit=await cacheGet<any>(env,cacheKey);if(hit)return hit;}
-  // This dashboard is GMV Max-first. Load Product-ID creative delivery first;
-  // BASIC/AUCTION_AD is only a fallback for accounts that actually use it.
-  const creativeFallback=(await loadAdsVideoMetrics(env,input,input.startDate,input.endDate).catch(()=>[]))
-    .filter((video:any)=>numberValue(video.cost)||numberValue(video.orders)||numberValue(video.productImpressions)||numberValue(video.productClicks));
-  const session=await createSession(env);const performance=creativeFallback.length
-    ?{rows:[] as McpRow[],dimension:input.startDate===input.endDate?'stat_time_hour':'stat_time_day'}
-    :await performanceRows(env,session,input.advertiserId,input.startDate,input.endDate);
+  const session=await createSession(env);const performance=await performanceRows(env,session,input.advertiserId,input.startDate,input.endDate);
   const totals=emptyMetrics(),points=seriesPoints(input.startDate,input.endDate,performance.dimension),byPoint=new Map(points.map((point)=>[point.key,point.metrics]));const byAd=new Map<string,CAdsMetrics>();
   for(const row of performance.rows){const values=normalized(row.metrics||{});add(totals,values);const key=pointKey(row,performance.dimension);const point=byPoint.get(key);if(point)add(point,values);
     const id=rowId(row,'ad_id');if(id){if(!byAd.has(id))byAd.set(id,emptyMetrics());add(byAd.get(id)!,values);}}
-  // GMV Max delivery is not returned at BASIC/AUCTION_AD level on this
-  // account. Fall back to the same Product-ID creative report used by the
-  // Content & KOC tab so C-ADS does not incorrectly render an all-zero page.
-  const fallbackMetadata:Record<string,any>={};
-  for(const video of creativeFallback as any[]){
-    const rate=(value:any)=>{const parsed=numberValue(value);return parsed>1?parsed/100:parsed;};
-    const metrics=emptyMetrics();metrics.spend=numberValue(video.cost);metrics.impressions=numberValue(video.productImpressions);
-    metrics.clicks=numberValue(video.productClicks);metrics.orders=numberValue(video.orders);metrics.videoPlays=metrics.impressions;
-    metrics.watched2s=metrics.impressions*rate(video.viewRate2s);metrics.watched6s=metrics.impressions*rate(video.viewRate6s);
-    metrics.watched25=metrics.impressions*rate(video.viewRate25);metrics.watched50=metrics.impressions*rate(video.viewRate50);
-    metrics.watched75=metrics.impressions*rate(video.viewRate75);metrics.watched100=metrics.impressions*rate(video.viewRate100);
-    add(totals,metrics);byAd.set(String(video.itemId),metrics);
-    fallbackMetadata[String(video.itemId)]={ad_name:video.title,tiktok_item_id:String(video.itemId),identity_type:video.authorizationType,
-      product_ids:(video.products||[]).map((product:any)=>product.id)};
-  }
-  finish(totals);points.forEach((point)=>finish(point.metrics));const metadata=Object.keys(fallbackMetadata).length?fallbackMetadata:await adMetadata(env,session,input.advertiserId,[...byAd.keys()]);
+  finish(totals);points.forEach((point)=>finish(point.metrics));const metadata=await adMetadata(env,session,input.advertiserId,[...byAd.keys()]);
   const metadataStart=input.startDate<shiftDate(input.endDate,-29)?shiftDate(input.endDate,-29):input.startDate;
   const unresolvedVideoIds=Object.values(metadata).filter((ad:any)=>!adsProducts(ad).length).map(videoId);
   const linkedProducts=await fetchLinkedProducts(env,unresolvedVideoIds,metadataStart,input.endDate).catch((error)=>({byVideoId:new Map<string,ProductRef[]>(),successful:0,failed:unresolvedVideoIds.length,errors:[error instanceof Error?error.message:String(error)]}));

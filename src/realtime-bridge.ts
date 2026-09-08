@@ -11,8 +11,7 @@ import type { SellerTokenSet } from './types';
 import { loadMainReport } from './reports';
 import { loadComparison, loadCreativeSummaries, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { loadFacebookAdsReport, loadAdsOverview } from './facebook';
-import { loadCAdsReport } from './cads';
-import { loadTikTokAdsTraffic } from './tiktok-ads-api';
+import { loadAdsTrafficTimeline, loadCAdsReport } from './cads';
 import { loadOperationsAnalysis } from './operations';
 import { loadFinanceAnalysis } from './finance';
 import { loadContentKocAnalysis } from './content-koc';
@@ -389,8 +388,17 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
       };
       let data: any;
       switch (url.pathname) {
-        case '/api/report': data = await loadMainReport(runtime, liveInput, liveInput.forceRefresh); break;
-        case '/api/ads-traffic-timeline': data = await loadTikTokAdsTraffic(runtime, liveInput); break;
+        case '/api/report': {
+          data=await loadMainReport(runtime,liveInput,liveInput.forceRefresh);
+          const selectedDays=Math.max(1,Math.round((Date.parse(`${liveInput.endDate}T00:00:00Z`)-Date.parse(`${liveInput.startDate}T00:00:00Z`))/86400000)+1);
+          const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate;
+          // The selected-range report is live MCP data. Build the extended
+          // seven-day chart from the five-minute D1 snapshots so this request
+          // does not execute a second full MCP report and exceed subrequests.
+          const chartReport=chartStartDate===liveInput.startDate?data:await readReplica(runtime,'/api/report',{...liveInput,startDate:chartStartDate});
+          data={...data,chartStartDate,chartDaily:chartReport.daily||[]};break;
+        }
+        case '/api/ads-traffic-timeline': data = await loadAdsTrafficTimeline(runtime, liveInput); break;
         case '/api/creative-summaries': {
           let creativeInput=liveInput;
           if(!Array.isArray(liveInput.allContexts)||liveInput.allContexts.length===0){

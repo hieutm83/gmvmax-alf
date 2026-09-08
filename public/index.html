@@ -748,7 +748,7 @@
         <div id="summary" class="summary"></div>
         <div class="ads-performance-grid">
           <section class="analytics-panel hourly-chart-panel">
-            <h2 id="adsSalesTimeSeriesTitle">Chi phí, doanh số &amp; đơn hàng theo giờ</h2>
+            <h2 id="adsSalesTimeSeriesTitle">Chi phí, doanh số &amp; đơn hàng theo ngày</h2>
             <div class="hourly-chart-canvas"><canvas id="adsSalesChart"></canvas></div>
           </section>
           <section class="analytics-panel hourly-chart-panel">
@@ -756,10 +756,6 @@
             <div class="hourly-chart-canvas"><canvas id="adsEngagementChart"></canvas></div>
           </section>
         </div>
-        <section class="analytics-panel" id="tiktokSourceProductsPanel">
-          <div class="section-title-row"><h2 class="section-title">Phân tích theo nguồn</h2><div class="source-tabs" role="tablist"><button type="button" class="report-tab source-tab active" data-source="affiliate">Video</button><button type="button" class="report-tab source-tab" data-source="productCard">Product card</button><button type="button" class="report-tab source-tab" data-source="seller">TikTok Shop official account</button></div></div>
-          <div class="table-wrap"><table class="facebook-campaign-table"><thead><tr><th>Ngày</th><th>ID sản phẩm</th><th>Tên</th><th>Cost</th><th>Gross revenue</th><th>SKU orders</th><th>Impressions</th><th>Click</th></tr></thead><tbody id="tiktokSourceRows"></tbody></table><div id="tiktokSourceEmpty" class="empty hidden">Chưa có dữ liệu nguồn.</div></div>
-        </section>
         <section class="gmv-analysis-panel cost-analysis-panel">
           <header class="gmv-analysis-head"><h2>Phân tích COST</h2></header>
           <div id="costAttributionEmpty" class="analytics-unavailable"><div><strong>Đang tải dữ liệu nguồn COST</strong><span>Dữ liệu được tổng hợp từ các creative trong khoảng ngày đã chọn.</span></div></div>
@@ -2913,12 +2909,9 @@
           }
           summary.appendChild(box);
         });
-        var reportUsesDailySeries = data.startDate !== data.endDate;
-        var seriesPeriod = reportUsesDailySeries ? 'ngày' :
-          (data.hourlyMode === 'cumulative' ? 'thời điểm trong ngày' : 'giờ');
-        document.getElementById('adsSalesTimeSeriesTitle').textContent = 'Chi phí, doanh số & đơn hàng theo ' + seriesPeriod;
+        document.getElementById('adsSalesTimeSeriesTitle').textContent = 'Chi phí, doanh số & đơn hàng theo ngày';
         document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ngày';
-        currentReportHourly = reportUsesDailySeries ? (data.daily || []) : (data.hourly || []);
+        currentReportHourly = data.chartDaily || data.daily || [];
         // The direct Ads API is the sole source for these traffic metrics.
         // Never show a temporary MCP/report series while that request is pending.
         currentAdsEngagementPoints = currentReportHourly.map(function(point){return {date:point.date||'',label:point.label,metrics:{impressions:0,traffic:0}};});
@@ -3037,7 +3030,7 @@
           document.getElementById('metric-traffic').textContent=integer(clicks);
           ['impressions','traffic'].forEach(function(key){var change=document.getElementById('metric-change-'+key);if(change){change.className='metric-change neutral';change.textContent='TikTok Ads API';}});
         }).withFailureHandler(function (error) {
-          if (requestId === adsTrafficRequestId) {document.getElementById('metric-impressions').textContent='—';document.getElementById('metric-traffic').textContent='—';showError({message:'TikTok Ads API: '+(error && (error.message || error) || 'Không tải được Hiển thị/Click')});console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));}
+          if (requestId === adsTrafficRequestId) {document.getElementById('metric-impressions').textContent='—';document.getElementById('metric-traffic').textContent='—';console.error('Không tải được timeline Hiển thị/Click', error && (error.message || error));}
         }).loadAdsTrafficTimeline(Object.assign({}, scope, { forceRefresh: forceRefresh === true }));
       }
 
@@ -3138,7 +3131,6 @@
         if (!creativeElement) return;
         creativeElement.textContent = integer(data.totalCreatives);
         currentCreativeSummary = data;
-        renderTikTokSourceRows(data.sourceRows || [], 'affiliate');
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });
         videoContextByItemId = {};
@@ -3254,7 +3246,7 @@
             impressions: Number(metrics.impressions) || 0, traffic: Number(metrics.clicks) || 0
           } };
         });
-        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ' + (granularity === 'day' ? 'ngày' : 'giờ');
+        document.getElementById('adsEngagementTimeSeriesTitle').textContent = 'Hiển thị & Click theo ngày';
         renderAdsPerformanceCharts(currentReportHourly);
       }
 
