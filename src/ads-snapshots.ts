@@ -4,6 +4,16 @@ import { numberValue } from './utils';
 function safe(value: unknown): string { return String(value ?? '').slice(0, 4000); }
 function metric(value: any, key: string): number { return numberValue(value?.[key]); }
 
+/** Keep the new-account realtime replica current while the legacy Worker
+ * continues to own provider credentials and scheduled Supabase backup. */
+async function mirrorRuntime(env: Env, kind: string, input: any, report: any): Promise<void> {
+  if (!env.REALTIME_GATEWAY_URL || !env.REALTIME_BRIDGE_SECRET) return;
+  await fetch(`${env.REALTIME_GATEWAY_URL.replace(/\/$/, '')}/internal/runtime-sync`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET },
+    body: JSON.stringify({ kind, input, report })
+  });
+}
+
 /** Persist the compact TikTok report used by the dashboard and Zalo jobs. */
 export async function saveTikTokAdsSnapshot(env: Env, input: any, report: any): Promise<void> {
   const points = Array.isArray(report.daily) && report.daily.length ? report.daily : [{ date: input.endDate, metrics: report.totals || {} }];
@@ -28,6 +38,7 @@ export async function saveTikTokAdsSnapshot(env: Env, input: any, report: any): 
     VALUES(?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
     ON CONFLICT(advertiser_id,store_id,report_date,campaign_id) DO UPDATE SET campaign_name=excluded.campaign_name,result=excluded.result,spend=excluded.spend,gross_revenue=excluded.gross_revenue,roas=excluded.roas,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`)
     .bind(input.advertiserId,input.storeId,input.endDate,row.campaignId,row.campaignName||'',metric(m,'orders'),metric(m,'cost'),metric(m,'grossRevenue'),metric(m,'cost')?metric(m,'grossRevenue')/metric(m,'cost'):null,JSON.stringify(row)).run(); }
+  await mirrorRuntime(env, 'tiktok', input, report).catch((error) => console.warn('Realtime TikTok mirror skipped', String(error)));
 }
 
 export async function saveTikTokTrafficSnapshot(env: Env, input: any, timeline: any): Promise<void> {
@@ -54,4 +65,5 @@ export async function saveFacebookAdsSnapshot(env: Env, accountId: string, repor
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
     ON CONFLICT(ad_account_id,report_date,campaign_id) DO UPDATE SET campaign_name=excluded.campaign_name,result=excluded.result,result_type=excluded.result_type,cost_per_result=excluded.cost_per_result,spend=excluded.spend,reach=excluded.reach,impressions=excluded.impressions,cpm=excluded.cpm,clicks=excluded.clicks,messages=excluded.messages,purchases=excluded.purchases,gross_revenue=excluded.gross_revenue,roas=excluded.roas,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP`)
     .bind(accountId,report.endDate,row.campaignId,row.campaignName||'',metric(m,'messages')||metric(m,'orders'),row.resultCategory||'',metric(m,'messages')?metric(m,'spend')/metric(m,'messages'):null,metric(m,'spend'),metric(m,'reach'),metric(m,'impressions'),metric(m,'cpm'),metric(m,'clicks'),metric(m,'messages'),metric(m,'orders'),metric(m,'revenue'),metric(m,'spend')?metric(m,'revenue')/metric(m,'spend'):null,JSON.stringify(row)).run(); }
+  await mirrorRuntime(env, 'facebook', { advertiserId: accountId, storeId: '', startDate: report.startDate || report.endDate, endDate: report.endDate }, report).catch((error) => console.warn('Realtime Facebook mirror skipped', String(error)));
 }

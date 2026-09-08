@@ -501,8 +501,11 @@ export default {
     // remains the sole Supabase caller without exhausting D1 row-read quota.
     if(env.SUPABASE_URL&&env.SUPABASE_SECRET_KEY&&[3,9,12].includes(localHour)&&localMinute===0)
       ctx.waitUntil(env.TASK_QUEUE.send({type:'supabase-backup',reportDate:localDate}));
-    if([3,9,12].includes(localHour)&&localMinute===0)
-      ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:shiftDate(localDate, -1)}));
+    // Realtime dashboard data is refreshed independently of Supabase. Keep
+    // the current day's TikTok/Facebook snapshot warm every five minutes;
+    // only the Supabase backup below is restricted to three daily windows.
+    if(localMinute%5===0)
+      ctx.waitUntil(env.TASK_QUEUE.send({type:'ads-snapshot',reportDate:localDate}));
     // Queue the next bounded backfill chunk every minute until history is complete.
     {
       ctx.waitUntil((async()=>{const row=await env.DB.prepare("SELECT value,updated_at FROM app_settings WHERE key='ADS_BACKFILL_RUNNING'").first<{value:string;updated_at:string}>();const stale=!row||Date.now()-Date.parse(String(row.updated_at||''))>15*60*1000;if(stale)await env.TASK_QUEUE.send({type:'ads-backfill'});})());

@@ -5,6 +5,7 @@ import { disconnectSeller, loadSellerRevenueAnalysis } from './seller';
 import { sellerOAuthState } from './seller';
 import { createSession, listAdvertisers, listStores } from './mcp';
 import { dateInTimezone } from './utils';
+import { saveTikTokAdsSnapshot, saveFacebookAdsSnapshot } from './ads-snapshots';
 
 function emptyTikTok() { return { cost: 0, orders: 0, grossRevenue: 0, traffic: 0, trafficAvailable: true, costPerOrder: null, roi: null }; }
 function addTikTok(target: any, row: any): void {
@@ -227,6 +228,17 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
 }
 
 export async function gatewayRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (url.pathname === '/internal/runtime-sync' && request.method === 'POST') {
+    const supplied = request.headers.get('X-Realtime-Bridge-Secret') || '';
+    if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized realtime sync.' }, 401);
+    try {
+      const body = await request.json<any>();
+      if (body?.kind === 'tiktok') await saveTikTokAdsSnapshot(env, body.input || {}, body.report || {});
+      else if (body?.kind === 'facebook') await saveFacebookAdsSnapshot(env, String(body.input?.advertiserId || ''), body.report || {});
+      else return json({ ok: false, error: 'Invalid realtime sync kind.' }, 400);
+      return json({ ok: true });
+    } catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
+  }
   if (url.pathname === '/internal/zalo-send' && request.method === 'POST') {
     const supplied = request.headers.get('X-Realtime-Bridge-Secret') || '';
     if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized realtime bridge.' }, 401);
