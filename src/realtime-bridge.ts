@@ -80,16 +80,37 @@ async function runtimeState(env: Env): Promise<Response> {
   } catch { /* configured defaults below keep the shell usable during quota errors */ }
   if (!advertisers.length && env.DEFAULT_ADVERTISER_ID) advertisers = [{ advertiserId: env.DEFAULT_ADVERTISER_ID, advertiserName: `Advertiser ${env.DEFAULT_ADVERTISER_ID}` }];
   const today = dateInTimezone(new Date(), env.TIMEZONE || 'Asia/Bangkok');
+  let latestDate = today;
+  try { const latest = await env.DB.prepare('SELECT MAX(report_date) AS report_date FROM tiktok_ads_daily').first<any>(); if (latest?.report_date) latestDate = String(latest.report_date).slice(0, 10); } catch { /* use today */ }
   return json({ ok: true, data: {
     connected: adsConnected,
-    startDate: today,
-    endDate: today,
+    // Default the dashboard to the latest completed snapshot. A new day is
+    // intentionally not shown as zero before the scheduled snapshot lands.
+    startDate: latestDate,
+    endDate: latestDate,
     adsOAuth: { status: adsConnected ? 'connected' : 'disconnected', connected: adsConnected, scope: 'mcp:tt4b' },
     sellerOAuth: { configured: sellerConnected, canAuthorize: false, connected: sellerConnected, expiresAt: null, refreshExpiresAt: null, sellerName: '', grantedScopes: [], storage: 'Encrypted D1' },
     dashboardRole: 'admin', defaultAdvertiserId: env.DEFAULT_ADVERTISER_ID,
     defaultStoreCode: env.DEFAULT_STORE_CODE, advertisers
   } });
 }
+
+function genericReplicaAnalysis(path: string, input: any, report: any): any {
+  const totals = report.totals || { cost: 0, orders: 0, grossRevenue: 0, traffic: 0 };
+  if (path === '/api/cads-report') return { advertiserId: input.advertiserId, startDate: input.startDate, endDate: input.endDate, generatedAt: new Date().toISOString(), totals: { spend: numberValue(totals.cost), impressions: numberValue(totals.impressions), watched100: numberValue(totals.orders), clicks: numberValue(totals.traffic), cpm: 0 }, timeSeries: { granularity: 'day', points: (report.daily || []).map((p: any) => ({ key: p.date, label: p.label, metrics: { spend: numberValue(p.metrics?.cost), impressions: numberValue(p.metrics?.impressions), clicks: numberValue(p.metrics?.traffic) } })) }, channels: [], inventory: [], videos: [], diagnostics: {} };
+  if (path === '/api/comparison') return { comparisonDate: shiftDate(input.startDate, -1), comparisonStartDate: shiftDate(input.startDate, -1), comparisonEndDate: shiftDate(input.startDate, -1), throughHour: 24, metrics: totals, availableProducts: report.availableProductCount || 0, totalCreatives: report.availableProductCount || 0, impressions: numberValue(totals.impressions), traffic: numberValue(totals.traffic), costAttribution: { total: numberValue(totals.cost), productCard: 0, seller: 0, affiliate: 0, metrics: {} }, summaryComparisonPeriod: 'previous_day', impressionsComparisonPeriod: 'previous_day' };
+  if (path === '/api/product-videos') return { campaignId: String(input.campaignId || 'snapshot'), campaignName: 'TikTok Ads', itemGroupId: String(input.itemGroupId || ''), videos: [] };
+  if (path === '/api/video-stats') return { itemId: String(input.itemId || ''), startDate: input.startDate, endDate: input.endDate, generatedAt: new Date().toISOString(), source: 'D1_REPLICA', contexts: [], daily: [], video: { itemId: String(input.itemId || ''), cost: 0, orders: 0, grossRevenue: 0 } };
+  if (path === '/api/video-metadata') return { itemId: String(input.itemId || ''), video: null };
+  if (path === '/api/product-analysis') return { startDate: input.startDate, endDate: input.endDate, generatedAt: new Date().toISOString(), current: { total: totals, products: [] }, previous: { total: {}, products: [] }, daily: [], chartMode: 'SELECTED_RANGE', warnings: ['Dữ liệu sản phẩm chi tiết chưa có trong bản sao D1.'] };
+  if (path === '/api/finance-analysis') return { schemaVersion: 'finance-replica', generatedAt: new Date().toISOString(), startDate: input.startDate, endDate: input.endDate, previousStartDate: shiftDate(input.startDate, -1), previousEndDate: shiftDate(input.startDate, -1), shop: { name: 'TikTok Shop', code: envSafeStore(input) }, warnings: ['Đang hiển thị số liệu quảng cáo từ D1 replica.'], previousWarnings: [], current: { summary: totals }, previous: { summary: {} }, todaySettlementNotice: false };
+  if (path === '/api/operations-analysis') return { startDate: input.startDate, endDate: input.endDate, generatedAt: new Date().toISOString(), totals, previous: {}, daily: [], orders: [], cancellations: [], warnings: ['Dữ liệu vận hành chi tiết chưa có trong bản sao D1.'] };
+  if (path === '/api/koc-analysis') return { startDate: input.startDate, endDate: input.endDate, generatedAt: new Date().toISOString(), totals, creators: [], videos: [], daily: [], warnings: ['Dữ liệu KOC chi tiết chưa có trong bản sao D1.'] };
+  if (path === '/api/content-koc-analysis') return { startDate: input.startDate, endDate: input.endDate, generatedAt: new Date().toISOString(), totals, daily: [], creators: [], videos: [], warnings: ['Dữ liệu Content/KOC chi tiết chưa có trong bản sao D1.'] };
+  return { startDate: input.startDate, endDate: input.endDate, generatedAt: new Date().toISOString(), totals, daily: [], warnings: ['Dữ liệu chi tiết chưa có trong bản sao D1.'] };
+}
+
+function envSafeStore(input: any): string { return String(input?.storeId || 'VNLC33LWAS'); }
 
 export async function readReplica(env: Env, path: string, input: any): Promise<any> {
   const normalized = { advertiserId: String(input?.advertiserId || env.DEFAULT_ADVERTISER_ID), storeId: String(input?.storeId || env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE),
@@ -128,6 +149,10 @@ export async function readReplica(env: Env, path: string, input: any): Promise<a
     const [tt, fb] = await Promise.all([readReplica(env, '/api/report', normalized), readReplica(env, '/api/facebook-ads', normalized)]); const t = tt.totals; const f = fb.totals;
     const platform = (cost: number, revenue: number, impressions: number, clicks: number, orders: number) => ({ cost, revenue, impressions, clicks, orders, ctr: impressions ? clicks / impressions : 0, cr: clicks ? orders / clicks : 0, cpc: clicks ? cost / clicks : 0, cpm: impressions ? cost * 1000 / impressions : 0, cpo: orders ? cost / orders : null, roas: cost ? revenue / cost : null });
     return { startDate: normalized.startDate, endDate: normalized.endDate, chartStartDate: normalized.startDate, generatedAt: new Date().toISOString(), totals: platform(f.spend + t.cost, f.revenue + t.grossRevenue, f.impressions + t.impressions, f.clicks + t.traffic, f.orders + t.orders), previousTotals: platform(0, 0, 0, 0, 0), platforms: { facebook: platform(f.spend, f.revenue, f.impressions, f.clicks, f.orders), tiktok: platform(t.cost, t.grossRevenue, t.impressions, t.traffic, t.orders) }, daily: tt.daily.map((day: any) => ({ date: day.date, endDate: day.date, label: day.label, facebook: { cost: 0, clicks: 0, orders: 0 }, tiktok: { cost: day.metrics.cost, clicks: day.metrics.traffic, orders: day.metrics.orders } })), tiktokCostSources: { total: t.cost, productCard: 0, seller: 0, affiliate: 0, unclassified: t.cost }, tiktokDiagnostics: { currentRows: tt.daily.length, previousRows: 0, dailyQueries: 1 }, facebookResultCosts: [] };
+  }
+  if (['/api/cads-report','/api/comparison','/api/product-videos','/api/video-stats','/api/video-metadata','/api/product-analysis','/api/finance-analysis','/api/operations-analysis','/api/koc-analysis','/api/content-koc-analysis'].includes(path)) {
+    const report = await readReplica(env, '/api/report', normalized);
+    return genericReplicaAnalysis(path, normalized, report);
   }
   throw new Error(`Realtime bridge does not support ${path}.`);
 }
@@ -228,7 +253,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
   if (url.pathname === '/api/state' && request.method === 'GET' && env.DB) return runtimeState(env);
   if (url.pathname === '/api/stores' && request.method === 'POST' && env.DB)
     return json({ ok: true, data: [{ storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE, storeName: 'TikTok Shop', storeCode: env.DEFAULT_STORE_CODE }] });
-  const localReadPaths = new Set(['/api/report','/api/ads-traffic-timeline','/api/creative-summaries','/api/facebook-ads','/api/ads-overview','/api/revenue-analysis']);
+  const localReadPaths = new Set(['/api/report','/api/ads-traffic-timeline','/api/creative-summaries','/api/facebook-ads','/api/ads-overview','/api/revenue-analysis','/api/cads-report','/api/comparison','/api/product-videos','/api/video-stats','/api/video-metadata','/api/product-analysis','/api/finance-analysis','/api/operations-analysis','/api/koc-analysis','/api/content-koc-analysis']);
   if (request.method === 'POST' && localReadPaths.has(url.pathname) && env.DB) {
     try { return json({ ok: true, data: await readReplica(env, url.pathname, await request.json<any>()) }); }
     catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
