@@ -44,22 +44,18 @@ async function scheduledHourlyMetrics(env: Env, reportDate: string, reportHour: 
   } catch (error) { console.warn('Scheduled Ads hourly query skipped', String(error)); }
   let stored: { metrics_json: string } | null = null;
   try { stored = await env.DB.prepare('SELECT metrics_json FROM hourly_metrics WHERE advertiser_id=? AND store_id=? AND report_date=? AND report_hour=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate, reportHour).first<{ metrics_json: string }>(); } catch { /* old D1 quota; use replica below */ }
-  if (stored?.metrics_json) { try { return { metrics: JSON.parse(stored.metrics_json), observed: true, mode: 'snapshots' }; } catch { /* fallback below */ } }
-  let daily: any = null;
-  try { daily = await env.DB.prepare('SELECT cost,sku_orders,gross_revenue FROM tiktok_ads_daily WHERE advertiser_id=? AND store_id=? AND report_date=?').bind(env.DEFAULT_ADVERTISER_ID, env.DEFAULT_STORE_CODE, reportDate).first<any>(); } catch { /* old D1 quota; use replica below */ }
-  if (!daily && env.REALTIME_GATEWAY_URL) {
+  if (stored?.metrics_json) {
     try {
-      const response = await fetch(`${env.REALTIME_GATEWAY_URL.replace(/\/$/, '')}/api/report`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE, startDate: reportDate, endDate: reportDate }) });
-      const result = await response.json<any>();
-      if (response.ok && result?.ok && result.data?.totals) {
-        const totals = result.data.totals;
-        return { metrics: { cost: numberValue(totals.cost), orders: numberValue(totals.orders), grossRevenue: numberValue(totals.grossRevenue), costPerOrder: numberValue(totals.orders) ? numberValue(totals.cost) / numberValue(totals.orders) : null, roi: numberValue(totals.cost) ? numberValue(totals.grossRevenue) / numberValue(totals.cost) : null }, observed: Boolean(totals.cost || totals.orders || totals.grossRevenue), mode: 'realtime-replica' };
-      }
-    } catch (error) { console.warn('Realtime replica report skipped', String(error)); }
+      const metrics = JSON.parse(stored.metrics_json);
+      // Older daily fallbacks repeated one day-to-date total every hour.
+      // Reuse only rows that identify an actual hourly result.
+      if (metrics?.sourceMode === 'hourly' || metrics?.snapshotMode === 'cumulative')
+        return { metrics, observed: true, mode: metrics.sourceMode || 'snapshots' };
+    } catch { /* unavailable below */ }
   }
-  const metrics: any = { cost: numberValue(daily?.cost), orders: numberValue(daily?.sku_orders), grossRevenue: numberValue(daily?.gross_revenue) };
-  metrics.costPerOrder = metrics.orders ? metrics.cost / metrics.orders : null; metrics.roi = metrics.cost ? metrics.grossRevenue / metrics.cost : null;
-  return { metrics, observed: Boolean(metrics.cost || metrics.orders || metrics.grossRevenue), mode: 'daily-fallback' };
+  // A day-to-date aggregate is not an hourly metric. Wait for the MCP bucket
+  // instead of publishing a plausible-looking but incorrect value.
+  return { metrics: { cost: 0, orders: 0, grossRevenue: 0, costPerOrder: null, roi: null }, observed: false, mode: 'unavailable' };
 }
 function recommendation(items: any[]): string[] {
   return items?.length ? items.map((item) => `${item.itemId} | ${String(item.reason || '')}`) : ['Không có'];
@@ -129,13 +125,13 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
     const localParts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
       timeZone:env.TIMEZONE || 'Asia/Bangkok',hour:'2-digit',minute:'2-digit',hour12:false
     }).formatToParts(now).map((part)=>[part.type,part.value]));
-    const localHour=Number(localParts.hour),localMinute=Number(localParts.minute);
+    const localHour=Number(localParts.hour);
     const isCurrentSlot=(reportDate===localDate&&reportHour===localHour)||
       (reportHour===24&&localHour===0&&reportDate===shiftDate(localDate,-1));
-    if(hourlyRow.observed===false&&!isCurrentSlot)
-      throw new Error(`TikTok Ads không còn dữ liệu tách riêng khung giờ ${reportHour}:00; không gửi số 0 thay thế.`);
-    if(hourly.mode==='hourly'&&hourlyRow.observed===false&&isCurrentSlot&&localMinute<20)
-      throw new Error(`TikTok Ads chưa chốt dữ liệu khung giờ ${reportHour}:00; sẽ tự động thử lại.`);
+    if(hourlyRow.observed===false)
+      throw new Error(isCurrentSlot
+        ? `TikTok Ads chưa chốt dữ liệu khung giờ ${reportHour}:00; sẽ tự động thử lại.`
+        : `TikTok Ads không còn dữ liệu tách riêng khung giờ ${reportHour}:00; không gửi số 0 thay thế.`);
     const summary = { videoEvaluation: { boost: [], stop: [] } };
     const display = reportDate.split('-').reverse().join('/');
     const cumulative = hourly.mode === 'cumulative';
@@ -166,10 +162,10 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
       try {
         await env.DB.prepare(`UPDATE scheduled_reports SET status='SENT',message_id=?,payload=?,updated_at=CURRENT_TIMESTAMP
           WHERE report_date=? AND report_hour=?`).bind(messageId,JSON.stringify({totals:t,source:hourly.mode,
-            observed:hourlyRow.observed!==false}),reportDate,reportHour).run();
+            observed:true}),reportDate,reportHour).run();
         await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
           ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)
-          .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : t)).run();
+          .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : {...t,sourceMode:hourly.mode})).run();
       } catch { /* old D1 quota; remote gateway owns delivery idempotency */ }
     }
   } catch (error) {
