@@ -335,11 +335,27 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     }
     const tasks:Promise<unknown>[]=[];
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
-    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send(
-      {type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},
-      // TikTok's hourly bucket is eventually consistent. Sending at HH:01
-      // produced partial cost/orders; wait for the bucket to settle first.
-      {delaySeconds:600}));
+    if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID){
+      tasks.push(env.TASK_QUEUE.send(
+        {type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},
+        // TikTok's hourly bucket is eventually consistent. Sending at HH:01
+        // produced partial cost/orders; wait for the bucket to settle first.
+        {delaySeconds:600}));
+      // Recover one missed daytime slot on every five-minute dispatch. A
+      // failed/missing 09:00 slot must not remain lost when the clock advances
+      // to 10:00, otherwise the next successful message becomes a misleading
+      // multi-hour cumulative report. One recovery per invocation keeps Queue
+      // subrequests bounded and drains a backlog without provider bursts.
+      if(message.reportHour>6){
+        const missed=await env.DB.prepare(`WITH RECURSIVE hours(report_hour) AS (
+          SELECT 6 UNION ALL SELECT report_hour+1 FROM hours WHERE report_hour<?
+        ) SELECT hours.report_hour FROM hours LEFT JOIN scheduled_reports reports
+          ON reports.report_date=? AND reports.report_hour=hours.report_hour
+          WHERE hours.report_hour<? AND (reports.status IS NULL OR reports.status<>'SENT')
+          ORDER BY hours.report_hour LIMIT 1`).bind(message.reportHour-1,message.reportDate,message.reportHour).first<{report_hour:number}>();
+        if(missed?.report_hour)tasks.push(env.TASK_QUEUE.send({type:'scheduled-report',reportDate:message.reportDate,reportHour:Number(missed.report_hour)}));
+      }
+    }
     await Promise.all(tasks);return;
   }
   if(message.type==='operations-daily-report'){
