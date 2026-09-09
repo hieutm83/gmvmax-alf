@@ -515,13 +515,20 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate;
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok'),historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
           const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
-          const [history,live]=await Promise.all([
+          const [history,live,liveSources]=await Promise.all([
             supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[],sources:[]})),
             hasToday?loadMainReport(runtime,{...liveInput,startDate:today,endDate:today},liveInput.forceRefresh===true)
               .catch(async(error)=>({...await readReplica(env,'/api/report',{...liveInput,startDate:today,endDate:today}),
-                productLoadError:error instanceof Error?error.message:String(error)})):Promise.resolve(null)
+                productLoadError:error instanceof Error?error.message:String(error)})):Promise.resolve(null),
+            hasToday?sourceRows(env,{...liveInput,startDate:today,endDate:today}):Promise.resolve([])
           ]);
-          const chartDaily=mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,live?.daily||[]);
+          const sourceTraffic=liveSources.reduce((out:any,row:any)=>{out.impressions+=numberValue(row.impressions);out.clicks+=numberValue(row.clicks);return out;},{impressions:0,clicks:0});
+          const liveDaily=live?.daily?.length?live.daily:(hasToday&&live? [{date:today,label:`${today.slice(8,10)}/${today.slice(5,7)}`,metrics:{
+            ...live.totals,impressions:sourceTraffic.impressions,traffic:sourceTraffic.clicks,trafficAvailable:true,
+            ctr:sourceTraffic.impressions?sourceTraffic.clicks/sourceTraffic.impressions:0,
+            cr:sourceTraffic.clicks?numberValue(live.totals?.orders)/sourceTraffic.clicks:0
+          }}]:[]);
+          const chartDaily=mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,liveDaily);
           const selectedDaily=chartDaily.filter((point:any)=>point.date>=liveInput.startDate&&point.date<=liveInput.endDate);
           const totals=selectedDaily.reduce((out:any,point:any)=>{const m=point.metrics||{};out.cost+=numberValue(m.cost);out.orders+=numberValue(m.orders);
             out.grossRevenue+=numberValue(m.grossRevenue);out.traffic+=numberValue(m.traffic);out.trafficAvailable=true;return out;},emptyTikTok());
