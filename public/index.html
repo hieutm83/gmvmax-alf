@@ -1098,6 +1098,7 @@
       var currentAdsOAuth = null;
       var currentFinanceData = null;
       var dashboardRole = '';
+      var initialReportRequested = false;
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
@@ -1454,7 +1455,16 @@
           .withSuccessHandler(function (stores) {
             setLoading(false);
             setStores(stores);
-            if (stores.length) setReportView(activeReportView);
+            if (stores.length) {
+              setReportView(activeReportView);
+              // Populate the initially selected tab as soon as account/shop
+              // discovery finishes. Later tab changes remain manual, while
+              // the five-minute timer starts refreshing this loaded scope.
+              if (!initialReportRequested) {
+                initialReportRequested = true;
+                form.requestSubmit();
+              }
+            }
             else showError({ message: 'Không tìm thấy TikTok Shop hỗ trợ GMV Max cho tài khoản này.' });
           })
           .withFailureHandler(showError)
