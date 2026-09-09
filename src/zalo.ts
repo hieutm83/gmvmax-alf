@@ -47,10 +47,20 @@ async function scheduledHourlyMetrics(env: Env, reportDate: string, reportHour: 
   if (stored?.metrics_json) {
     try {
       const metrics = JSON.parse(stored.metrics_json);
-      // Older daily fallbacks repeated one day-to-date total every hour.
-      // Reuse only rows that identify an actual hourly result.
-      if (metrics?.sourceMode === 'hourly' || metrics?.snapshotMode === 'cumulative')
-        return { metrics, observed: true, mode: metrics.sourceMode || 'snapshots' };
+      if (metrics?.sourceMode === 'hourly') return { metrics, observed: true, mode: 'hourly' };
+      if (metrics?.snapshotMode === 'cumulative') {
+        const previous=await env.DB.prepare(`SELECT metrics_json FROM hourly_metrics WHERE advertiser_id=? AND store_id=?
+          AND report_date=? AND report_hour<? ORDER BY report_hour DESC LIMIT 1`).bind(env.DEFAULT_ADVERTISER_ID,env.DEFAULT_STORE_CODE,reportDate,reportHour).first<{metrics_json:string}>();
+        const baseline=previous?.metrics_json?JSON.parse(previous.metrics_json):{};
+        const delta:any={
+          cost:Math.max(0,numberValue(metrics.cost)-numberValue(baseline.cost)),
+          orders:Math.max(0,numberValue(metrics.orders)-numberValue(baseline.orders)),
+          grossRevenue:Math.max(0,numberValue(metrics.grossRevenue)-numberValue(baseline.grossRevenue))
+        };
+        delta.costPerOrder=delta.orders?delta.cost/delta.orders:null;
+        delta.roi=delta.cost?delta.grossRevenue/delta.cost:null;
+        return {metrics:delta,observed:true,mode:'snapshots'};
+      }
     } catch { /* unavailable below */ }
   }
   // A day-to-date aggregate is not an hourly metric. Wait for the MCP bucket

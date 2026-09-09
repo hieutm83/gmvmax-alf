@@ -8,7 +8,7 @@ import { dateInTimezone } from './utils';
 import { saveTikTokAdsSnapshot, saveFacebookAdsSnapshot } from './ads-snapshots';
 import { decryptJson, decryptTokens, encryptJson, encryptTokens } from './crypto';
 import type { SellerTokenSet } from './types';
-import { loadComparison, loadCreativeSummaries, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
+import { loadComparison, loadCreativeSummaries, loadMainReport, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { loadFacebookAdsReport } from './facebook';
 import { loadCAdsReport } from './cads';
 import { loadOperationsAnalysis } from './operations';
@@ -517,7 +517,9 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
           const [history,live]=await Promise.all([
             supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[],sources:[]})),
-            hasToday?readReplica(env,'/api/report',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
+            hasToday?loadMainReport(runtime,{...liveInput,startDate:today,endDate:today},liveInput.forceRefresh===true)
+              .catch(async(error)=>({...await readReplica(env,'/api/report',{...liveInput,startDate:today,endDate:today}),
+                productLoadError:error instanceof Error?error.message:String(error)})):Promise.resolve(null)
           ]);
           const chartDaily=mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,live?.daily||[]);
           const selectedDaily=chartDaily.filter((point:any)=>point.date>=liveInput.startDate&&point.date<=liveInput.endDate);
@@ -527,7 +529,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           data={advertiserId:liveInput.advertiserId,store:{storeId:liveInput.storeId},startDate:liveInput.startDate,endDate:liveInput.endDate,
             generatedAt:new Date().toISOString(),totals,products:live?.products||[],availableProductCount:live?.availableProductCount||0,
             creativeContexts:live?.creativeContexts||[],hourly:live?.hourly||[],hourlyMode:live?.hourlyMode||'snapshots',daily:selectedDaily,
-            source:'supabase-history+d1-realtime',trafficEmbedded:true,chartStartDate,chartDaily};break;
+            source:'supabase-history+d1-realtime',trafficEmbedded:true,chartStartDate,chartDaily,productLoadError:live?.productLoadError||null};break;
         }
         case '/api/ads-traffic-timeline': {
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok');

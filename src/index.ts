@@ -18,7 +18,7 @@ import { syncSupabaseBackup } from './supabase-backup';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
 import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { dueOrderBotSlots, monitorOrderBot, sendOrderBotReport } from './order-bot';
-import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, readJson, shiftDate, validateDate, validateId } from './utils';
+import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, numberValue, readJson, shiftDate, validateDate, validateId } from './utils';
 import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
   createDashboardSession, dashboardRoleForPassword, dashboardSessionCookie, dashboardSessionFromRequest,
   recordDashboardLoginFailure, type DashboardRole, type DashboardSession } from './dashboard-auth';
@@ -267,6 +267,23 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     results.forEach((result,index)=>{
       if(result.status==='rejected')console.error(index===0?'TikTok snapshot failed':index===1?'Facebook snapshot failed':'TikTok creative snapshot failed',result.reason);
     });
+    // Product discovery has its own queue invocation. It uses campaign and
+    // item_group dimensions, while creative discovery uses item_id; keeping
+    // them separate prevents videos from leaking into the Available table and
+    // keeps each invocation below the provider subrequest ceiling.
+    await runtime.TASK_QUEUE.send({type:'ads-products-snapshot',reportDate:message.reportDate});
+    const currentHour=hourInTimezone(new Date(),runtime.TIMEZONE||'Asia/Bangkok');
+    const row=await runtime.DB.prepare(`SELECT cost,gross_revenue,sku_orders FROM tiktok_ads_daily
+      WHERE advertiser_id=? AND store_id=? AND report_date=?`).bind(runtime.DEFAULT_ADVERTISER_ID,storeId,message.reportDate).first<any>();
+    if(row)await runtime.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json)
+      VALUES(?,?,?,?,?) ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET
+      metrics_json=excluded.metrics_json`).bind(runtime.DEFAULT_ADVERTISER_ID,storeId,message.reportDate,currentHour,
+      JSON.stringify({cost:numberValue(row.cost),orders:numberValue(row.sku_orders),grossRevenue:numberValue(row.gross_revenue),snapshotMode:'cumulative'})).run();
+    return;
+  }
+  if(message.type==='ads-products-snapshot'){
+    const storeId=await resolveDefaultStore(runtime);
+    await loadMainReport(runtime,{advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate},true);
     return;
   }
   if(message.type==='ads-backfill'){
