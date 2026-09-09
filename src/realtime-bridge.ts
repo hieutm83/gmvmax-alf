@@ -8,7 +8,6 @@ import { dateInTimezone } from './utils';
 import { saveTikTokAdsSnapshot, saveFacebookAdsSnapshot } from './ads-snapshots';
 import { decryptJson, decryptTokens, encryptJson, encryptTokens } from './crypto';
 import type { SellerTokenSet } from './types';
-import { loadMainReport } from './reports';
 import { loadComparison, loadCreativeSummaries, loadProductVideos, loadVideoMetadata, loadVideoStats } from './reports';
 import { loadFacebookAdsReport } from './facebook';
 import { loadCAdsReport } from './cads';
@@ -261,7 +260,8 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
       const endDate = validateDate(input?.endDate, 'endDate');
       return json({ ok: true, data: await readSupabaseChartHistory(env, {
         advertiserId: String(input?.advertiserId || env.DEFAULT_ADVERTISER_ID),
-        storeId: String(input?.storeId || env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE), startDate, endDate
+        storeId: String(input?.storeId || env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE), startDate, endDate,
+        includeSources:input?.includeSources===true
       }) });
     }
     if (path === '/internal/oauth-decrypt') {
@@ -343,18 +343,18 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
   catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502); }
 }
 
-async function supabaseChartHistory(env: Env, input: any, startDate: string, endDate: string): Promise<{ tiktok: any[]; facebook: any[] }> {
-  if (startDate > endDate || !env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return { tiktok: [], facebook: [] };
-  const cacheKey=new Request(`https://runtime-history-cache.internal/${encodeURIComponent(String(input.advertiserId||''))}/${encodeURIComponent(String(input.storeId||''))}/${startDate}/${endDate}`);
-  const edgeCache=typeof caches!=='undefined'?await caches.open('runtime-supabase-history-v1'):null;
-  const cached=edgeCache?await edgeCache.match(cacheKey):null;if(cached)return cached.json<{tiktok:any[];facebook:any[]}>();
+async function supabaseChartHistory(env: Env, input: any, startDate: string, endDate: string, includeSources=false): Promise<{ tiktok: any[]; facebook: any[]; sources:any[] }> {
+  if (startDate > endDate || !env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return { tiktok: [], facebook: [], sources:[] };
+  const cacheKey=new Request(`https://runtime-history-cache-v2.internal/${includeSources?'sources':'charts'}/${encodeURIComponent(String(input.advertiserId||''))}/${encodeURIComponent(String(input.storeId||''))}/${startDate}/${endDate}`);
+  const edgeCache=typeof caches!=='undefined'?await caches.open('runtime-supabase-history-v2'):null;
+  const cached=edgeCache?await edgeCache.match(cacheKey):null;if(cached)return cached.json<{tiktok:any[];facebook:any[];sources:any[]}>();
   const response = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET },
-    body: JSON.stringify({ path: '/internal/supabase-chart-history', input: { ...input, startDate, endDate } })
+    body: JSON.stringify({ path: '/internal/supabase-chart-history', input: { ...input, startDate, endDate, includeSources } })
   });
   const payload = await response.json<any>().catch(() => ({}));
   if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Supabase history bridge HTTP ${response.status}`);
-  const result={ tiktok: payload?.data?.tiktok || [], facebook: payload?.data?.facebook || [] };
+  const result={ tiktok: payload?.data?.tiktok || [], facebook: payload?.data?.facebook || [], sources:payload?.data?.sources||[] };
   if(edgeCache)await edgeCache.put(cacheKey,new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'public, max-age=900'}}));
   return result;
 }
@@ -375,6 +375,23 @@ function mergeTikTokChart(startDate: string, endDate: string, history: any[], li
 function overviewPlatform(cost:number,revenue:number,impressions:number,clicks:number,orders:number):any {
   return {cost,revenue,impressions,clicks,orders,ctr:impressions?clicks/impressions:0,cr:clicks?orders/clicks:0,
     cpc:clicks?cost/clicks:0,cpm:impressions?cost*1000/impressions:0,cpo:orders?cost/orders:null,roas:cost?revenue/cost:null};
+}
+
+function creativeSourceSummary(rows:any[], extras:any={}):any {
+  const uniqueRows=new Map<string,any>();
+  for(const row of rows||[]){
+    const source=String(row.source)==='productCard'?'productCard':String(row.source)==='seller'?'seller':'affiliate';
+    const value=row.metrics||row,productId=String(row.productId??row.product_id??'unknown'),date=String(row.date??row.report_date??'');
+    const normalized={source,productId,date,title:String(row.title||''),metrics:{cost:numberValue(value.cost),gross_revenue:numberValue(value.gross_revenue??value.grossRevenue),orders:numberValue(value.orders??value.sku_orders),product_impressions:numberValue(value.product_impressions??value.impressions),product_clicks:numberValue(value.product_clicks??value.clicks)}};
+    const key=`${date}:${source}:${productId}`,old=uniqueRows.get(key);
+    if(!old)uniqueRows.set(key,normalized);else for(const field of ['cost','gross_revenue','orders','product_impressions','product_clicks'] as const)old.metrics[field]=Math.max(numberValue(old.metrics[field]),numberValue(normalized.metrics[field]));
+  }
+  const sourceRowsOut=[...uniqueRows.values()];
+  const metrics:any={productCard:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0},seller:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0},affiliate:{cost:0,grossRevenue:0,impressions:0,clicks:0,orders:0}};
+  for(const row of sourceRowsOut){const target=metrics[row.source],m=row.metrics;target.cost+=numberValue(m.cost);target.grossRevenue+=numberValue(m.gross_revenue);target.impressions+=numberValue(m.product_impressions);target.clicks+=numberValue(m.product_clicks);target.orders+=numberValue(m.orders);}
+  Object.values<any>(metrics).forEach((item)=>{item.roi=item.cost?item.grossRevenue/item.cost:0;});
+  const productCard=metrics.productCard.cost,seller=metrics.seller.cost,affiliate=metrics.affiliate.cost;
+  return {generatedAt:new Date().toISOString(),summaries:extras.summaries||[],totalCreatives:new Set(sourceRowsOut.map((row)=>row.productId).filter(Boolean)).size,impressions:sourceRowsOut.reduce((sum,row)=>sum+numberValue(row.metrics.product_impressions),0),traffic:sourceRowsOut.reduce((sum,row)=>sum+numberValue(row.metrics.product_clicks),0),costAttribution:{total:productCard+seller+affiliate,productCard,seller,affiliate,metrics},sourceRows:sourceRowsOut,videoEvaluation:extras.videoEvaluation||{},hourlyTraffic:extras.hourlyTraffic||[],cacheStatus:extras.cacheStatus||'HYBRID',source:extras.source||'supabase-history'};
 }
 
 export async function gatewayRequest(request: Request, env: Env, url: URL): Promise<Response> {
@@ -440,7 +457,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok'),historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
           const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
           const [history,live]=await Promise.all([
-            supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]})),
+            supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[],sources:[]})),
             hasToday?readReplica(env,'/api/report',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
           ]);
           const chartDaily=mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,live?.daily||[]);
@@ -457,18 +474,29 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok');
           const selectedDays=Math.max(1,Math.round((Date.parse(`${liveInput.endDate}T00:00:00Z`)-Date.parse(`${liveInput.startDate}T00:00:00Z`))/86400000)+1);
           const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate,historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
-          const history=await supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]}));
+          const history=await supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[],sources:[]}));
           let livePoints:any[]=[];if(liveInput.endDate>=today){const live=await readReplica(env,'/api/ads-traffic-timeline',{...liveInput,startDate:today,endDate:today});livePoints=live.points||[];}
           data={generatedAt:new Date().toISOString(),source:'supabase-history+d1-realtime',granularity:'day',chartStartDate,
             points:mergeTikTokChart(chartStartDate,liveInput.endDate,history.tiktok,livePoints).map((point:any)=>({key:point.date,label:point.label,metrics:{impressions:numberValue(point.metrics?.impressions),clicks:numberValue(point.metrics?.traffic),traffic:numberValue(point.metrics?.traffic)}}))};break;
         }
         case '/api/creative-summaries': {
-          let creativeInput=liveInput;
-          if(!Array.isArray(liveInput.allContexts)||liveInput.allContexts.length===0){
-            const report=await loadMainReport(runtime,liveInput,false);
-            creativeInput={...liveInput,products:report.products||[],allContexts:report.creativeContexts||[],availableProducts:report.availableProductCount||0};
+          const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok'),historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
+          const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
+          const history=await supabaseChartHistory(env,liveInput,liveInput.startDate,historyEnd,true).catch(()=>({tiktok:[],facebook:[],sources:[]}));
+          let liveSummary:any=null;
+          if(hasToday){
+            try{
+              const todayInput={...liveInput,startDate:today,endDate:today};
+              liveSummary=await loadCreativeSummaries(runtime,{...todayInput,products:[],allContexts:[],availableProducts:0});
+            }catch(error){
+              console.warn('Realtime MCP creative summary skipped',error instanceof Error?error.message:String(error));
+              liveSummary=await readReplica(env,'/api/creative-summaries',{...liveInput,startDate:today,endDate:today}).catch(()=>null);
+            }
           }
-          data=await loadCreativeSummaries(runtime,creativeInput);break;
+          data=creativeSourceSummary([...(history.sources||[]),...(liveSummary?.sourceRows||[])],{
+            summaries:liveSummary?.summaries||[],videoEvaluation:liveSummary?.videoEvaluation||{},hourlyTraffic:liveSummary?.hourlyTraffic||[],
+            cacheStatus:hasToday?'MCP_REALTIME_WITH_SUPABASE_HISTORY':'SUPABASE_HISTORY',source:hasToday?'mcp-realtime+supabase-history':'supabase-history'
+          });break;
         }
         case '/api/facebook-ads': {
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok');
@@ -477,7 +505,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
           const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
           const [history,live]=await Promise.all([
-            supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]})),
+            supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[],sources:[]})),
             hasToday?readReplica(env,'/api/facebook-ads',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
           ]);
           const historyByDate=new Map(history.facebook.map((row:any)=>[String(row.report_date),row]));
@@ -508,7 +536,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate,historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
           const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
           const [history,liveTikTok,liveFacebook]=await Promise.all([
-            supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]})),
+            supabaseChartHistory(env,liveInput,chartStartDate,historyEnd,true).catch(()=>({tiktok:[],facebook:[],sources:[]})),
             hasToday?readReplica(env,'/api/report',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null),
             hasToday?readReplica(env,'/api/facebook-ads',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
           ]);
@@ -521,9 +549,11 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
             return {date,endDate:date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,facebook:{cost:numberValue(fr.spend),clicks:numberValue(fr.clicks),orders:numberValue(fr.orders),revenue:numberValue(fr.gross_revenue),impressions:numberValue(fr.impressions)},tiktok:{cost:numberValue(tr.cost),clicks:numberValue(tr.clicks),orders:numberValue(tr.sku_orders),revenue:numberValue(tr.gross_revenue),impressions:numberValue(tr.impressions)}};});
           const selected=daily.filter((day:any)=>day.date>=liveInput.startDate);const sum=(key:'facebook'|'tiktok')=>selected.reduce((out:any,day:any)=>{for(const field of ['cost','revenue','impressions','clicks','orders'])out[field]+=numberValue(day[key]?.[field]);return out;},{cost:0,revenue:0,impressions:0,clicks:0,orders:0});
           const fs=sum('facebook'),ts=sum('tiktok'),facebook=overviewPlatform(fs.cost,fs.revenue,fs.impressions,fs.clicks,fs.orders),tiktok=overviewPlatform(ts.cost,ts.revenue,ts.impressions,ts.clicks,ts.orders);
+          const sourceSummary=creativeSourceSummary([...(history.sources||[]),...((hasToday?await sourceRows(env,{...liveInput,startDate:today,endDate:today}):[])||[])]);
+          const attributed=sourceSummary.costAttribution;
           data={startDate:liveInput.startDate,endDate:liveInput.endDate,chartStartDate,generatedAt:new Date().toISOString(),daily,
             totals:overviewPlatform(fs.cost+ts.cost,fs.revenue+ts.revenue,fs.impressions+ts.impressions,fs.clicks+ts.clicks,fs.orders+ts.orders),previousTotals:overviewPlatform(0,0,0,0,0),platforms:{facebook,tiktok},
-            tiktokCostSources:{total:tiktok.cost,productCard:0,seller:0,affiliate:0,unclassified:tiktok.cost},tiktokDiagnostics:{source:'supabase-history+d1-realtime'},facebookResultCosts:liveFacebook?.resultCosts||[],historySource:'supabase-history+d1-realtime'};break;
+            tiktokCostSources:{...attributed,total:tiktok.cost,unclassified:Math.max(0,tiktok.cost-numberValue(attributed.total))},tiktokDiagnostics:{source:'supabase-history+d1-realtime'},facebookResultCosts:liveFacebook?.resultCosts||[],historySource:'supabase-history+d1-realtime'};break;
         }
         case '/api/revenue-analysis': data = await loadSellerRevenueAnalysis(runtime, liveInput); break;
         case '/api/cads-report': data = await loadCAdsReport(runtime, liveInput); break;

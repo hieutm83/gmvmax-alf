@@ -319,6 +319,13 @@ export async function loadCreativeSummaries(env: Env, input: any): Promise<any> 
   const rows:McpRow[]=[];
   const exactContexts=Array.from(new Map<string,ProductContext>(contexts.map((context:ProductContext)=>[`${context.campaignId}:${context.itemGroupId}`,context])).values());
   const campaignIds=unique(exactContexts.map((context)=>context.campaignId));
+  if(!campaignIds.length){
+    const base={advertiser_id:input.advertiserId,store_ids:[input.storeId],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
+      filtering:{creative_types:['ADS_AND_ORGANIC']}};
+    let values=await pagedReport(env,session,{...base,dimensions:['campaign_id','item_group_id','item_id','stat_time_day']}).catch(()=>[]);
+    if(!values.length)values=await pagedReport(env,session,{...base,dimensions:['item_group_id','item_id','stat_time_day']});
+    rows.push(...values);
+  }
   for(const campaignId of campaignIds){
     const campaignContexts=exactContexts.filter((context)=>context.campaignId===campaignId);
     const base={advertiser_id:input.advertiserId,store_ids:[input.storeId],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,

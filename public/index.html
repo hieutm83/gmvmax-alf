@@ -1585,18 +1585,12 @@
 
       function requestOverviewTikTokSources(force) {
         var requestId=++overviewSourceRequestId,scope=reportScope(),scopeKey=JSON.stringify(scope);
-        google.script.run.withSuccessHandler(function (report) {
+        google.script.run.withSuccessHandler(function (summary) {
           if(requestId!==overviewSourceRequestId||scopeKey!==JSON.stringify(reportScope()))return;
-          var products=report.products||[],contexts=report.creativeContexts||products;
-          if(!contexts.length){applyOverviewCreativeSummary({costAttribution:{total:0,productCard:0,seller:0,affiliate:0},impressions:0,traffic:0});return;}
-          google.script.run.withSuccessHandler(function (summary) {
-            if(requestId===overviewSourceRequestId&&scopeKey===JSON.stringify(reportScope()))applyOverviewCreativeSummary(summary);
-          }).withFailureHandler(function (error) {
-            if(requestId===overviewSourceRequestId)console.error('Không tải được phân loại COST TikTok',error&&error.message||error);
-          }).loadCreativeSummaries(Object.assign({},scope,{products:productContexts(products),allContexts:productContexts(contexts),availableProducts:report.availableProductCount,forceRefresh:force===true}));
+          applyOverviewCreativeSummary(summary);
         }).withFailureHandler(function (error) {
           if(requestId===overviewSourceRequestId)console.error('Không tải được dữ liệu COST TikTok',error&&error.message||error);
-        }).loadReport(Object.assign({},scope,{forceRefresh:force===true}));
+        }).loadCreativeSummaries(Object.assign({},scope,{products:[],allContexts:[],availableProducts:0,forceRefresh:force===true}));
       }
 
       function requestOverviewTikTokTraffic(force) {
@@ -1635,8 +1629,9 @@
         var results=data.facebookResultCosts||[];
         platformDonut('adsOverviewFacebookResultChart','facebook',results.map(function(item){return item.label;}),results.map(function(item){return item.cost;}),['#2563eb','#f59e0b','#10b981','#8b5cf6','#ec4899'],'Facebook Cost');
         renderPlatformComparison(data.platforms||{},totals);
-        // The overview response already contains Supabase history plus today's
-        // realtime values. Avoid two follow-up API calls on initial render.
+        // Source attribution is loaded separately: completed days come from
+        // Supabase and today comes from MCP.
+        requestOverviewTikTokSources(forceSourceRefresh === true);
       }
 
       function renderAdsOverviewCharts(daily) {
@@ -2993,16 +2988,8 @@
         videoContextByItemId = {};
         var rememberedSummary = readCreativeSummaryMemory(currentSummaryContexts);
         if (rememberedSummary) renderCreativeSummaries(rememberedSummary);
-        if (data.source === 'supabase-history+d1-realtime') {
-          var syncedImpressions=0,syncedTraffic=0;
-          currentAdsEngagementPoints.forEach(function(point){if(point.date>=data.startDate&&point.date<=data.endDate){syncedImpressions+=point.metrics.impressions;syncedTraffic+=point.metrics.traffic;}});
-          renderCreativeSummaries({summaries:[],totalCreatives:Number(data.availableProductCount)||0,impressions:syncedImpressions,traffic:syncedTraffic,
-            costAttribution:{total:Number(totals.cost)||0,productCard:0,seller:0,affiliate:0,unclassified:Number(totals.cost)||0},videoEvaluation:{boost:[],stop:[]}});
-          ['cost','orders','costPerOrder','grossRevenue','roi','totalCreatives'].forEach(function(key){var element=document.getElementById('metric-change-'+key);if(element){element.className='metric-change neutral';element.textContent='Dữ liệu đã đồng bộ';}});
-        } else {
-          requestCreativeSummaries(currentSummaryContexts.slice(), forceCreativeRefresh);
-          requestYesterdayComparison(data);
-        }
+        requestCreativeSummaries(currentSummaryContexts.slice(), forceCreativeRefresh);
+        requestYesterdayComparison(data);
         if (activeReportView !== 'ads') setReportView(activeReportView);
       }
 
@@ -3113,12 +3100,6 @@
 
       function requestCreativeSummaries(allContexts, forceRefresh) {
         var generation = ++prefetchGeneration;
-        if (!allContexts.length) {
-          renderCreativeSummaries({
-            summaries: [], totalCreatives: 0, impressions: 0, traffic: 0
-          });
-          return;
-        }
         google.script.run
           .withSuccessHandler(function (data) {
             if (generation !== prefetchGeneration) return;
@@ -3150,6 +3131,12 @@
         var creativeElement = document.getElementById('metric-totalCreatives');
         if (!creativeElement) return;
         creativeElement.textContent = integer(data.totalCreatives);
+        var impressionsElement=document.getElementById('metric-impressions');
+        var trafficElement=document.getElementById('metric-traffic');
+        if(impressionsElement)impressionsElement.textContent=integer(data.impressions);
+        if(trafficElement)trafficElement.textContent=integer(data.traffic);
+        var liveSource=String(data.source||'').indexOf('mcp-realtime')!==-1;
+        ['totalCreatives','impressions','traffic'].forEach(function(key){var change=document.getElementById('metric-change-'+key);if(change){change.className='metric-change neutral';change.textContent=liveSource?'MCP realtime + Supabase lịch sử':'Dữ liệu lịch sử Supabase';}});
         currentCreativeSummary = data;
         renderCostAttribution(data.costAttribution, currentComparison && currentComparison.costAttribution);
         renderVideoRecommendations(data.videoEvaluation || { boost: [], stop: [] });

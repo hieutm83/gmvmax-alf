@@ -33,13 +33,13 @@ function headers(key: string, extra: Record<string, string> = {}): Record<string
  * deliberately kept on the legacy account: that account owns the Supabase
  * credentials, while the realtime account only requests one bounded result. */
 export async function readSupabaseChartHistory(env: Env, input: {
-  advertiserId: string; storeId: string; startDate: string; endDate: string;
-}): Promise<{ tiktok: any[]; facebook: any[] }> {
+  advertiserId: string; storeId: string; startDate: string; endDate: string; includeSources?: boolean;
+}): Promise<{ tiktok: any[]; facebook: any[]; sources: any[] }> {
   const config = supabaseConfig(env);
-  const cacheKey = new Request(`https://supabase-history-cache.internal/${encodeURIComponent(input.advertiserId)}/${encodeURIComponent(input.storeId)}/${input.startDate}/${input.endDate}`);
-  const edgeCache = typeof caches !== 'undefined' ? await caches.open('supabase-history-v1') : null;
+  const cacheKey = new Request(`https://supabase-history-cache-v2.internal/${input.includeSources?'sources':'charts'}/${encodeURIComponent(input.advertiserId)}/${encodeURIComponent(input.storeId)}/${input.startDate}/${input.endDate}`);
+  const edgeCache = typeof caches !== 'undefined' ? await caches.open('supabase-history-v2') : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
-  if (cached) return cached.json<{ tiktok: any[]; facebook: any[] }>();
+  if (cached) return cached.json<{ tiktok: any[]; facebook: any[]; sources: any[] }>();
   const aliases = new Set([String(input.storeId)]);
   if (input.storeId === '749630967241416866') aliases.add('7496309672412416866');
   if (input.storeId === '7496309672412416866') aliases.add('749630967241416866');
@@ -47,13 +47,26 @@ export async function readSupabaseChartHistory(env: Env, input: {
   const stores = [...aliases].map((value) => `store_id.eq.${value}`).join(',');
   const tiktokUrl = `${config.url}/rest/v1/tiktok_ads_daily?select=report_date,cost,gross_revenue,cost_per_order,sku_orders,aov,impressions,clicks,ctr,cr&advertiser_id=eq.${encodeURIComponent(input.advertiserId)}&or=(${stores})&${range}&order=report_date.asc`;
   const facebookUrl = `${config.url}/rest/v1/facebook_ads_daily?select=report_date,spend,gross_revenue,orders,impressions,clicks,ctr,cpm,cpc,messages,landing_page_views&${range}&order=report_date.asc`;
-  const [tiktokResponse, facebookResponse] = await Promise.all([
+  const sourceSelect = 'report_date,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks';
+  const sourceTables = [
+    ['tiktok_ads_product_card', 'productCard'],
+    ['tiktok_ads_official_account', 'seller'],
+    ['tiktok_ads_affiliate_mass_authorization', 'affiliate']
+  ] as const;
+  const sourceFetches=input.includeSources?sourceTables.map(([table]) => fetch(`${config.url}/rest/v1/${table}?select=${sourceSelect}&advertiser_id=eq.${encodeURIComponent(input.advertiserId)}&or=(${stores})&${range}&order=report_date.asc`, { headers: headers(config.key) })):[];
+  const [tiktokResponse, facebookResponse, ...sourceResponses] = await Promise.all([
     fetch(tiktokUrl, { headers: headers(config.key) }),
-    fetch(facebookUrl, { headers: headers(config.key) })
+    fetch(facebookUrl, { headers: headers(config.key) }),
+    ...sourceFetches
   ]);
   if (!tiktokResponse.ok) throw new Error(`Supabase TikTok history HTTP ${tiktokResponse.status}: ${(await tiktokResponse.text()).slice(0, 300)}`);
   if (!facebookResponse.ok) throw new Error(`Supabase Facebook history HTTP ${facebookResponse.status}: ${(await facebookResponse.text()).slice(0, 300)}`);
-  const result = { tiktok: await tiktokResponse.json<any[]>(), facebook: await facebookResponse.json<any[]>() };
+  for (let index = 0; index < sourceResponses.length; index += 1) {
+    if (!sourceResponses[index].ok) throw new Error(`Supabase ${sourceTables[index][0]} history HTTP ${sourceResponses[index].status}: ${(await sourceResponses[index].text()).slice(0, 300)}`);
+  }
+  const sourcePayloads = await Promise.all(sourceResponses.map((response) => response.json<any[]>()));
+  const sources = sourcePayloads.flatMap((rows, index) => rows.map((row) => ({ ...row, source: sourceTables[index][1] })));
+  const result = { tiktok: await tiktokResponse.json<any[]>(), facebook: await facebookResponse.json<any[]>(), sources };
   if (edgeCache) await edgeCache.put(cacheKey, new Response(JSON.stringify(result), {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=900' }
   }));
