@@ -3024,10 +3024,15 @@
           { type: 'bar', label: 'Hiển thị', data: engagementPoints.map(function (point) { return point.metrics.impressions || 0; }), yAxisID: 'primary', backgroundColor: 'rgba(219,39,119,.76)', borderColor: '#db2777', borderWidth: 1, borderRadius: 4, maxBarThickness: 30, categoryPercentage: .72, barPercentage: .84 },
           { type: 'bar', label: 'Click', data: engagementPoints.map(function (point) { return point.metrics.traffic || 0; }), yAxisID: 'secondary', backgroundColor: 'rgba(14,165,164,.78)', borderColor: '#0e8f8d', borderWidth: 1, borderRadius: 4, maxBarThickness: 30, categoryPercentage: .72, barPercentage: .84 }
         ] }, options: adsTimeSeriesOptions('Hiển thị', 'Click', false, true) });
-        adsEngagementChart.options.scales.rate={type:'linear',position:'right',beginAtZero:true,suggestedMax:.1,title:{display:true,text:'CTR / CR'},grid:{drawOnChartArea:false},ticks:{color:'#64748b',callback:function(value){return percent(value);},font:{family:'Inter',size:10}}};
+        adsEngagementChart.data.datasets[1].yAxisID='primary';
+        adsEngagementChart.options.scales.primary.title.text='Hiển thị / Click';
+        adsEngagementChart.options.scales.secondary.title.text='CTR / CR';
+        adsEngagementChart.options.scales.secondary.suggestedMax=.1;
+        adsEngagementChart.options.scales.secondary.ticks.callback=function(value){return percent(value);};
+        adsEngagementChart.options.plugins.tooltip.callbacks.label=function(context){return context.dataset.label+': '+(context.dataset.yAxisID==='secondary'?percent(context.raw):integer(context.raw));};
         adsEngagementChart.data.datasets.push(
-          {type:'line',label:'CTR',data:engagementPoints.map(function(point){return Number(point.metrics.ctr)||0;}),yAxisID:'rate',borderColor:'#7c3aed',backgroundColor:'#7c3aed',borderWidth:2,pointRadius:3,tension:.28},
-          {type:'line',label:'CR',data:engagementPoints.map(function(point){return Number(point.metrics.cr)||0;}),yAxisID:'rate',borderColor:'#ef4444',backgroundColor:'#ef4444',borderWidth:2,pointRadius:3,tension:.28}
+          {type:'line',label:'CTR',data:engagementPoints.map(function(point){return Number(point.metrics.ctr)||0;}),yAxisID:'secondary',borderColor:'#7c3aed',backgroundColor:'#7c3aed',borderWidth:2,pointRadius:3,tension:.28},
+          {type:'line',label:'CR',data:engagementPoints.map(function(point){return Number(point.metrics.cr)||0;}),yAxisID:'secondary',borderColor:'#ef4444',backgroundColor:'#ef4444',borderWidth:2,pointRadius:3,tension:.28}
         );
         adsEngagementChart.update();
       }
