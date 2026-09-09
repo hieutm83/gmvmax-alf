@@ -256,7 +256,14 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
   if(message.type==='ads-snapshot'){
     const storeId=await resolveDefaultStore(runtime);
     const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate};
-    await Promise.all([refreshTikTokDailySnapshot(runtime,input),loadFacebookAdsReport(runtime,{...input,forceRefresh:true})]); return;
+    const results=await Promise.allSettled([
+      refreshTikTokDailySnapshot(runtime,input),
+      loadFacebookAdsReport(runtime,{...input,forceRefresh:true})
+    ]);
+    results.forEach((result,index)=>{
+      if(result.status==='rejected')console.error(index===0?'TikTok snapshot failed':'Facebook snapshot failed',result.reason);
+    });
+    return;
   }
   if(message.type==='ads-backfill'){
     const row=await env.DB.prepare("SELECT value FROM app_settings WHERE key='ADS_BACKFILL_NEXT_DATE'").first<{value:string}>();
@@ -309,7 +316,9 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     if(message.backupDate&&env.GOOGLE_BACKUP_SPREADSHEET_ID)tasks.push(env.TASK_QUEUE.send({type:'sheet-backup',reportDate:message.backupDate}));
     if(env.ZALO_BOT_TOKEN&&env.ZALO_GROUP_CHAT_ID)tasks.push(env.TASK_QUEUE.send(
       {type:'scheduled-report',reportDate:message.reportDate,reportHour:message.reportHour},
-      message.reportHour===8?{delaySeconds:30}:undefined));
+      // TikTok's hourly bucket is eventually consistent. Sending at HH:01
+      // produced partial cost/orders; wait for the bucket to settle first.
+      {delaySeconds:600}));
     await Promise.all(tasks);return;
   }
   if(message.type==='operations-daily-report'){

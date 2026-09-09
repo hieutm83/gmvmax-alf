@@ -470,7 +470,38 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           }
           data=await loadCreativeSummaries(runtime,creativeInput);break;
         }
-        case '/api/facebook-ads': data = await loadFacebookAdsReport(runtime, liveInput); break;
+        case '/api/facebook-ads': {
+          const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok');
+          const selectedDays=Math.max(1,Math.round((Date.parse(`${liveInput.endDate}T00:00:00Z`)-Date.parse(`${liveInput.startDate}T00:00:00Z`))/86400000)+1);
+          const chartStartDate=selectedDays<7?shiftDate(liveInput.endDate,-6):liveInput.startDate;
+          const historyEnd=liveInput.endDate<today?liveInput.endDate:shiftDate(today,-1);
+          const hasToday=liveInput.startDate<=today&&liveInput.endDate>=today;
+          const [history,live]=await Promise.all([
+            supabaseChartHistory(env,liveInput,chartStartDate,historyEnd).catch(()=>({tiktok:[],facebook:[]})),
+            hasToday?readReplica(env,'/api/facebook-ads',{...liveInput,startDate:today,endDate:today}):Promise.resolve(null)
+          ]);
+          const historyByDate=new Map(history.facebook.map((row:any)=>[String(row.report_date),row]));
+          const liveByDate=new Map((live?.daily||[]).map((point:any)=>[String(point.date),point]));
+          const daily=days(chartStartDate,liveInput.endDate).map((date)=>{
+            const livePoint:any=liveByDate.get(date);if(livePoint)return livePoint;
+            const row:any=historyByDate.get(date)||{};
+            const spend=numberValue(row.spend),impressions=numberValue(row.impressions),clicks=numberValue(row.clicks),orders=numberValue(row.orders),revenue=numberValue(row.gross_revenue);
+            return {date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,metrics:{spend,impressions,reach:0,clicks,postEngagement:0,
+              messages:numberValue(row.messages),orders,revenue,landingPageViews:numberValue(row.landing_page_views),
+              cpm:impressions?spend*1000/impressions:0,cpc:clicks?spend/clicks:0,ctr:impressions?clicks/impressions:0,
+              cpo:orders?spend/orders:null,roas:spend?revenue/spend:null}};
+          });
+          const selected=daily.filter((point:any)=>point.date>=liveInput.startDate&&point.date<=liveInput.endDate);
+          const totals=selected.reduce((out:any,point:any)=>{const metrics=point.metrics||{};
+            for(const field of ['spend','impressions','reach','clicks','postEngagement','messages','orders','revenue','landingPageViews'])out[field]+=numberValue(metrics[field]);
+            return out;},{spend:0,impressions:0,reach:0,clicks:0,postEngagement:0,messages:0,orders:0,revenue:0,landingPageViews:0,cpm:0,cpc:0,ctr:0,cpo:null,roas:null});
+          totals.cpm=totals.impressions?totals.spend*1000/totals.impressions:0;totals.cpc=totals.clicks?totals.spend/totals.clicks:0;
+          totals.ctr=totals.impressions?totals.clicks/totals.impressions:0;totals.cpo=totals.orders?totals.spend/totals.orders:null;
+          totals.roas=totals.spend?totals.revenue/totals.spend:null;
+          data={totals,daily,campaigns:live?.campaigns||[],resultCosts:live?.resultCosts||[],previousTotals:{spend:0,impressions:0,reach:0,clicks:0,postEngagement:0,messages:0,orders:0,revenue:0,landingPageViews:0,cpm:0,cpc:0,ctr:0,cpo:null,roas:null},
+            startDate:liveInput.startDate,endDate:liveInput.endDate,chartStartDate,generatedAt:new Date().toISOString(),source:'supabase-history+d1-realtime'};
+          break;
+        }
         case '/api/ads-overview': {
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok');
           const selectedDays=Math.max(1,Math.round((Date.parse(`${liveInput.endDate}T00:00:00Z`)-Date.parse(`${liveInput.startDate}T00:00:00Z`))/86400000)+1);

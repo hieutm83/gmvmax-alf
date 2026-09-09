@@ -1390,6 +1390,20 @@
       function setAutoRefresh(enabled) {
         if (autoRefreshTimer) clearInterval(autoRefreshTimer);
         autoRefreshTimer = enabled ? setInterval(function () {
+          // Auto-refresh is allowed only after this exact tab/date/account
+          // scope has been loaded manually at least once.
+          var currentScope = JSON.stringify(reportScope());
+          var loadedScope = activeReportView === 'overview' ? loadedAdsOverviewScope
+            : activeReportView === 'facebook' ? loadedFacebookScope
+            : activeReportView === 'revenue' ? loadedRevenueScope
+            : activeReportView === 'cads' ? loadedCAdsScope
+            : activeReportView === 'operations' ? loadedOperationsScope
+            : activeReportView === 'finance' ? loadedFinanceScope
+            : activeReportView === 'content-koc' ? loadedContentKocScope
+            : activeReportView === 'koc-analysis' ? loadedKocAnalysisScope
+            : activeReportView === 'product-analysis' ? loadedProductAnalysisScope
+            : loadedReportScope;
+          if (loadedScope !== currentScope) return;
           if (activeReportView === 'overview') {
             loadedAdsOverviewScope = '';
             requestAdsOverview(true);
@@ -1786,39 +1800,11 @@
         document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
         document.getElementById('kocAnalysisReport').classList.toggle('hidden', activeReportView !== 'koc-analysis');
         document.getElementById('productAnalysisReport').classList.toggle('hidden', activeReportView !== 'product-analysis');
-        if (activeReportView === 'overview') {
-          var overviewKey = JSON.stringify(reportScope());
-          if (loadedAdsOverviewScope !== overviewKey) requestAdsOverview(false);
-        } else if (activeReportView === 'facebook') {
-          var facebookKey = JSON.stringify(reportScope());
-          if (loadedFacebookScope !== facebookKey) requestFacebookAds(false);
-        } else if (activeReportView === 'revenue') {
-          var key = JSON.stringify(reportScope());
-          if (sellerOAuthConnected && loadedRevenueScope !== key) requestRevenueAnalysis(false);
-        } else if (activeReportView === 'cads') {
-          var cadsKey = JSON.stringify(reportScope());
-          if (loadedCAdsScope !== cadsKey) requestCAdsReport(false);
-        } else if (activeReportView === 'operations') {
-          var operationsKey = JSON.stringify(reportScope());
-          if (sellerOAuthConnected && loadedOperationsScope !== operationsKey) requestOperationsAnalysis(false);
-        } else if (activeReportView === 'finance') {
-          var financeKey = JSON.stringify(reportScope());
-          if (sellerOAuthConnected && loadedFinanceScope !== financeKey) requestFinanceAnalysis(false);
-        } else if (activeReportView === 'content-koc') {
-          var contentKocKey = JSON.stringify(reportScope());
-          if (loadedContentKocScope !== contentKocKey) requestContentKocAnalysis(false);
-        } else if (activeReportView === 'koc-analysis') {
-          var kocAnalysisKey = JSON.stringify(reportScope());
-          if (sellerOAuthConnected && loadedKocAnalysisScope !== kocAnalysisKey) requestKocAnalysis(false);
-          else if (!sellerOAuthConnected) renderKocAnalysisConnectionRequired();
-        } else if (activeReportView === 'product-analysis') {
-          var productAnalysisKey = JSON.stringify(reportScope());
-          if (sellerOAuthConnected && loadedProductAnalysisScope !== productAnalysisKey) requestProductAnalysis(false);
-          else if (!sellerOAuthConnected) renderProductAnalysisConnectionRequired();
-        } else {
-          var adsKey = JSON.stringify(reportScope());
-          if (loadedReportScope !== adsKey) requestReport(false);
-        }
+        // Changing tabs only changes the visible report. Provider requests are
+        // intentionally started by the "Tải báo cáo" submit handler above so
+        // browsing the dashboard cannot fan out into hidden API calls.
+        if (activeReportView === 'koc-analysis' && !sellerOAuthConnected) renderKocAnalysisConnectionRequired();
+        if (activeReportView === 'product-analysis' && !sellerOAuthConnected) renderProductAnalysisConnectionRequired();
       }
 
       function requestOperationsAnalysis(force) {
