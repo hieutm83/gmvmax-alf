@@ -344,12 +344,13 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
 }
 
 async function supabaseChartHistory(env: Env, input: any, startDate: string, endDate: string, includeSources=false): Promise<{ tiktok: any[]; facebook: any[]; sources:any[] }> {
-  if (startDate > endDate || !env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return { tiktok: [], facebook: [], sources:[] };
-  const cacheKey=new Request(`https://runtime-history-cache-v4.internal/${includeSources?'sources':'charts'}/${encodeURIComponent(String(input.advertiserId||''))}/${encodeURIComponent(String(input.storeId||''))}/${startDate}/${endDate}`);
-  const edgeCache=typeof caches!=='undefined'?await caches.open('runtime-supabase-history-v4'):null;
+  if (startDate > endDate) return { tiktok: [], facebook: [], sources:[] };
+  const cacheKey=new Request(`https://runtime-history-cache-v5.internal/${includeSources?'sources':'charts'}/${encodeURIComponent(String(input.advertiserId||''))}/${encodeURIComponent(String(input.storeId||''))}/${startDate}/${endDate}`);
+  const edgeCache=typeof caches!=='undefined'?await caches.open('runtime-supabase-history-v5'):null;
   const cached=edgeCache?await edgeCache.match(cacheKey):null;if(cached)return cached.json<{tiktok:any[];facebook:any[];sources:any[]}>();
   let remote:{tiktok:any[];facebook:any[];sources:any[]}={tiktok:[],facebook:[],sources:[]};
   try {
+    if (!env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) throw new Error('Supabase history bridge is not configured');
     const response = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET },
       body: JSON.stringify({ path: '/internal/supabase-chart-history', input: { ...input, startDate, endDate, includeSources } })
