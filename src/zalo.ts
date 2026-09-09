@@ -144,15 +144,8 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
         : `TikTok Ads không còn dữ liệu tách riêng khung giờ ${reportHour}:00; không gửi số 0 thay thế.`);
     const summary = { videoEvaluation: { boost: [], stop: [] } };
     const display = reportDate.split('-').reverse().join('/');
-    const cumulative = hourly.mode === 'cumulative';
     const t = hourlyRow.metrics;
-    let previousSent: { report_hour: number | null } | null = null;
-    if (localPersistence) { try { previousSent = await env.DB.prepare(`SELECT MAX(report_hour) AS report_hour FROM scheduled_reports
-      WHERE report_date=? AND report_hour<? AND status='SENT'`).bind(reportDate,reportHour).first<{report_hour:number|null}>(); } catch { localPersistence = false; } }
-    const intervalStart=Math.max(1,Number(previousSent?.report_hour||0)+1);
-    const intervalLabel=hourly.mode==='snapshots'&&intervalStart<reportHour
-      ? `${String(intervalStart).padStart(2,'0')}:00–${String(reportHour).padStart(2,'0')}:00 (lũy kế)`
-      : `${String(reportHour).padStart(2,'0')}:00`;
+    const intervalLabel=`${String(reportHour).padStart(2,'0')}:00`;
     let text = [
       `Chỉ số ADS ${display} - ${intervalLabel}`,
       `Cost: ${integer(t.cost)}`,
@@ -166,7 +159,6 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
       '- Tắt:',
       ...recommendation(summary.videoEvaluation?.stop)
     ].join('\n');
-    if (cumulative) text = text.replace(':00\n', ':00 (lũy kế)\n');
     const messageId = await sendMessage(env,text,undefined,buildAdsStyles(text), { dedupeKey: `ads:${reportDate}:${reportHour}`, reportDate, reportHour });
     if (localPersistence) {
       try {
@@ -175,7 +167,7 @@ export async function sendScheduledReport(env: Env, reportDate: string, reportHo
             observed:true}),reportDate,reportHour).run();
         await env.DB.prepare(`INSERT INTO hourly_metrics(advertiser_id,store_id,report_date,report_hour,metrics_json) VALUES(?,?,?,?,?)
           ON CONFLICT(advertiser_id,store_id,report_date,report_hour) DO UPDATE SET metrics_json=excluded.metrics_json`)
-          .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify(cumulative ? {...t,snapshotMode:'cumulative'} : {...t,sourceMode:hourly.mode})).run();
+          .bind(base.advertiserId,base.storeId,reportDate,reportHour,JSON.stringify({...t,sourceMode:hourly.mode})).run();
       } catch { /* old D1 quota; remote gateway owns delivery idempotency */ }
     }
   } catch (error) {

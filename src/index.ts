@@ -571,7 +571,9 @@ export default {
         if(localDate.endsWith('-01')&&localHour===10&&[35,40,45].includes(localMinute)&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID)
           await runtime.TASK_QUEUE.send({type:'operations-monthly-prepare',firstDayOfMonth:localDate,stage:0});
         if(localMinute%5===0){
-          const reportHour=localHour===0?24:localHour;
+          // At 15:00 report the completed 14:00 bucket. The current hour is
+          // still changing and must never be presented as an hourly total.
+          const reportHour=localHour===0?23:localHour-1;
           const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
           await runtime.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour});
         }

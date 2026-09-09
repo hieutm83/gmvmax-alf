@@ -424,6 +424,18 @@ function facebookHistoryTotals(rows:any[]):any {
 
 function usefulFacebookHistory(row:any):boolean{return ['spend','impressions','clicks','messages','orders','gross_revenue'].some((key)=>numberValue(row?.[key])!==0);}
 
+async function facebookCampaignHistoryTotals(env:Env,rows:any[],totals:any):Promise<any>{
+  const dates=[...new Set(rows.map((row:any)=>String(row.report_date)).filter(Boolean))];
+  if(!dates.length)return totals;
+  const placeholders=dates.map(()=>'?').join(',');
+  try{
+    const result=await env.DB.prepare(`SELECT reach,payload_json FROM facebook_ads_campaigns WHERE report_date IN (${placeholders})`).bind(...dates).all<any>();
+    totals.reach=(result.results||[]).reduce((sum:number,row:any)=>sum+numberValue(row.reach),0);
+    totals.postEngagement=(result.results||[]).reduce((sum:number,row:any)=>{try{return sum+numberValue(JSON.parse(String(row.payload_json||'{}'))?.metrics?.postEngagement);}catch{return sum;}},0);
+  }catch{/* Daily comparisons still remain available on older schemas. */}
+  return totals;
+}
+
 function creativeSourceSummary(rows:any[], extras:any={}):any {
   const uniqueRows=new Map<string,any>();
   for(const row of rows||[]){
@@ -619,7 +631,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           // are present. Use the latest useful completed day rather than
           // presenting every comparison card as unavailable.
           if(!previousRows.some(usefulFacebookHistory)){const latest=[...history.facebook].filter((row:any)=>String(row.report_date)<liveInput.startDate&&usefulFacebookHistory(row)).sort((a:any,b:any)=>String(b.report_date).localeCompare(String(a.report_date)))[0];previousRows=latest?[latest]:previousRows;}
-          const previousTotals=facebookHistoryTotals(previousRows);
+          const previousTotals=await facebookCampaignHistoryTotals(env,previousRows,facebookHistoryTotals(previousRows));
           data={totals,daily,campaigns:live?.campaigns||[],resultCosts:live?.resultCosts||[],previousTotals,
             startDate:liveInput.startDate,endDate:liveInput.endDate,chartStartDate,generatedAt:new Date().toISOString(),source:'supabase-history+d1-realtime'};
           break;
@@ -648,7 +660,7 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           const previousTikTok=history.tiktok.filter((row:any)=>String(row.report_date)>=comparisonStartDate&&String(row.report_date)<=comparisonEndDate).reduce((out:any,row:any)=>{out.cost+=numberValue(row.cost);out.revenue+=numberValue(row.gross_revenue);out.impressions+=numberValue(row.impressions);out.clicks+=numberValue(row.clicks);out.orders+=numberValue(row.sku_orders);return out;},{cost:0,revenue:0,impressions:0,clicks:0,orders:0});
           let previousFacebookRows=history.facebook.filter((row:any)=>String(row.report_date)>=comparisonStartDate&&String(row.report_date)<=comparisonEndDate);
           if(!previousFacebookRows.some(usefulFacebookHistory)){const latest=[...history.facebook].filter((row:any)=>String(row.report_date)<liveInput.startDate&&usefulFacebookHistory(row)).sort((a:any,b:any)=>String(b.report_date).localeCompare(String(a.report_date)))[0];previousFacebookRows=latest?[latest]:previousFacebookRows;}
-          const previousFacebook=facebookHistoryTotals(previousFacebookRows);
+          const previousFacebook=await facebookCampaignHistoryTotals(env,previousFacebookRows,facebookHistoryTotals(previousFacebookRows));
           const previousTotals=overviewPlatform(previousTikTok.cost+previousFacebook.spend,previousTikTok.revenue+previousFacebook.revenue,previousTikTok.impressions+previousFacebook.impressions,previousTikTok.clicks+previousFacebook.clicks,previousTikTok.orders+previousFacebook.orders);
           const sourceSummary=normalizeCreativeFinancials(creativeSourceSummary([...(history.sources||[]),...((hasToday?await sourceRows(env,{...liveInput,startDate:today,endDate:today}):[])||[])]),
             {cost:tiktok.cost,grossRevenue:tiktok.revenue,orders:tiktok.orders});
@@ -728,5 +740,30 @@ export async function realtimeProxyRequest(request: Request, env: Env, url: URL)
   headers.set('X-Realtime-Gateway-Origin', url.origin);
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.text();
   const target = `${env.REALTIME_GATEWAY_URL.replace(/\/$/, '')}${url.pathname}${url.search}`;
-  return fetch(target, { method: request.method, headers, body });
+  const upstream=await fetch(target, { method: request.method, headers, body });
+  if(request.method!=='POST'||!['/api/facebook-ads','/api/ads-overview'].includes(url.pathname)||!upstream.ok||!body)return upstream;
+  try{
+    const input=JSON.parse(body),startDate=String(input.startDate||''),endDate=String(input.endDate||'');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(endDate))return upstream;
+    const selectedDays=Math.max(1,Math.round((Date.parse(`${endDate}T00:00:00Z`)-Date.parse(`${startDate}T00:00:00Z`))/86400000)+1);
+    const comparisonEndDate=shiftDate(startDate,-1),comparisonStartDate=shiftDate(comparisonEndDate,-(selectedDays-1));
+    const fallbackStart=shiftDate(startDate,-7),historyStart=fallbackStart<comparisonStartDate?fallbackStart:comparisonStartDate;
+    const history=await supabaseChartHistory(env,input,historyStart,comparisonEndDate,false);
+    let previousFacebookRows=history.facebook.filter((row:any)=>String(row.report_date)>=comparisonStartDate&&String(row.report_date)<=comparisonEndDate);
+    if(!previousFacebookRows.some(usefulFacebookHistory)){
+      const latest=[...history.facebook].filter((row:any)=>String(row.report_date)<startDate&&usefulFacebookHistory(row)).sort((a:any,b:any)=>String(b.report_date).localeCompare(String(a.report_date)))[0];
+      previousFacebookRows=latest?[latest]:previousFacebookRows;
+    }
+    const previousFacebook=await facebookCampaignHistoryTotals(env,previousFacebookRows,facebookHistoryTotals(previousFacebookRows));
+    const payload=await upstream.clone().json<any>();
+    if(payload?.data){
+      if(url.pathname==='/api/facebook-ads')payload.data.previousTotals=previousFacebook;
+      else{
+        const previousTikTok=history.tiktok.filter((row:any)=>String(row.report_date)>=comparisonStartDate&&String(row.report_date)<=comparisonEndDate)
+          .reduce((out:any,row:any)=>{out.cost+=numberValue(row.cost);out.revenue+=numberValue(row.gross_revenue);out.impressions+=numberValue(row.impressions);out.clicks+=numberValue(row.clicks);out.orders+=numberValue(row.sku_orders);return out;},{cost:0,revenue:0,impressions:0,clicks:0,orders:0});
+        payload.data.previousTotals=overviewPlatform(previousTikTok.cost+previousFacebook.spend,previousTikTok.revenue+previousFacebook.revenue,previousTikTok.impressions+previousFacebook.impressions,previousTikTok.clicks+previousFacebook.clicks,previousTikTok.orders+previousFacebook.orders);
+      }
+    }
+    return json(payload,upstream.status);
+  }catch(error){console.warn('Historical comparison proxy enrichment skipped',error instanceof Error?error.message:String(error));return upstream;}
 }
