@@ -1098,7 +1098,6 @@
       var currentAdsOAuth = null;
       var currentFinanceData = null;
       var dashboardRole = '';
-      var initialReportRequested = false;
       var initialParams = new URLSearchParams(window.location.search);
       var requestedView = initialParams.get('view');
       var activeReportView = initialParams.has('seller_connected') ? 'revenue' :
@@ -1455,16 +1454,7 @@
           .withSuccessHandler(function (stores) {
             setLoading(false);
             setStores(stores);
-            if (stores.length) {
-              setReportView(activeReportView);
-              // Populate the initially selected tab as soon as account/shop
-              // discovery finishes. Later tab changes remain manual, while
-              // the five-minute timer starts refreshing this loaded scope.
-              if (!initialReportRequested) {
-                initialReportRequested = true;
-                form.requestSubmit();
-              }
-            }
+            if (stores.length) setReportView(activeReportView);
             else showError({ message: 'Không tìm thấy TikTok Shop hỗ trợ GMV Max cho tài khoản này.' });
           })
           .withFailureHandler(showError)
@@ -1810,11 +1800,33 @@
         document.getElementById('contentKocReport').classList.toggle('hidden', activeReportView !== 'content-koc');
         document.getElementById('kocAnalysisReport').classList.toggle('hidden', activeReportView !== 'koc-analysis');
         document.getElementById('productAnalysisReport').classList.toggle('hidden', activeReportView !== 'product-analysis');
-        // Changing tabs only changes the visible report. Provider requests are
-        // intentionally started by the "Tải báo cáo" submit handler above so
-        // browsing the dashboard cannot fan out into hidden API calls.
-        if (activeReportView === 'koc-analysis' && !sellerOAuthConnected) renderKocAnalysisConnectionRequired();
-        if (activeReportView === 'product-analysis' && !sellerOAuthConnected) renderProductAnalysisConnectionRequired();
+        // Load each tab once, at the moment it is opened for the first time
+        // with this account/shop/date scope. The five-minute timer below only
+        // refreshes a scope after this initial request succeeds.
+        var scopeKey = JSON.stringify(reportScope());
+        if (activeReportView === 'overview') {
+          if (loadedAdsOverviewScope !== scopeKey) requestAdsOverview(false);
+        } else if (activeReportView === 'facebook') {
+          if (loadedFacebookScope !== scopeKey) requestFacebookAds(false);
+        } else if (activeReportView === 'revenue') {
+          if (sellerOAuthConnected && loadedRevenueScope !== scopeKey) requestRevenueAnalysis(false);
+        } else if (activeReportView === 'cads') {
+          if (loadedCAdsScope !== scopeKey) requestCAdsReport(false);
+        } else if (activeReportView === 'operations') {
+          if (sellerOAuthConnected && loadedOperationsScope !== scopeKey) requestOperationsAnalysis(false);
+        } else if (activeReportView === 'finance') {
+          if (sellerOAuthConnected && loadedFinanceScope !== scopeKey) requestFinanceAnalysis(false);
+        } else if (activeReportView === 'content-koc') {
+          if (loadedContentKocScope !== scopeKey) requestContentKocAnalysis(false);
+        } else if (activeReportView === 'koc-analysis') {
+          if (sellerOAuthConnected && loadedKocAnalysisScope !== scopeKey) requestKocAnalysis(false);
+          else if (!sellerOAuthConnected) renderKocAnalysisConnectionRequired();
+        } else if (activeReportView === 'product-analysis') {
+          if (sellerOAuthConnected && loadedProductAnalysisScope !== scopeKey) requestProductAnalysis(false);
+          else if (!sellerOAuthConnected) renderProductAnalysisConnectionRequired();
+        } else if (loadedReportScope !== scopeKey) {
+          requestReport(false);
+        }
       }
 
       function requestOperationsAnalysis(force) {
