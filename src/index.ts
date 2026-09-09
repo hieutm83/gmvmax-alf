@@ -258,10 +258,14 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
     const input={advertiserId:runtime.DEFAULT_ADVERTISER_ID,storeId,startDate:message.reportDate,endDate:message.reportDate};
     const results=await Promise.allSettled([
       refreshTikTokDailySnapshot(runtime,input),
-      loadFacebookAdsReport(runtime,{...input,forceRefresh:true})
+      loadFacebookAdsReport(runtime,{...input,forceRefresh:true}),
+      // Pre-warm the Product ID -> creative report in the queue every five
+      // minutes. Dashboard requests then read the fresh cache/source replica
+      // instead of spending their own Worker subrequest budget.
+      loadCreativeSummaries(runtime,{...input,products:[],allContexts:[],availableProducts:0,forceRefresh:true})
     ]);
     results.forEach((result,index)=>{
-      if(result.status==='rejected')console.error(index===0?'TikTok snapshot failed':'Facebook snapshot failed',result.reason);
+      if(result.status==='rejected')console.error(index===0?'TikTok snapshot failed':index===1?'Facebook snapshot failed':'TikTok creative snapshot failed',result.reason);
     });
     return;
   }
@@ -445,7 +449,7 @@ export default {
         if(url.pathname==='/webhooks/zalo'&&request.method==='POST')return webhook(request,await runtimeProviderEnv(env),url,ctx);
         const runtimeChartMatch=url.pathname.match(/^\/charts\/(\d+)\.png$/);
         if(runtimeChartMatch&&request.method==='GET')return chartImage(await runtimeProviderEnv(env),runtimeChartMatch[1]);
-        if(url.pathname.startsWith('/api/') || url.pathname === '/internal/zalo-send' || url.pathname.startsWith('/auth/') || url.pathname === '/oauth/callback' || url.pathname.startsWith('/seller/')) return await gatewayRequest(request,env,url);
+        if(url.pathname.startsWith('/api/') || url.pathname === '/internal/zalo-send' || url.pathname === '/internal/runtime-export' || url.pathname.startsWith('/auth/') || url.pathname === '/oauth/callback' || url.pathname.startsWith('/seller/')) return await gatewayRequest(request,env,url);
         return assetResponse(request,env);
       }
       if(url.pathname==='/internal/realtime'&&request.method==='POST')return await bridgeRequest(request,env);

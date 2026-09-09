@@ -197,9 +197,56 @@ async function saveStatus(env: Env, value: unknown): Promise<void> {
     ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP`).bind(JSON.stringify(value)).run();
 }
 
+/** Pull the two latest days from the new-account runtime D1 before publishing
+ * Supabase. The legacy account remains backup-only; it is just the staging
+ * database for the three agreed backup windows. */
+async function hydrateFromRuntime(env: Env, startDate: string, endDate: string): Promise<void> {
+  if (!env.REALTIME_GATEWAY_URL || !env.REALTIME_BRIDGE_SECRET) return;
+  const response = await fetch(`${env.REALTIME_GATEWAY_URL.replace(/\/$/, '')}/internal/runtime-export`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET },
+    body: JSON.stringify({ advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.ZALO_STORE_ID || env.DEFAULT_STORE_CODE, startDate, endDate })
+  });
+  const payload = await response.json<any>().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Runtime export HTTP ${response.status}`);
+  const data = payload?.data || {};
+  const statements: D1PreparedStatement[] = [];
+  for (const row of data.tiktok || []) statements.push(env.DB.prepare(`INSERT INTO tiktok_ads_daily
+    (advertiser_id,store_id,report_date,cost,gross_revenue,cost_per_order,sku_orders,aov,impressions,clicks,ctr,cr,source,payload_json,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'{}',CURRENT_TIMESTAMP) ON CONFLICT(advertiser_id,store_id,report_date) DO UPDATE SET
+    cost=excluded.cost,gross_revenue=excluded.gross_revenue,cost_per_order=excluded.cost_per_order,sku_orders=excluded.sku_orders,aov=excluded.aov,
+    impressions=excluded.impressions,clicks=excluded.clicks,ctr=excluded.ctr,cr=excluded.cr,source=excluded.source,updated_at=CURRENT_TIMESTAMP`)
+    .bind(env.DEFAULT_ADVERTISER_ID,env.ZALO_STORE_ID||env.DEFAULT_STORE_CODE,String(row.report_date),Number(row.cost)||0,Number(row.gross_revenue)||0,
+      row.cost_per_order==null?null:Number(row.cost_per_order)||0,Number(row.sku_orders)||0,row.aov==null?null:Number(row.aov)||0,
+      Number(row.impressions)||0,Number(row.clicks)||0,Number(row.ctr)||0,Number(row.cr)||0,'runtime-d1'));
+  for (const row of data.facebook || []) statements.push(env.DB.prepare(`INSERT INTO facebook_ads_daily
+    (ad_account_id,report_date,spend,gross_revenue,orders,impressions,clicks,ctr,cpm,cpc,messages,landing_page_views,roas,payload_json,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'{}',CURRENT_TIMESTAMP) ON CONFLICT(ad_account_id,report_date) DO UPDATE SET
+    spend=excluded.spend,gross_revenue=excluded.gross_revenue,orders=excluded.orders,impressions=excluded.impressions,clicks=excluded.clicks,ctr=excluded.ctr,
+    cpm=excluded.cpm,cpc=excluded.cpc,messages=excluded.messages,landing_page_views=excluded.landing_page_views,roas=excluded.roas,updated_at=CURRENT_TIMESTAMP`)
+    .bind(String(row.ad_account_id||env.FB_ACT_ID||''),String(row.report_date),Number(row.spend)||0,Number(row.gross_revenue)||0,Number(row.orders)||0,
+      Number(row.impressions)||0,Number(row.clicks)||0,Number(row.ctr)||0,Number(row.cpm)||0,Number(row.cpc)||0,Number(row.messages)||0,
+      Number(row.landing_page_views)||0,row.roas==null?null:Number(row.roas)||0));
+  for (const row of data.sources || []) statements.push(env.DB.prepare(`INSERT INTO tiktok_ads_source_daily
+    (advertiser_id,store_id,report_date,source,product_id,title,cost,gross_revenue,sku_orders,impressions,clicks,payload_json,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,'{}',CURRENT_TIMESTAMP) ON CONFLICT(advertiser_id,store_id,report_date,source,product_id) DO UPDATE SET
+    title=excluded.title,cost=excluded.cost,gross_revenue=excluded.gross_revenue,sku_orders=excluded.sku_orders,impressions=excluded.impressions,clicks=excluded.clicks,updated_at=CURRENT_TIMESTAMP`)
+    .bind(env.DEFAULT_ADVERTISER_ID,env.ZALO_STORE_ID||env.DEFAULT_STORE_CODE,String(row.report_date),String(row.source),String(row.product_id),String(row.title||''),
+      Number(row.cost)||0,Number(row.gross_revenue)||0,Number(row.sku_orders)||0,Number(row.impressions)||0,Number(row.clicks)||0));
+  for(let offset=0;offset<statements.length;offset+=75)await env.DB.batch(statements.slice(offset,offset+75));
+  await env.DB.prepare(`UPDATE tiktok_ads_daily SET
+    impressions=CASE WHEN COALESCE(impressions,0)=0 THEN (SELECT COALESCE(SUM(impressions),0) FROM tiktok_ads_source_daily s WHERE s.advertiser_id=tiktok_ads_daily.advertiser_id AND s.store_id=tiktok_ads_daily.store_id AND s.report_date=tiktok_ads_daily.report_date) ELSE impressions END,
+    clicks=CASE WHEN COALESCE(clicks,0)=0 THEN (SELECT COALESCE(SUM(clicks),0) FROM tiktok_ads_source_daily s WHERE s.advertiser_id=tiktok_ads_daily.advertiser_id AND s.store_id=tiktok_ads_daily.store_id AND s.report_date=tiktok_ads_daily.report_date) ELSE clicks END
+    WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ?`)
+    .bind(env.DEFAULT_ADVERTISER_ID,env.ZALO_STORE_ID||env.DEFAULT_STORE_CODE,startDate,endDate).run();
+  await env.DB.prepare(`UPDATE tiktok_ads_daily SET ctr=CASE WHEN impressions>0 THEN CAST(clicks AS REAL)/impressions ELSE 0 END,
+    cr=CASE WHEN clicks>0 THEN CAST(sku_orders AS REAL)/clicks ELSE 0 END WHERE advertiser_id=? AND store_id=? AND report_date BETWEEN ? AND ?`)
+    .bind(env.DEFAULT_ADVERTISER_ID,env.ZALO_STORE_ID||env.DEFAULT_STORE_CODE,startDate,endDate).run();
+}
+
 export async function syncSupabaseBackup(env: Env, reportDate: string): Promise<void> {
   const startedAt = new Date().toISOString();
   try {
+    await hydrateFromRuntime(env, shiftDate(reportDate,-1), reportDate);
     const config = await ensureBucket(env);
     const previousDate = shiftDate(reportDate, -1);
     const [current, previous, monitoring] = await Promise.all([

@@ -314,24 +314,35 @@ export async function loadProductVideos(env: Env, input: any): Promise<any> {
 }
 
 export async function loadCreativeSummaries(env: Env, input: any): Promise<any> {
-  const key=stableKey('summary-v3-source-orders',{...input,forceRefresh:undefined}); if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
-  const session=await createSession(env); const contexts=input.allContexts||input.products||[];
+  const key=stableKey('summary-v4-product-context',{...input,forceRefresh:undefined}); if(!input.forceRefresh){const hit=await cacheGet<any>(env,key);if(hit)return {...hit,cacheStatus:'HIT'};}
+  const session=await createSession(env); let contexts:ProductContext[]=input.allContexts||input.products||[];
+  // GMV Max does not return creative rows for this account when item_id is
+  // requested without the exact campaign + Product ID scope. Dashboard calls
+  // intentionally arrive without contexts, so discover the valid pairs first
+  // and then query one creative report per campaign below.
+  if(!contexts.length)contexts=await discoverVideoContexts(env,input,input.startDate,input.endDate,session).catch(()=>[]);
   const rows:McpRow[]=[];
   const exactContexts=Array.from(new Map<string,ProductContext>(contexts.map((context:ProductContext)=>[`${context.campaignId}:${context.itemGroupId}`,context])).values());
   const campaignIds=unique(exactContexts.map((context)=>context.campaignId));
   if(!campaignIds.length){
+    // Last-resort compatibility path for MCP accounts that support an
+    // advertiser-wide creative report. Most GMV Max accounts use the scoped
+    // path above.
     const base={advertiser_id:input.advertiserId,store_ids:[input.storeId],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
       filtering:{creative_types:['ADS_AND_ORGANIC']}};
-    let values=await pagedReport(env,session,{...base,dimensions:['campaign_id','item_group_id','item_id','stat_time_day']}).catch(()=>[]);
-    if(!values.length)values=await pagedReport(env,session,{...base,dimensions:['item_group_id','item_id','stat_time_day']});
+    let values=await pagedReport(env,session,{...base,dimensions:['item_id']}).catch(()=>[]);
     rows.push(...values);
   }
   for(const campaignId of campaignIds){
     const campaignContexts=exactContexts.filter((context)=>context.campaignId===campaignId);
     const base={advertiser_id:input.advertiserId,store_ids:[input.storeId],metrics:creativeMetrics,start_date:input.startDate,end_date:input.endDate,
       filtering:{campaign_ids:[campaignId],item_group_ids:campaignContexts.map((context)=>context.itemGroupId),creative_types:['ADS_AND_ORGANIC']}};
-    let values=await pagedReport(env,session,{...base,dimensions:['item_group_id','item_id','stat_time_day']}).catch(()=>[]);
-    if(!values.length)values=await pagedReport(env,session,{...base,dimensions:['item_id','stat_time_day']});
+    // item_id is the only creative dimension accepted together with these
+    // GMV Max metrics; campaign and Product ID belong in filtering.
+    let values=await pagedReport(env,session,{...base,dimensions:['item_id']}).catch(()=>[]);
+    // Some tenants reject optional profile/video-rate metrics. Keep the core
+    // dashboard numbers available with a compact retry.
+    if(!values.length)values=await pagedReport(env,session,{...base,dimensions:['item_id'],metrics:['title','tt_account_name','tt_account_authorization_type','cost','orders','gross_revenue','product_impressions','product_clicks']}).catch(()=>[]);
     values.forEach(row=>{row.dimensions={...(row.dimensions||{}),campaign_id:campaignId,
       item_group_id:rowId(row,'item_group_id')||campaignContexts[0]?.itemGroupId||''};});
     rows.push(...values);

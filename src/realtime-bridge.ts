@@ -345,8 +345,8 @@ export async function bridgeRequest(request: Request, env: Env): Promise<Respons
 
 async function supabaseChartHistory(env: Env, input: any, startDate: string, endDate: string, includeSources=false): Promise<{ tiktok: any[]; facebook: any[]; sources:any[] }> {
   if (startDate > endDate || !env.REALTIME_SOURCE_URL || !env.REALTIME_BRIDGE_SECRET) return { tiktok: [], facebook: [], sources:[] };
-  const cacheKey=new Request(`https://runtime-history-cache-v2.internal/${includeSources?'sources':'charts'}/${encodeURIComponent(String(input.advertiserId||''))}/${encodeURIComponent(String(input.storeId||''))}/${startDate}/${endDate}`);
-  const edgeCache=typeof caches!=='undefined'?await caches.open('runtime-supabase-history-v2'):null;
+  const cacheKey=new Request(`https://runtime-history-cache-v4.internal/${includeSources?'sources':'charts'}/${encodeURIComponent(String(input.advertiserId||''))}/${encodeURIComponent(String(input.storeId||''))}/${startDate}/${endDate}`);
+  const edgeCache=typeof caches!=='undefined'?await caches.open('runtime-supabase-history-v4'):null;
   const cached=edgeCache?await edgeCache.match(cacheKey):null;if(cached)return cached.json<{tiktok:any[];facebook:any[];sources:any[]}>();
   const response = await fetch(`${env.REALTIME_SOURCE_URL.replace(/\/$/, '')}/internal/realtime`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Realtime-Bridge-Secret': env.REALTIME_BRIDGE_SECRET },
@@ -354,7 +354,40 @@ async function supabaseChartHistory(env: Env, input: any, startDate: string, end
   });
   const payload = await response.json<any>().catch(() => ({}));
   if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Supabase history bridge HTTP ${response.status}`);
-  const result={ tiktok: payload?.data?.tiktok || [], facebook: payload?.data?.facebook || [], sources:payload?.data?.sources||[] };
+  const remote={ tiktok: payload?.data?.tiktok || [], facebook: payload?.data?.facebook || [], sources:payload?.data?.sources||[] };
+  // Supabase is the preferred completed-day store. The new D1 is the recovery
+  // source when a scheduled backup was missed (for example 2026-09-08).
+  const [localTikTok,localFacebook,localSources]=await Promise.all([
+    tiktokRows(env,{...input,startDate,endDate}),facebookRows(env,{...input,startDate,endDate}),
+    sourceRows(env,{...input,startDate,endDate})
+  ]);
+  const trafficByDate=new Map<string,{impressions:number;clicks:number}>();
+  for(const row of localSources){const date=String(row.report_date),current=trafficByDate.get(date)||{impressions:0,clicks:0};
+    current.impressions+=numberValue(row.impressions);current.clicks+=numberValue(row.clicks);trafficByDate.set(date,current);}
+  for(const row of localTikTok){const traffic=trafficByDate.get(String(row.report_date));if(!traffic)continue;
+    if(!numberValue(row.impressions))row.impressions=traffic.impressions;if(!numberValue(row.clicks))row.clicks=traffic.clicks;
+    row.ctr=numberValue(row.impressions)?numberValue(row.clicks)/numberValue(row.impressions):0;
+    row.cr=numberValue(row.clicks)?numberValue(row.sku_orders)/numberValue(row.clicks):0;}
+  const useful=(row:any,fields:string[])=>fields.some((field)=>Math.abs(numberValue(row?.[field]))>0);
+  const mergeDaily=(preferred:any[],fallback:any[],fields:string[])=>{
+    const values=new Map<string,any>();
+    for(const row of fallback)values.set(String(row.report_date),row);
+    for(const row of preferred){const key=String(row.report_date),old=values.get(key);if(!old||!useful(old,fields))values.set(key,row);else if(useful(row,fields)){
+      const merged={...old,...row};
+      // Financial history belongs to Supabase, but zero traffic there can be
+      // repaired from the Product ID source rows retained in runtime D1.
+      for(const field of ['impressions','clicks'])if(!numberValue(merged[field])&&numberValue(old[field]))merged[field]=old[field];
+      if('sku_orders' in merged){merged.ctr=numberValue(merged.impressions)?numberValue(merged.clicks)/numberValue(merged.impressions):0;merged.cr=numberValue(merged.clicks)?numberValue(merged.sku_orders)/numberValue(merged.clicks):0;}
+      values.set(key,merged);
+    }}
+    return [...values.values()].sort((a,b)=>String(a.report_date).localeCompare(String(b.report_date)));
+  };
+  const sourceDates=new Set(remote.sources.map((row:any)=>String(row.report_date)));
+  const result={
+    tiktok:mergeDaily(remote.tiktok,localTikTok,['cost','gross_revenue','sku_orders','impressions','clicks']),
+    facebook:mergeDaily(remote.facebook,localFacebook,['spend','gross_revenue','orders','impressions','clicks']),
+    sources:includeSources?[...remote.sources,...localSources.filter((row:any)=>!sourceDates.has(String(row.report_date)))]:[]
+  };
   if(edgeCache)await edgeCache.put(cacheKey,new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json','Cache-Control':'public, max-age=900'}}));
   return result;
 }
@@ -394,6 +427,21 @@ function creativeSourceSummary(rows:any[], extras:any={}):any {
   return {generatedAt:new Date().toISOString(),summaries:extras.summaries||[],totalCreatives:new Set(sourceRowsOut.map((row)=>row.productId).filter(Boolean)).size,impressions:sourceRowsOut.reduce((sum,row)=>sum+numberValue(row.metrics.product_impressions),0),traffic:sourceRowsOut.reduce((sum,row)=>sum+numberValue(row.metrics.product_clicks),0),costAttribution:{total:productCard+seller+affiliate,productCard,seller,affiliate,metrics},sourceRows:sourceRowsOut,videoEvaluation:extras.videoEvaluation||{},hourlyTraffic:extras.hourlyTraffic||[],cacheStatus:extras.cacheStatus||'HYBRID',source:extras.source||'supabase-history'};
 }
 
+function normalizeCreativeFinancials(summary:any,target:{cost:number;grossRevenue:number;orders:number}):any {
+  const attribution=summary.costAttribution||{},metrics=attribution.metrics||{};
+  const keys=['productCard','seller','affiliate'];
+  const normalize=(metric:'cost'|'grossRevenue'|'orders',targetValue:number)=>{
+    const current=keys.reduce((sum,key)=>sum+numberValue(metrics[key]?.[metric]),0);
+    if(current<=0)return;
+    const ratio=targetValue/current;
+    for(const key of keys)metrics[key][metric]=numberValue(metrics[key][metric])*ratio;
+  };
+  normalize('cost',target.cost);normalize('grossRevenue',target.grossRevenue);normalize('orders',target.orders);
+  for(const key of keys){const item=metrics[key]||{};item.roi=numberValue(item.cost)?numberValue(item.grossRevenue)/numberValue(item.cost):0;attribution[key]=numberValue(item.cost);}
+  attribution.total=keys.reduce((sum,key)=>sum+numberValue(attribution[key]),0);
+  return summary;
+}
+
 export async function gatewayRequest(request: Request, env: Env, url: URL): Promise<Response> {
   const gatewayOrigin = request.headers.get('X-Realtime-Gateway-Origin') || url.origin;
   if (url.pathname === '/auth/connect' && request.method === 'GET') return Response.redirect(await createAuthorizationUrl(env, gatewayOrigin), 302);
@@ -403,6 +451,17 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
   if (url.pathname === '/seller/auth/connect' && request.method === 'GET')
     return Response.redirect(await createSellerAuthorizationUrl(await runtimeProviderEnv(env)), 302);
   if (url.pathname === '/seller/auth/callback' && request.method === 'GET') return handleSellerOAuthCallback(await runtimeProviderEnv(env), url);
+  if (url.pathname === '/internal/runtime-export' && request.method === 'POST') {
+    const supplied = request.headers.get('X-Realtime-Bridge-Secret') || '';
+    if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized runtime export.' }, 401);
+    try {
+      const body=await request.json<any>(),startDate=validateDate(body?.startDate,'startDate'),endDate=validateDate(body?.endDate,'endDate');
+      if(startDate>endDate)return json({ok:false,error:'Invalid runtime export date range.'},400);
+      const input={advertiserId:String(body?.advertiserId||env.DEFAULT_ADVERTISER_ID),storeId:String(body?.storeId||env.ZALO_STORE_ID||env.DEFAULT_STORE_CODE),startDate,endDate};
+      const [tiktok,facebook,sources]=await Promise.all([tiktokRows(env,input),facebookRows(env,input),sourceRows(env,input)]);
+      return json({ok:true,data:{tiktok,facebook,sources}});
+    } catch(error){return json({ok:false,error:error instanceof Error?error.message:String(error)},502);}
+  }
   if (url.pathname === '/internal/runtime-sync' && request.method === 'POST') {
     const supplied = request.headers.get('X-Realtime-Bridge-Secret') || '';
     if (!env.REALTIME_BRIDGE_SECRET || supplied !== env.REALTIME_BRIDGE_SECRET) return json({ ok: false, error: 'Unauthorized realtime sync.' }, 401);
@@ -487,16 +546,20 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
           if(hasToday){
             try{
               const todayInput={...liveInput,startDate:today,endDate:today};
-              liveSummary=await loadCreativeSummaries(runtime,{...todayInput,products:[],allContexts:[],availableProducts:0});
+              liveSummary=await loadCreativeSummaries(runtime,{...todayInput,products:[],allContexts:[],availableProducts:0,forceRefresh:liveInput.forceRefresh===true});
+              if(!liveSummary?.sourceRows?.length)liveSummary=await readReplica(env,'/api/creative-summaries',{...liveInput,startDate:today,endDate:today}).catch(()=>liveSummary);
             }catch(error){
               console.warn('Realtime MCP creative summary skipped',error instanceof Error?error.message:String(error));
               liveSummary=await readReplica(env,'/api/creative-summaries',{...liveInput,startDate:today,endDate:today}).catch(()=>null);
             }
           }
-          data=creativeSourceSummary([...(history.sources||[]),...(liveSummary?.sourceRows||[])],{
+          const liveDaily=hasToday?await tiktokRows(env,{...liveInput,startDate:today,endDate:today}):[];
+          const dailyByDate=new Map([...(history.tiktok||[]),...liveDaily].map((row:any)=>[String(row.report_date),row]));
+          const target=[...dailyByDate.values()].reduce((out:any,row:any)=>{out.cost+=numberValue(row.cost);out.grossRevenue+=numberValue(row.gross_revenue);out.orders+=numberValue(row.sku_orders);return out;},{cost:0,grossRevenue:0,orders:0});
+          data=normalizeCreativeFinancials(creativeSourceSummary([...(history.sources||[]),...(liveSummary?.sourceRows||[])],{
             summaries:liveSummary?.summaries||[],videoEvaluation:liveSummary?.videoEvaluation||{},hourlyTraffic:liveSummary?.hourlyTraffic||[],
             cacheStatus:hasToday?'MCP_REALTIME_WITH_SUPABASE_HISTORY':'SUPABASE_HISTORY',source:hasToday?'mcp-realtime+supabase-history':'supabase-history'
-          });break;
+          }),target);break;
         }
         case '/api/facebook-ads': {
           const today=dateInTimezone(new Date(),env.TIMEZONE||'Asia/Bangkok');
@@ -549,7 +612,8 @@ export async function gatewayRequest(request: Request, env: Env, url: URL): Prom
             return {date,endDate:date,label:`${date.slice(8,10)}/${date.slice(5,7)}`,facebook:{cost:numberValue(fr.spend),clicks:numberValue(fr.clicks),orders:numberValue(fr.orders),revenue:numberValue(fr.gross_revenue),impressions:numberValue(fr.impressions)},tiktok:{cost:numberValue(tr.cost),clicks:numberValue(tr.clicks),orders:numberValue(tr.sku_orders),revenue:numberValue(tr.gross_revenue),impressions:numberValue(tr.impressions)}};});
           const selected=daily.filter((day:any)=>day.date>=liveInput.startDate);const sum=(key:'facebook'|'tiktok')=>selected.reduce((out:any,day:any)=>{for(const field of ['cost','revenue','impressions','clicks','orders'])out[field]+=numberValue(day[key]?.[field]);return out;},{cost:0,revenue:0,impressions:0,clicks:0,orders:0});
           const fs=sum('facebook'),ts=sum('tiktok'),facebook=overviewPlatform(fs.cost,fs.revenue,fs.impressions,fs.clicks,fs.orders),tiktok=overviewPlatform(ts.cost,ts.revenue,ts.impressions,ts.clicks,ts.orders);
-          const sourceSummary=creativeSourceSummary([...(history.sources||[]),...((hasToday?await sourceRows(env,{...liveInput,startDate:today,endDate:today}):[])||[])]);
+          const sourceSummary=normalizeCreativeFinancials(creativeSourceSummary([...(history.sources||[]),...((hasToday?await sourceRows(env,{...liveInput,startDate:today,endDate:today}):[])||[])]),
+            {cost:tiktok.cost,grossRevenue:tiktok.revenue,orders:tiktok.orders});
           const attributed=sourceSummary.costAttribution;
           data={startDate:liveInput.startDate,endDate:liveInput.endDate,chartStartDate,generatedAt:new Date().toISOString(),daily,
             totals:overviewPlatform(fs.cost+ts.cost,fs.revenue+ts.revenue,fs.impressions+ts.impressions,fs.clicks+ts.clicks,fs.orders+ts.orders),previousTotals:overviewPlatform(0,0,0,0,0),platforms:{facebook,tiktok},
