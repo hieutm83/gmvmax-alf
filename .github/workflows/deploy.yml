@@ -35,6 +35,7 @@ jobs:
             echo "D1_NAME=gmv-max-db" >> "$GITHUB_ENV"
           fi
       - name: Apply D1 migrations
+        if: github.event_name != 'workflow_dispatch'
         run: npx wrangler d1 migrations apply "$D1_NAME" --remote --config "$CONFIG_PATH"
       - name: Deploy Worker
         run: npx wrangler deploy --config "$CONFIG_PATH"
