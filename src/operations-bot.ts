@@ -332,7 +332,7 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
         dataQuality:revenue.dataQuality||null })).run();
   } catch (error) {
     if (mode === 'DAILY') await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
-      WHERE report_date=? AND report_kind=?`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate,mode).run();
+      WHERE report_date=? AND report_kind=? AND status<>'SENT'`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate,mode).run();
     throw error;
   }
 }
@@ -347,6 +347,12 @@ export async function prepareDailyOperationsReport(env:Env,reportDate:string,ope
       WHERE operations_bot_reports.status='FAILED' OR operations_bot_reports.updated_at<datetime('now','-30 minutes')`)
       .bind(reportDate,JSON.stringify({stage:0,operationsDate})).run();
     if(!claimed.meta.changes)return;
+  }else{
+    // Delayed/retried Queue messages from an older preparation chain must not
+    // mutate a report that has already been delivered or start another send.
+    const current=await env.DB.prepare(`SELECT status FROM operations_bot_reports
+      WHERE report_date=? AND report_kind='DAILY'`).bind(reportDate).first<{status:string}>();
+    if(current?.status!=='PREPARING')return;
   }
   const previousDate=shiftDate(reportDate,-1),previousOperationsDate=shiftDate(operationsDate,-1);
   const scope={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE};
@@ -357,11 +363,14 @@ export async function prepareDailyOperationsReport(env:Env,reportDate:string,ope
     else if(stage===3)await loadOperationsAnalysis(env,{startDate:operationsDate,endDate:operationsDate,forceRefresh:false});
     else if(stage===4)await loadOperationsAnalysis(env,{startDate:previousOperationsDate,endDate:previousOperationsDate,forceRefresh:false});
     else return sendOperationsReport(env,reportDate,'DAILY',undefined,operationsDate);
-    await env.DB.prepare(`UPDATE operations_bot_reports SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE report_date=? AND report_kind='DAILY'`)
+    const advanced=await env.DB.prepare(`UPDATE operations_bot_reports SET payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_kind='DAILY' AND status='PREPARING'`)
       .bind(JSON.stringify({stage:stage+1,operationsDate}),reportDate).run();
-    await env.TASK_QUEUE.send({type:'operations-daily-prepare',reportDate,operationsDate,stage:stage+1});
+    if(advanced.meta.changes)
+      await env.TASK_QUEUE.send({type:'operations-daily-prepare',reportDate,operationsDate,stage:stage+1});
   }catch(error){
-    await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP WHERE report_date=? AND report_kind='DAILY'`)
+    await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
+      WHERE report_date=? AND report_kind='DAILY' AND status<>'SENT'`)
       .bind(JSON.stringify({stage,error:error instanceof Error?error.message:String(error)}),reportDate).run();
     throw error;
   }
