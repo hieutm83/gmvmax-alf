@@ -61,6 +61,7 @@ export type TaskMessage =
   | { type: 'hourly-dispatch'; reportDate: string; reportHour: number; backupDate?: string }
   | { type: 'scheduled-report'; reportDate: string; reportHour: number }
   | { type: 'operations-daily-report'; reportDate: string; operationsDate?: string; mode: 'DAILY' | 'REALTIME'; chatId?: string; eventId?: string }
+  | { type: 'operations-daily-prepare'; reportDate: string; operationsDate: string; stage: number }
   | { type: 'operations-weekly-report'; saturdayDate: string }
   | { type: 'operations-weekly-prepare'; saturdayDate: string; stage: number }
   | { type: 'operations-monthly-prepare'; firstDayOfMonth: string; stage: number }

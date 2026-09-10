@@ -16,7 +16,7 @@ import { loadTikTokAdsTraffic } from './tiktok-ads-api';
 import { loadAdsOverview, loadFacebookAdsReport } from './facebook';
 import { syncSupabaseBackup } from './supabase-backup';
 import { extractDirectVideoId, extractZaloUpdates, finalizeZaloVideo, normalizeZaloEvent, processZaloVideo, processZaloVideoDay, recoverZaloVideoJobs, sendMessage, sendScheduledReport } from './zalo';
-import { pollOperationsBot, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
+import { pollOperationsBot, prepareDailyOperationsReport, prepareMonthlyOperationsReport, prepareWeeklyOperationsReport, sendOperationsReport, sendWeeklyOperationsReport } from './operations-bot';
 import { dueOrderBotSlots, monitorOrderBot, sendOrderBotReport } from './order-bot';
 import { cacheGet, dateInTimezone, hourInTimezone, HttpError, json, numberValue, readJson, shiftDate, validateDate, validateId } from './utils';
 import { assertDashboardApiAccess, assertDashboardLoginAllowed, clearDashboardLoginFailures, clearDashboardSessionCookie,
@@ -365,6 +365,7 @@ async function consume(message: TaskMessage, env: Env): Promise<void> {
       .bind(Date.now(),message.eventId).run();
     return;
   }
+  if(message.type==='operations-daily-prepare')return prepareDailyOperationsReport(runtime,message.reportDate,message.operationsDate,message.stage);
   if(message.type==='operations-weekly-report')return sendWeeklyOperationsReport(env,message.saturdayDate);
   if(message.type==='operations-weekly-prepare')return prepareWeeklyOperationsReport(zaloRuntime(env),message.saturdayDate,message.stage);
   if(message.type==='operations-monthly-prepare')return prepareMonthlyOperationsReport(zaloRuntime(env),message.firstDayOfMonth,message.stage);
@@ -563,7 +564,7 @@ export default {
           await runtime.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate});
         if(localHour>=8&&localMinute%5===0&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID){
           const yesterday=shiftDate(localDate,-1);
-          await runtime.TASK_QUEUE.send({type:'operations-daily-report',reportDate:yesterday,operationsDate:yesterday,mode:'DAILY'});
+          await runtime.TASK_QUEUE.send({type:'operations-daily-prepare',reportDate:yesterday,operationsDate:yesterday,stage:0});
         }
         const localWeekday=new Date(`${localDate}T00:00:00Z`).getUTCDay();
         if(localWeekday===6&&localHour===10&&[30,35,40].includes(localMinute)&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID)

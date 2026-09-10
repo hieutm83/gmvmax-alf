@@ -292,7 +292,7 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
     const previousOperationsInput = { startDate: previousOperationsDate, endDate: previousOperationsDate, forceRefresh: false };
     const [revenue, ads, previousAds, operations, previousOperations] = await Promise.all([
       loadSellerRevenueAnalysis(env, input),
-      loadMainReport(env, { ...input, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }, true),
+      loadMainReport(env, { ...input, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }, mode === 'REALTIME'),
       loadMainReport(env, { ...previousInput, advertiserId: env.DEFAULT_ADVERTISER_ID, storeId: env.DEFAULT_STORE_CODE }),
       loadOperationsAnalysis(env, operationsInput),
       loadOperationsAnalysis(env, previousOperationsInput)
@@ -333,6 +333,36 @@ export async function sendOperationsReport(env: Env, reportDate: string, mode: '
   } catch (error) {
     if (mode === 'DAILY') await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP
       WHERE report_date=? AND report_kind=?`).bind(JSON.stringify({error:error instanceof Error?error.message:String(error)}),reportDate,mode).run();
+    throw error;
+  }
+}
+
+/** Prepare the closed-day operations report in bounded Queue invocations.
+ * Each provider family gets its own invocation, then sendOperationsReport
+ * reads the warmed five-minute caches and only performs the Zalo delivery. */
+export async function prepareDailyOperationsReport(env:Env,reportDate:string,operationsDate:string,stage:number):Promise<void>{
+  if(stage===0){
+    const claimed=await env.DB.prepare(`INSERT INTO operations_bot_reports(report_date,report_kind,status,payload) VALUES(?,'DAILY','PREPARING',?)
+      ON CONFLICT(report_date,report_kind) DO UPDATE SET status='PREPARING',payload=excluded.payload,updated_at=CURRENT_TIMESTAMP
+      WHERE operations_bot_reports.status='FAILED' OR operations_bot_reports.updated_at<datetime('now','-30 minutes')`)
+      .bind(reportDate,JSON.stringify({stage:0,operationsDate})).run();
+    if(!claimed.meta.changes)return;
+  }
+  const previousDate=shiftDate(reportDate,-1),previousOperationsDate=shiftDate(operationsDate,-1);
+  const scope={advertiserId:env.DEFAULT_ADVERTISER_ID,storeId:env.DEFAULT_STORE_CODE};
+  try{
+    if(stage===0)await loadSellerRevenueAnalysis(env,{startDate:reportDate,endDate:reportDate,forceRefresh:false});
+    else if(stage===1)await loadMainReport(env,{...scope,startDate:reportDate,endDate:reportDate,forceRefresh:false});
+    else if(stage===2)await loadMainReport(env,{...scope,startDate:previousDate,endDate:previousDate,forceRefresh:false});
+    else if(stage===3)await loadOperationsAnalysis(env,{startDate:operationsDate,endDate:operationsDate,forceRefresh:false});
+    else if(stage===4)await loadOperationsAnalysis(env,{startDate:previousOperationsDate,endDate:previousOperationsDate,forceRefresh:false});
+    else return sendOperationsReport(env,reportDate,'DAILY',undefined,operationsDate);
+    await env.DB.prepare(`UPDATE operations_bot_reports SET payload=?,updated_at=CURRENT_TIMESTAMP WHERE report_date=? AND report_kind='DAILY'`)
+      .bind(JSON.stringify({stage:stage+1,operationsDate}),reportDate).run();
+    await env.TASK_QUEUE.send({type:'operations-daily-prepare',reportDate,operationsDate,stage:stage+1});
+  }catch(error){
+    await env.DB.prepare(`UPDATE operations_bot_reports SET status='FAILED',payload=?,updated_at=CURRENT_TIMESTAMP WHERE report_date=? AND report_kind='DAILY'`)
+      .bind(JSON.stringify({stage,error:error instanceof Error?error.message:String(error)}),reportDate).run();
     throw error;
   }
 }
