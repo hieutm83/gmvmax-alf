@@ -562,7 +562,10 @@ export default {
           await enqueueMissingOrderReports(runtime,localDate,localHour,localMinute);
         if(runtime.ZALO_ORDER_BOT_TOKEN&&runtime.ZALO_ORDER_GROUP_CHAT_ID&&localMinute%5===0)
           await runtime.TASK_QUEUE.send({type:'order-bot-monitor',reportDate:localDate});
-        if(localHour>=8&&localMinute%5===0&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID){
+        // The operations bot sends one closed-day report in the morning. The
+        // extra 08:05/08:10 attempts only recover a failed 08:00 enqueue; D1
+        // idempotency prevents duplicates after the report is SENT.
+        if(localHour===8&&[0,5,10].includes(localMinute)&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID){
           const yesterday=shiftDate(localDate,-1);
           await runtime.TASK_QUEUE.send({type:'operations-daily-prepare',reportDate:yesterday,operationsDate:yesterday,stage:0});
         }
@@ -576,7 +579,16 @@ export default {
           // still changing and must never be presented as an hourly total.
           const reportHour=localHour===0?23:localHour-1;
           const reportDate=localHour===0?shiftDate(localDate,-1):localDate;
-          await runtime.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour});
+          const operationsRouteCollision=
+            Boolean(runtime.ZALO_GROUP_CHAT_ID&&runtime.ZALO_OPERATIONS_GROUP_CHAT_ID&&
+              runtime.ZALO_GROUP_CHAT_ID===runtime.ZALO_OPERATIONS_GROUP_CHAT_ID)||
+            Boolean(runtime.ZALO_BOT_TOKEN&&runtime.ZALO_OPERATIONS_BOT_TOKEN&&
+              runtime.ZALO_BOT_TOKEN===runtime.ZALO_OPERATIONS_BOT_TOKEN);
+          if(operationsRouteCollision){
+            console.error('Zalo bot routing conflict: ADS and operations credentials must be distinct; hourly ADS dispatch suppressed.');
+          }else{
+            await runtime.TASK_QUEUE.send({type:'hourly-dispatch',reportDate,reportHour});
+          }
         }
       })());
       return;
