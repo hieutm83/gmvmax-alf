@@ -24,9 +24,18 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing repository secret CLOUDFLARE_API_TOKEN"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing repository secret CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+      - name: Select account-specific Worker configuration
+        run: |
+          if [ "$CLOUDFLARE_ACCOUNT_ID" = "d4e2d1ad2c863c7992b948fd0b45479b" ]; then
+            echo "CONFIG_PATH=wrangler-realtime.toml" >> "$GITHUB_ENV"
+            echo "D1_NAME=gmv-max-runtime-db" >> "$GITHUB_ENV"
+          else
+            echo "CONFIG_PATH=wrangler.toml" >> "$GITHUB_ENV"
+            echo "D1_NAME=gmv-max-db" >> "$GITHUB_ENV"
+          fi
       - name: Apply D1 migrations
-        run: npx wrangler d1 migrations apply gmv-max-db --remote
+        run: npx wrangler d1 migrations apply "$D1_NAME" --remote --config "$CONFIG_PATH"
       - name: Deploy Worker
-        run: npm run deploy
+        run: npx wrangler deploy --config "$CONFIG_PATH"
       - name: Reconcile routes, queues and Cron triggers
-        run: npm run deploy:triggers
+        run: npx wrangler triggers deploy --config "$CONFIG_PATH"
