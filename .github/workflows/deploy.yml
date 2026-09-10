@@ -26,7 +26,8 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing repository secret CLOUDFLARE_ACCOUNT_ID"; exit 1; }
       - name: Select account-specific Worker configuration
         run: |
-          if [ "$CLOUDFLARE_ACCOUNT_ID" = "d4e2d1ad2c863c7992b948fd0b45479b" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=d4e2d1ad2c863c7992b948fd0b45479b" >> "$GITHUB_ENV"
             echo "CONFIG_PATH=wrangler-realtime.toml" >> "$GITHUB_ENV"
             echo "D1_NAME=gmv-max-runtime-db" >> "$GITHUB_ENV"
           else
